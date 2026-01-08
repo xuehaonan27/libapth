@@ -1,6 +1,6 @@
 #include "internal_types.h"
 
-/* save the current thread context */
+// Save the current thread context into `ctx`.
 bool apth_ctx_save(apth_cxt_t ctx)
 {
     ctx->error = errno;
@@ -9,8 +9,7 @@ bool apth_ctx_save(apth_cxt_t ctx)
     return ctx->restored;
 }
 
-/*  restore the current machine context
-    (at the location of the old context) */
+// Restore the current machine context (at the location of the old context)
 void apth_ctx_restore(apth_cxt_t ctx)
 {
     errno = ctx->error;
@@ -18,8 +17,7 @@ void apth_ctx_restore(apth_cxt_t ctx)
     setcontext(&ctx->uc);
 }
 
-/* restore the current machine context
-   (at the location of the new context)*/
+// Restore the current machine context (at the location of the new context)
 void apth_ctx_restored(apth_cxt_t ctx)
 {
     // TODO: pth_sc(sigprocmask)(SIG_SETMASK, &((mctx)->sigs), NULL)
@@ -34,6 +32,7 @@ void apth_ctx_restored(apth_cxt_t ctx)
 #define _apth_mctx_switch_debug /* NOP */
 #endif
 
+// Swap context from `old` to `new`.
 void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
     _apth_mctx_switch_debug;
@@ -43,6 +42,7 @@ void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 #define apth_skaddr_makecontext(skaddr, sksize) ((skaddr))
 #define apth_sksize_makecontext(skaddr, sksize) ((sksize))
 
+// Initialize a context into `ctx`.
 bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi)
 {
     // fetch current context

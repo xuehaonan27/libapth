@@ -43,7 +43,7 @@ struct apth_st
     apth_cxt_t ctx;              /* last saved context of thread        */
     char *stack;                 /* pointer to thread stack             */
     size_t stacksize;            /* size of thread stack                */
-    char *stackguard;            /* stack overflow guard                */
+    uint32_t *stackguard;            /* stack overflow guard                */
     bool stackloan;              /* stack type                          */
     void *(*start_func)(void *); /* start routine                       */
     void *start_arg;             /* start argument                      */
@@ -80,7 +80,7 @@ struct apth_t_list_elem
 #define APTH_STACK_SIZE_DEFAULT 8192
 
 // FIXME: this should be set by build system
-// Indicate stack growth direction is from high to low (< 0) or from low to 
+// Indicate stack growth direction is from high to low (< 0) or from low to
 // high (> 0). On most systems this should usually be the former.
 #define APTH_STACKGROWTH (-1)
 #define APTH_MAGIC 0xCAFEBABE
@@ -136,6 +136,7 @@ struct apth_perpthr_scheduler
     unsigned int switches;       // context switch times
     unsigned int thrcnt;         // APTH threads now running on this scheduler
     apth_t running;              // current running APTH
+    _Atomic bool opening;                // scheduler is opening
 };
 // We don't want to expose this struct to public space
 typedef struct apth_perpthr_scheduler *apth_sched_t;

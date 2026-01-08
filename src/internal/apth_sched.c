@@ -1,5 +1,6 @@
 #include "internal_types.h"
 #include "debug.h"
+#include "atomic_wrapper.h"
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
@@ -48,7 +49,20 @@ void dec_thrcnt(apth_sched_t sched)
 //     return 0;
 // }
 
+struct apth_t_list_elem *pop_apth_from_new(apth_sched_t sched)
+{
+    struct apth_t_list_elem *telem = NULL;
+    struct list_elem *elem;
+    if (!list_empty(&sched->new_list))
+    {
+        elem = list_pop_front(&sched->new_list);
+        telem = apth_t_list_entry(elem);
+    }
+    return telem;
+}
+
 #define push_apth_to(name) push_apth_to_##name
+#define pop_apth_from(name) pop_apth_from_##name
 #define new_apth_to(name) new_apth_to_##name
 #define list_of(name) name##_list
 // TODO: acquire list lock, since the caller pthread may not be ourself
@@ -57,6 +71,17 @@ void dec_thrcnt(apth_sched_t sched)
     void push_apth_to(name)(struct apth_t_list_elem * telem, apth_sched_t sched)                  \
     {                                                                                             \
         list_push_back(&sched->list_of(name), &telem->elem);                                      \
+    }                                                                                             \
+    struct apth_t_list_elem *pop_apth_from(name)(apth_sched_t sched)                              \
+    {                                                                                             \
+        struct apth_t_list_elem *telem = NULL;                                                    \
+        struct list_elem *elem;                                                                   \
+        if (!list_empty(&sched->list_of(name)))                                                   \
+        {                                                                                         \
+            elem = list_pop_front(&sched->list_of(name));                                         \
+            telem = apth_t_list_entry(elem);                                                      \
+        }                                                                                         \
+        return telem;                                                                             \
     }                                                                                             \
     int new_apth_to(name)(apth_t t, apth_sched_t sched)                                           \
     {                                                                                             \
@@ -75,6 +100,12 @@ DEFINE_SCHED_LIST_OP(suspended)
 DEFINE_SCHED_LIST_OP(terminated)
 
 #undef DEFINE_SCHED_LIST_OP
-#undef push_apth_to
-#undef new_apth_to
 #undef list_of
+#undef new_apth_to
+#undef pop_apth_from
+#undef push_apth_to
+
+bool apth_sched_is_opening(apth_sched_t sched)
+{
+    return atomic_load_relaxed(&sched->opening);
+}

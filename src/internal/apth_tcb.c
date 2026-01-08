@@ -35,7 +35,7 @@ apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         /* guard is at highest address (be careful with alignment) */
         t->stackguard = (long *)(t->stack + (((stacksize / sizeof(long)) - 1) * sizeof(long)));
 #endif
-        *(uint32_t *)(t->stackguard) = 0xCAFEBABE;
+        *(uint32_t *)(t->stackguard) = APTH_MAGIC;
     }
 
     return t;

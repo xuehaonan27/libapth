@@ -1,4 +1,5 @@
 #include "internal_types.h"
+#include "internal_funcs.h"
 
 #include "utils/debug.h"
 #include "utils/list.h"
@@ -9,17 +10,28 @@
 static bool WORKER_POOL_INITIALIZED = false;
 static struct apth_global_scheduler_pool GLOBAL_POOL;
 
-_Thread_local apth_worker_t __CUR_WORKER;
-_Thread_local apth_sched_t __CUR_SCHED;
+static pthread_key_t __CUR_WORKER_KEY;
 
-apth_worker_t cur_worker(void)
+void worker_key_t_init(void)
 {
-    return __CUR_WORKER;
+    int result = pthread_key_create(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
+    assert_msg(result == 0, "fail pthread_key_create");
 }
 
-apth_sched_t cur_sched(void)
+static apth_worker_t cur_worker(void)
 {
-    return __CUR_SCHED;
+    return (apth_worker_t)pthread_getspecific(__CUR_WORKER_KEY);
+}
+
+static void set_cur_worker(apth_worker_t worker)
+{
+    int result = pthread_setspecific(__CUR_WORKER_KEY, worker);
+    assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
+}
+
+static apth_sched_t cur_sched(void)
+{
+    return cur_worker()->sched;
 }
 
 apth_t cur_apth(void)
@@ -27,8 +39,18 @@ apth_t cur_apth(void)
     return cur_sched()->running;
 }
 
+void set_cur_apth(apth_t t)
+{
+    cur_sched()->running = t;
+}
+
+void worker_key_t_destr_fn(void *p)
+{
+    // TODO
+}
+
 // Get worker by `worker_id`
-apth_worker_t get_worker(int worker_id)
+apth_worker_t get_worker_by_id(int worker_id)
 {
     // Fast path: fortunately worker_id falls in initial worker threads
     // which is usually the situation
@@ -75,18 +97,126 @@ int worker_count(void)
 // that required by Pthread.
 static void *worker_start_routine(void *arg)
 {
-    // now we are in a separated Pthread
+    // Now we are in a separated Pthread
     apth_worker_arg_t worker_arg = (apth_worker_arg_t)arg;
     apth_worker_t me = worker_arg->self;
 
-    // allocate and initialize the scheduler
+    // Allocate and initialize the scheduler
     apth_sched_t sched;
     if ((sched = (apth_sched_t)malloc(sizeof(struct apth_perpthr_scheduler))) == NULL)
         return apth_error(NULL, ENOMEM);
-    int sched_init_result = apth_scheduler_init(sched, me);
+    apth_scheduler_init(sched, me);
 
     // TODO: initialize other parts of the worker
     // TODO: go into a endless loop.
+    while (apth_sched_is_opening(sched))
+    {
+        // TODO: acquire list lock (maybe stealing lock)
+
+        // Move all new threads to ready list
+        struct apth_t_list_elem *telem;
+#define TCB (telem->ptcb)
+#define SET_CUR(x)       \
+    do                   \
+    {                    \
+        TCB = x;         \
+        set_cur_apth(x); \
+    } while (0);
+
+        while ((telem = pop_apth_from_new(sched)) != NULL)
+        {
+            TCB->state = APTH_STATE_READY;
+            // TODO: insert into ready queue according to policy
+            // TODO: here just append
+            push_apth_to_ready(telem, sched);
+        }
+
+        // Update statistics
+        // TODO: update average scheduler load
+
+        // Find the next thread in ready queue and set it to be run
+        telem = pop_apth_from_ready(sched);
+
+        if (telem == NULL)
+        {
+            // there is no more thread to ready, panic
+            PANIC("APTH SCHEDULER INTERNAL ERROR: no more threads available to schedule");
+        }
+        SET_CUR(TCB);
+        assert_msg(cur_apth() == TCB, "sanity");
+
+        // Handle signals
+
+        // Set running start time for new thread and perform a context switch to it
+        apth_debug("apth scheduler: switching to thread %p (\"%s\")", TCB, TCB->name);
+
+        // Update thread times
+
+        // Update scheduler times
+
+        // Switch the thread
+        TCB->dispatches += 1;
+        apth_ctx_switch(sched->sched_ctx, TCB->ctx);
+
+        // Update scheduler times
+        // TODO:
+        apth_debug("apth scheduler: cameback from thread %p (\"%s\")", TCB, TCB->name);
+
+        // Update thread times
+
+        // Handle signals
+
+        // Check for stack overflow
+        if (TCB->stackguard != NULL)
+        {
+            if (*TCB->stackguard != APTH_MAGIC)
+            {
+                // TODO: handle stack overflow
+            }
+        }
+
+        // If previous thread is now marked as dead, kick it out
+        if (TCB->state == APTH_STATE_TERMINATED)
+        {
+            apth_debug("apth scheduler: marking thread \"%s\" as terminated", TCB->name);
+            if (!TCB->joinable)
+                apth_tcb_free(TCB);
+            else
+                push_apth_to_terminated(telem, sched);
+            SET_CUR(NULL);
+        }
+
+        // If thread wants to wait for an event, move it to waiting queue now
+        if (TCB != NULL && TCB->state == APTH_STATE_WAITING)
+        {
+            apth_debug("apth scheduler: moving thread \"%s\", to waiting queue", TCB->name);
+            push_apth_to_waiting(telem, sched);
+            SET_CUR(NULL);
+        }
+
+        // Insert thread back to ready queue if not inserted into waiting queue
+        // TODO: migrate old threads in ready queue into higher prio?
+        if (TCB != NULL)
+            push_apth_to_ready(telem, sched);
+
+        // Manage events in the waiting queue
+        if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
+        {
+            apth_debug("apth scheduler: no NEW or READY threads, have to wait for new work");
+            // TODO: No new or ready threads, wait for new work
+        }
+        else
+        {
+            apth_debug("apth scheduler: already NEW or READY threads exists, so just poll for even more work");
+            // TODO:
+        }
+    }
+
+    // Clear the worker thread and exit
+
+    // Not reached
+#undef TCB
+    return NULL;
 }
 
 static int apth_worker_init(apth_worker_t worker, int worker_id)
@@ -103,7 +233,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     return result;
 }
 
-void apth_worker_elem_init(struct apth_worker_t_list_elem *elem, apth_worker_t worker)
+static void apth_worker_elem_init(struct apth_worker_t_list_elem *elem, apth_worker_t worker)
 {
     memset(elem, 0, sizeof(struct apth_worker_t_list_elem));
     elem->pworker = worker;
