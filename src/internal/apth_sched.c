@@ -33,64 +33,27 @@ void dec_thrcnt(apth_sched_t sched)
     sched->thrcnt = c == 0 ? c : c - 1;
 }
 
-// void push_apth_to_ready(struct apth_t_list_elem *telem, apth_sched_t sched)
-// {
-//     // TODO: acquire list lock, since the caller pthread may not be ourself
-//     list_push_back(&sched->ready_list, &telem->elem);
-//     // TODO: release list lock
-// }
-
-// int new_apth_to_ready(apth_t t, apth_sched_t sched)
-// {
-//     struct apth_t_list_elem *telem = (struct apth_t_list_elem *)malloc(sizeof(struct apth_t_list_elem));
-//     // TODO: handle OOM with apth_error
-//     telem->ptcb = t;
-//     push_apth_to_ready(telem, sched);
-//     return 0;
-// }
-
-struct apth_t_list_elem *pop_apth_from_new(apth_sched_t sched)
-{
-    struct apth_t_list_elem *telem = NULL;
-    struct list_elem *elem;
-    if (!list_empty(&sched->new_list))
-    {
-        elem = list_pop_front(&sched->new_list);
-        telem = apth_t_list_entry(elem);
-    }
-    return telem;
-}
-
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
 #define new_apth_to(name) new_apth_to_##name
 #define list_of(name) name##_list
 // TODO: acquire list lock, since the caller pthread may not be ourself
 // TODO: release list lock
-#define DEFINE_SCHED_LIST_OP(name)                                                                \
-    void push_apth_to(name)(struct apth_t_list_elem * telem, apth_sched_t sched)                  \
-    {                                                                                             \
-        list_push_back(&sched->list_of(name), &telem->elem);                                      \
-    }                                                                                             \
-    struct apth_t_list_elem *pop_apth_from(name)(apth_sched_t sched)                              \
-    {                                                                                             \
-        struct apth_t_list_elem *telem = NULL;                                                    \
-        struct list_elem *elem;                                                                   \
-        if (!list_empty(&sched->list_of(name)))                                                   \
-        {                                                                                         \
-            elem = list_pop_front(&sched->list_of(name));                                         \
-            telem = apth_t_list_entry(elem);                                                      \
-        }                                                                                         \
-        return telem;                                                                             \
-    }                                                                                             \
-    int new_apth_to(name)(apth_t t, apth_sched_t sched)                                           \
-    {                                                                                             \
-        struct apth_t_list_elem *telem;                                                           \
-        if ((telem = (struct apth_t_list_elem *)malloc(sizeof(struct apth_t_list_elem))) == NULL) \
-            return apth_error(-1, ENOMEM);                                                        \
-        telem->ptcb = t;                                                                          \
-        push_apth_to(name)(telem, sched);                                                         \
-        return 0;                                                                                 \
+#define DEFINE_SCHED_LIST_OP(name)                         \
+    void push_apth_to(name)(apth_t th, apth_sched_t sched) \
+    {                                                      \
+        list_push_back(&sched->list_of(name), &th->elem);  \
+    }                                                      \
+    apth_t pop_apth_from(name)(apth_sched_t sched)         \
+    {                                                      \
+        apth_t th = NULL;                                  \
+        struct list_elem *e;                               \
+        if (!list_empty(&sched->list_of(name)))            \
+        {                                                  \
+            e = list_pop_front(&sched->list_of(name));     \
+            th = apth_t_list_entry(e);                     \
+        }                                                  \
+        return th;                                         \
     }
 
 DEFINE_SCHED_LIST_OP(new)

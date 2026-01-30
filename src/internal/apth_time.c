@@ -14,3 +14,36 @@ apth_time_t apth_time(long sec, long usec)
     tv.tv_usec = usec;
     return tv;
 }
+
+void apth_time_set(apth_time_t *t1, apth_time_t *t2)
+{
+    if (t1 == APTH_TIME_NOW)
+        gettimeofday(t1, NULL);
+    else
+    {
+        t1->tv_sec = t2->tv_sec;
+        t2->tv_usec = t2->tv_usec;
+    }
+}
+
+void apth_time_add(apth_time_t *t1, apth_time_t *t2)
+{
+    t1->tv_sec += t2->tv_sec;
+    t1->tv_usec += t2->tv_usec;
+    if (t1->tv_usec > 1000000)
+    {
+        t1->tv_sec += 1;
+        t1->tv_usec -= 1000000;
+    }
+}
+
+void apth_time_sub(apth_time_t *t1, apth_time_t *t2)
+{
+    t1->tv_sec -= t2->tv_sec;
+    t1->tv_usec -= t2->tv_usec;
+    if (t1->tv_usec < 0)
+    {
+        t1->tv_sec -= 1;
+        t1->tv_usec += 1000000;
+    }
+}

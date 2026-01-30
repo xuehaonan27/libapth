@@ -1,7 +1,7 @@
 #ifndef __LIBAPTH_INTERNAL_TYPES_H
 #define __LIBAPTH_INTERNAL_TYPES_H
 
-#define APTH_TCB_NAMELEN 40
+#define APTH_TCB_NAMELEN 16
 
 #include "apth.h"
 
@@ -11,6 +11,8 @@
 #include <ucontext.h>
 #include <pthread.h>
 // #include <stdatomic.h>
+
+#define _BIT(n) (1 << (n))
 
 // ============================== APTH TCB ==============================
 
@@ -43,7 +45,7 @@ struct apth_st
     apth_cxt_t ctx;              /* last saved context of thread        */
     char *stack;                 /* pointer to thread stack             */
     size_t stacksize;            /* size of thread stack                */
-    uint32_t *stackguard;            /* stack overflow guard                */
+    uint32_t *stackguard;        /* stack overflow guard                */
     bool stackloan;              /* stack type                          */
     void *(*start_func)(void *); /* start routine                       */
     void *start_arg;             /* start argument                      */
@@ -66,15 +68,13 @@ struct apth_st
 
     /* per-thread exception handling */
     // TODO: exception handling
-};
 
-struct apth_t_list_elem
-{
+    /* scheduler list handling */
     struct list_elem elem;
-    apth_t ptcb;
 #define apth_t_list_entry(LIST_ELEM) \
-    list_entry(LIST_ELEM, struct apth_t_list_elem, elem)
+    list_entry(LIST_ELEM, struct apth_st, elem)
 };
+#define APTH_NULL NULL
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 8192
@@ -96,13 +96,66 @@ const char *pth_state_names[] = {
 
 // ============================== Thread Events ==============================
 
+enum apth_event_type
+{
+    FD,
+    TIME,
+    MUTEX,
+    COND,
+    TID,
+};
+
+// Waiting on FD
+struct apth_event_fd_st
+{
+    int fd;
+};
+
+// Waiting on Time
+struct apth_event_time_st
+{
+    apth_time_t tv;
+};
+
+// Waiting on Mutex
+
+// Waiting on Conditional variables
+
+// Waiting on another thread
+struct apth_event_tid_st
+{
+    apth_t tid;
+};
+
+typedef int apth_goal_t;
+#define APTH_UTIL_OCCURRED _BIT(0)
+#define APTH_UTIL_FD_READABLE _BIT(1)
+#define APTH_UTIL_FD_WRITEABLE _BIT(2)
+#define APTH_UTIL_FD_EXCEPTION _BIT(3)
+#define APTH_UTIL_TID_NEW _BIT(4)
+#define APTH_UTIL_TID_READY _BIT(5)
+#define APTH_UTIL_TID_WAITING _BIT(6)
+#define APTH_UTIL_TID_DEAD _BIT(7)
+
+struct apth_event_inner_st
+{
+    enum apth_event_type ev_type;
+    apth_goal_t ev_goal;
+    union
+    {
+        struct apth_event_fd_st FD;
+        struct apth_event_time_st TIME;
+        struct apth_event_tid_st TID;
+    } ev_args;
+};
+
 // APTH Events
 struct apth_event_st
 {
     struct apth_event_st *ev_next;
     struct apth_event_st *ev_prev;
     apth_ev_status_t ev_status;
-    // TODO: apth event
+    struct apth_event_inner_st inner;
 };
 typedef struct apth_event_st *apth_event_t;
 
@@ -128,15 +181,15 @@ struct apth_perpthr_scheduler
     sched_id id;                 // scheduler ID
     apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
     struct list new_list;        // new threads
-    struct list ready_list;      // threads ready to run [elem: struct apth_t_list_elem]
-    struct list waiting_list;    // threads waiting for an event [elem: struct apth_t_list_elem]
-    struct list suspended_list;  // suspended threads [elem: struct apth_t_list_elem]
-    struct list terminated_list; // terminated threads [elem: struct apth_t_list_elem]
+    struct list ready_list;      // threads ready to run [elem: struct apth_st]
+    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
+    struct list suspended_list;  // suspended threads [elem: struct apth_st]
+    struct list terminated_list; // terminated threads [elem: struct apth_st]
     apth_worker_t worker;        // pthread worker carrying this scheduler
     unsigned int switches;       // context switch times
     unsigned int thrcnt;         // APTH threads now running on this scheduler
     apth_t running;              // current running APTH
-    _Atomic bool opening;                // scheduler is opening
+    _Atomic bool opening;        // scheduler is opening
 };
 // We don't want to expose this struct to public space
 typedef struct apth_perpthr_scheduler *apth_sched_t;
@@ -150,16 +203,11 @@ struct apth_worker_st
     pthread_t tid;       // a worker pthread
     pthread_attr_t attr; // Worker pthread attribute
     apth_sched_t sched;  // Hold scheduler
+    struct list_elem elem;
 };
 // We don't want to expose this struct to public space
 typedef struct apth_worker_st *apth_worker_t;
-struct apth_worker_t_list_elem
-{
-    struct list_elem elem;
-    apth_worker_t pworker;
-#define apth_worker_t_list_entry(LIST_ELEM) \
-    list_entry(LIST_ELEM, struct apth_worker_t_list_elem, elem)
-};
+
 // Argument passed to worker's pthread
 struct apth_worker_pthread_arg
 {
@@ -178,9 +226,9 @@ struct apth_global_scheduler_pool
     struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
 
     /* Immutable fields */
-    int init_worker_count;                                  // initially spawned workers
-    struct apth_worker_st *workers_mem_start;               // start memory address of init workers
-    struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
+    int init_worker_count;                    // initially spawned workers
+    struct apth_worker_st *workers_mem_start; // start memory address of init workers
+    // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
 };
 
 // ============================== Thread Cleanup ==============================
@@ -206,5 +254,24 @@ struct apth_attr_st
     size_t a_stacksize;
     char *a_stackaddr;
 };
+
+#define APTH_TIME_NOW (apth_time_t *)(0)
+
+// ============================== Thread Data ==============================
+
+struct apth_keytab_st
+{
+    // Sequence numbers. Even numbers indicated vacant entries,
+    // Note that zero is even.
+    uintptr_t seq;
+    // Destructor for the data.
+    void (*destructor)(void *);
+};
+
+// Check whether an entry is unused.
+#define APTH_KEY_UNUSED(p) (((p) & 1) == 0)
+
+// Check whether a key is usable.
+#define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
 
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */

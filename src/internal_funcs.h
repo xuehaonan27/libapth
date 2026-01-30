@@ -23,15 +23,19 @@ void apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
 void inc_thrcnt(apth_sched_t sched);
 void dec_thrcnt(apth_sched_t sched);
 
-#define DECLARE_SCHED_LIST_OP(name)                                               \
-    void push_apth_to_##name(struct apth_t_list_elem *telem, apth_sched_t sched); \
-    struct apth_t_list_elem *pop_apth_from_##name(apth_sched_t sched);
+#define push_apth_to(name) push_apth_to_##name
+#define pop_apth_from(name) pop_apth_from_##name
+#define DECLARE_SCHED_LIST_OP(name)                         \
+    void push_apth_to(name)(apth_t th, apth_sched_t sched); \
+    apth_t pop_apth_from(name)(apth_sched_t sched);
 DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
 #undef DECLARE_SCHED_LIST_OP
+#undef pop_apth_from
+#undef push_apth_to
 
 bool apth_sched_is_opening(apth_sched_t sched);
 
@@ -42,6 +46,9 @@ void apth_tch_free(apth_t t);
 // ============================== Time ==============================
 uint64_t cpu_tick();
 apth_time_t apth_time(long sec, long usec);
+void apth_time_set(apth_time_t *t1, apth_time_t *t2);
+void apth_time_add(apth_time_t *t1, apth_time_t *t2);
+void apth_time_sub(apth_time_t *t1, apth_time_t *t2);
 
 // ============================== System call ==============================
 
