@@ -17,12 +17,12 @@ apth_time_t apth_time(long sec, long usec)
 
 void apth_time_set(apth_time_t *t1, apth_time_t *t2)
 {
-    if (t1 == APTH_TIME_NOW)
+    if (t2 == APTH_TIME_NOW)
         gettimeofday(t1, NULL);
     else
     {
         t1->tv_sec = t2->tv_sec;
-        t2->tv_usec = t2->tv_usec;
+        t1->tv_usec = t2->tv_usec;
     }
 }
 
@@ -46,4 +46,23 @@ void apth_time_sub(apth_time_t *t1, apth_time_t *t2)
         t1->tv_sec -= 1;
         t1->tv_usec += 1000000;
     }
+}
+
+int apth_time_cmp(apth_time_t *t1, apth_time_t *t2)
+{
+    int rc;
+    int rc;
+
+    rc = t1->tv_sec - t2->tv_sec;
+    if (rc == 0)
+        rc = t1->tv_usec - t2->tv_usec;
+    return rc;
+}
+
+double apth_time_t2d(apth_time_t *t)
+{
+    double d;
+
+    d = ((double)t->tv_sec * 1000000 + (double)t->tv_usec) / 1000000;
+    return d;
 }

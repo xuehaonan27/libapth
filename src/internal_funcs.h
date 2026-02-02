@@ -38,19 +38,22 @@ DECLARE_SCHED_LIST_OP(terminated)
 #undef push_apth_to
 
 bool apth_sched_is_opening(apth_sched_t sched);
+void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
 
 // ============================== TCB ==============================
 apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
 void apth_tch_free(apth_t t);
 
 // ============================== Time ==============================
+#define APTH_TIME(sec, usec) {sec, usec}
+
 uint64_t cpu_tick();
 apth_time_t apth_time(long sec, long usec);
 void apth_time_set(apth_time_t *t1, apth_time_t *t2);
 void apth_time_add(apth_time_t *t1, apth_time_t *t2);
 void apth_time_sub(apth_time_t *t1, apth_time_t *t2);
-
-// ============================== System call ==============================
+int apth_time_cmp(apth_time_t *t1, apth_time_t *t2);
+double apth_time_t2d(apth_time_t *t);
 
 // ============================== Context ==============================
 bool apth_ctx_save(apth_cxt_t ctx);
@@ -64,5 +67,63 @@ void apth_tch_free(apth_t);
 bool apth_cleanup_push(void (*)(void *), void *);
 bool apth_cleanup_pop(bool);
 void apth_cleanup_popall(apth_t, bool);
+
+// ============================== Signal ==============================
+int apth_util_sigdelete(int sig);
+
+// ============================== Event ==============================
+void apth_sched_eventmanager(apth_time_t *now, int dopoll);
+
+// ============================== System call ==============================
+#define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
+#define apth_syscall_raw(name) apth_syscall_raw_##name   /* Get reference to LIBC system call */
+#define apth_syscall_init(name) apth_syscall_init_##name /* Get reference to LIBC system call initializer  */
+#define apth_syscall_pfn_t(name) name##_pfn_t            /* Get system call function pointer type */
+#define stringify(x) #x                                  /* Stringify the identifier `x` */
+#define hook_debug(name) apth_debug("Hook " stringify(name) " succeed")
+
+#define APTH_DECLARE_SYSCALL(rettype, name, ...)              \
+    typedef rettype (*apth_syscall_pfn_t(name))(__VA_ARGS__); \
+    rettype apth_syscall(name)(__VA_ARGS__);
+
+#define APTH_DEFINE_SYSCALL(rettype, name, ...)                                                      \
+    static rettype apth_syscall_init(name)(__VA_ARGS__);                                             \
+    static apth_syscall_pfn_t(name) apth_syscall_raw(name) = apth_syscall_init(name);                \
+    static rettype apth_syscall_init(name)(__VA_ARGS__)                                              \
+    {                                                                                                \
+        assert_msg(apth_syscall_raw(name) == apth_syscall_init(name), "sanity");                     \
+        apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
+        apth_debug("found syscall " stringify(name) " = %p", func);                                  \
+        apth_syscall_raw(name) = func;                                                               \
+        assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
+    }                                                                                                \
+    rettype apth_syscall(name)(__VA_ARGS__)
+
+/* These headers for syscall declarations. */
+#include <dlfcn.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <netdb.h>
+#include <resolv.h>
+
+APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
+APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
+APTH_DECLARE_SYSCALL(int, close, int fd)
+APTH_DECLARE_SYSCALL(ssize_t, read, int fildes, void *buf, size_t nbyte)
+APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbyte)
+APTH_DECLARE_SYSCALL(ssize_t, sendto, int socket, const void *message, size_t length,
+                     int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
+APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int socket, void *buffer, size_t length,
+                     int flags, struct sockaddr *address, socklen_t *address_len)
+APTH_DECLARE_SYSCALL(ssize_t, send, int socket, const void *buffer, size_t length, int flags)
+APTH_DECLARE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int flags)
+APTH_DECLARE_SYSCALL(int, poll, struct pollfd fds[], nfds_t nfds, int timeout)
+APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
+                     const void *option_value, socklen_t option_len)
+APTH_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
+APTH_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
+APTH_DECLARE_SYSCALL(int, unsetenv, const char *n)
+APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
+APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

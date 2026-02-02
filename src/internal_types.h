@@ -74,7 +74,7 @@ struct apth_st
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
 };
-#define APTH_NULL NULL
+#define APTH_NULL (apth_t) NULL
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 8192
@@ -172,6 +172,8 @@ typedef struct apth_cxt_st *apth_cxt_t;
 // ============================== Thread Scheduler ==============================
 typedef int sched_id;
 
+#define APTH_NSIG 65
+
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
 // thread but a background role. Besides, since the main thread only runs on
 // one of schedulers, holding a special reference field to the main thread is
@@ -188,8 +190,15 @@ struct apth_perpthr_scheduler
     apth_worker_t worker;        // pthread worker carrying this scheduler
     unsigned int switches;       // context switch times
     unsigned int thrcnt;         // APTH threads now running on this scheduler
-    apth_t running;              // current running APTH
+    apth_time_t running;         // time the scheduler runs
+    apth_t cur;                  // current APTH
     _Atomic bool opening;        // scheduler is opening
+    sigset_t apth_sigpending;    // mask of pending signals
+    sigset_t apth_sigblock;      // mask of signals we block in scheduler
+    sigset_t apth_sigcatch;      // mask of signals we have to catch
+    sigset_t apth_sigraised;     // mask of raised signals
+    apth_time_t apth_loadticknext;
+    float loadval;
 };
 // We don't want to expose this struct to public space
 typedef struct apth_perpthr_scheduler *apth_sched_t;

@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L
+#include <signal.h>
 #include "internal_types.h"
 #include "internal_funcs.h"
 
@@ -36,12 +38,12 @@ static apth_sched_t cur_sched(void)
 
 apth_t cur_apth(void)
 {
-    return cur_sched()->running;
+    return cur_sched()->cur;
 }
 
 void set_cur_apth(apth_t t)
 {
-    cur_sched()->running = t;
+    cur_sched()->cur = t;
 }
 
 void worker_key_t_destr_fn(void *p)
@@ -103,6 +105,21 @@ static void *worker_start_routine(void *arg)
         return apth_error(NULL, ENOMEM);
     apth_scheduler_init(sched, me);
 
+    apth_debug("apth_scheduler: bootstrapping");
+    sigset_t sigs;
+    apth_time_t snapshot;
+    apth_time_t running;
+    struct sigaction sa;
+    sigset_t ss;
+
+    // block all signals in the scheduler thread
+    sigfillset(&sigs);
+    apth_syscall(sigprocmask)(SIG_SETMASK, &sigs, NULL);
+    // pthread_sigmask(SIG_SETMASK, &sigs, NULL);
+
+    // initialize the snapshot time for bootstrapping the loop
+    apth_time_set(&snapshot, APTH_TIME_NOW);
+
     // TODO: initialize other parts of the worker
     // TODO: go into a endless loop.
     while (apth_sched_is_opening(sched))
@@ -120,7 +137,7 @@ static void *worker_start_routine(void *arg)
         }
 
         // Update statistics
-        // TODO: update average scheduler load
+        apth_sched_calc_load(sched, &snapshot);
 
         // Find the next thread in ready queue and set it to be run
         th = pop_apth_from_ready(sched);
@@ -134,6 +151,17 @@ static void *worker_start_routine(void *arg)
         set_cur_apth(th);
 
         // Handle signals
+        if (th->sigpendcnt > 0)
+        {
+            sigpending(&sched->apth_sigpending);
+            for (int sig = 1; sig < APTH_NSIG; sig++)
+            {
+                if (sigismember(&th->sigpending, sig) && !sigismember(&sched->apth_sigpending, sig))
+                {
+                    pthread_kill(pthread_self(), sig);
+                }
+            }
+        }
 
         // Set running start time for new thread and perform a context switch to it
         apth_debug("apth scheduler: switching to thread %p (\"%s\")", th, th->name);
@@ -142,26 +170,83 @@ static void *worker_start_routine(void *arg)
         apth_time_set(&th->lastran, APTH_TIME_NOW);
 
         // Update scheduler times
+        apth_time_set(&running, &th->lastran);
+        apth_time_sub(&running, &snapshot);
+        apth_time_add(&sched->running, &running);
 
         // Switch the thread
         th->dispatches += 1;
         apth_ctx_switch(sched->sched_ctx, th->ctx);
 
         // Update scheduler times
-        // TODO:
+        apth_time_set(&snapshot, APTH_TIME_NOW);
         apth_debug("apth scheduler: cameback from thread %p (\"%s\")", th, th->name);
 
         // Update thread times
+        apth_time_set(&running, &snapshot);
+        apth_time_sub(&running, &th->lastran);
+        apth_time_add(&th->running, &running);
+        apth_debug("apth_scheduler: thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
 
         // Handle signals
+        if (th->sigpendcnt > 0)
+        {
+            sigset_t sigstillpending;
+            sigpending(&sigstillpending);
+            for (int sig = 1; sig < APTH_NSIG; sig++)
+            {
+                if (sigismember(&th->sigpending, sig))
+                {
+                    if (!sigismember(&sigstillpending, sig))
+                    {
+                        // already handled by the apth scheduled just now, remove
+                        sigdelset(&th->sigpending, sig);
+                        th->sigpendcnt--;
+                    }
+                    else if (!sigismember(&sched->apth_sigpending, sig))
+                    {
+                        // A new signal arrives during the apth is scheduled to run
+                        // and it happens to be in the signal pending set of `th`.
+                        // We must re-deliver this signal for `th` the next time
+                        // it is going to be scheduled. Since re-deliver an existing signal
+                        // won't trigger anything, we must first delete the signal at
+                        // pthread level, and later the scheduler will pthread_kill the
+                        // signal according to `th->sigpending` the next time `th` is
+                        // scheduled.
+                        apth_util_sigdelete(sig);
+                    }
+                }
+            }
+        }
 
         // Check for stack overflow
         if (th->stackguard != NULL)
         {
             if (*th->stackguard != APTH_MAGIC)
             {
-                apth_debug("apth scheduler: stack overflow detected for thread %p (\"%s\")", th, th->name);
-                // TODO: handle stack overflow
+                apth_debug("apth scheduler: stack overflow detected for thread %p (\"%s\")",
+                           th, th->name);
+                // If the application doesn't catch SIGSEGVs, then terminate manually
+                // with a SIGSEGV now
+                if (sigaction(SIGSEGV, NULL, &sa) == 0)
+                {
+                    if (sa.sa_handler == SIG_DFL)
+                    {
+                        fprintf(stderr, "APTH STACK OVERFLOW: thread pid_t=0x%lx, name=\"%s\"\n",
+                                (unsigned long)th, th->name);
+                        kill(getpid(), SIGSEGV); // Kill to all threads in the whole process
+                        sigfillset(&ss);
+                        sigdelset(&ss, SIGSEGV);
+                        sigsuspend(&ss);
+                        abort();
+                    }
+                }
+
+                // Else terminate the thread only and send a SIGSEGV which allows the application
+                // to handle the situation
+                th->join_arg = (void *)APTH_MAGIC;
+                th->state = APTH_STATE_TERMINATED;
+                pthread_kill(pthread_self(), SIGSEGV);
             }
         }
 
@@ -173,7 +258,7 @@ static void *worker_start_routine(void *arg)
                 apth_tcb_free(th);
             else
                 push_apth_to_terminated(th, sched);
-            SET_CUR(NULL);
+            set_cur_apth(APTH_NULL);
         }
 
         // If thread wants to wait for an event, move it to waiting queue now
@@ -181,7 +266,7 @@ static void *worker_start_routine(void *arg)
         {
             apth_debug("apth scheduler: moving thread \"%s\", to waiting queue", th->name);
             push_apth_to_waiting(th, sched);
-            SET_CUR(NULL);
+            set_cur_apth(APTH_NULL);
         }
 
         // Insert thread back to ready queue if not inserted into waiting queue
@@ -193,19 +278,16 @@ static void *worker_start_routine(void *arg)
         if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
         {
             apth_debug("apth scheduler: no NEW or READY threads, have to wait for new work");
-            // TODO: No new or ready threads, wait for new work
+            apth_sched_eventmanager(&snapshot, false /* wait */);
         }
         else
         {
             apth_debug("apth scheduler: already NEW or READY threads exists, so just poll for even more work");
-            // TODO:
+            apth_sched_eventmanager(&snapshot, true /* wait */);
         }
     }
 
-    // Clear the worker thread and exit
-
     // Not reached
-#undef TCB
     return NULL;
 }
 

@@ -1,4 +1,5 @@
 #include "internal_types.h"
+#include "internal_funcs.h"
 #include "debug.h"
 #include "atomic_wrapper.h"
 
@@ -19,7 +20,11 @@ void apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->worker = worker;
     sched->switches = 0;
     sched->thrcnt = 0;
-    sched->running = NULL;
+    sched->cur = APTH_NULL;
+
+    // initialize load support
+    sched->loadval = 1.0;
+    apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
 }
 
 void inc_thrcnt(apth_sched_t sched)
@@ -71,4 +76,23 @@ DEFINE_SCHED_LIST_OP(terminated)
 bool apth_sched_is_opening(apth_sched_t sched)
 {
     return atomic_load_relaxed(&sched->opening);
+}
+
+static apth_time_t apth_loadtickgap = APTH_TIME(1, 0);
+
+void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
+{
+    if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
+    {
+        apth_time_t ttmp;
+        int numready = list_size(&sched->ready_list);
+        apth_time_set(&ttmp, now);
+        do
+        {
+            sched->loadval = (numready * 0.25) + (sched->loadval * 0.75);
+            apth_time_sub(&ttmp, &apth_loadtickgap);
+        } while (apth_time_cmp(&ttmp, &sched->apth_loadticknext) >= 0);
+        apth_time_set(&sched->apth_loadticknext, now);
+        apth_time_add(&sched->apth_loadticknext, &apth_loadtickgap);
+    }
 }
