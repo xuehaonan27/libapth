@@ -5,6 +5,7 @@
 #include "utils/apth_errno.h"
 #include <pthread.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 void apth_syscall_system_init(void)
 {
@@ -167,14 +168,16 @@ APTH_DEFINE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
     return pid;
 }
 
-APTH_DEFINE_SYSCALL(pid_t , fork, void) {
+APTH_DEFINE_SYSCALL(pid_t, fork, void)
+{
     pid_t pid;
-    
-    TODO("fork")
+
+    TODO("fork");
 }
 
 // APTH variant of system(3)
-APTH_DEFINE_SYSCALL(int, system, const char* cmd) {
+APTH_DEFINE_SYSCALL(int, system, const char *cmd)
+{
     struct sigaction sa_ign, sa_int, sa_quit;
     sigset_t ss_block, ss_old;
     struct stat sb;
@@ -183,8 +186,10 @@ APTH_DEFINE_SYSCALL(int, system, const char* cmd) {
 
     // POSIX calling convention: determine whether the Bourne Shell ("sh") is
     // available on this platform
-    if (cmd == NULL) {
-        if (stat(APTH_PATH_BINSH, &sb) == -1) return 0;
+    if (cmd == NULL)
+    {
+        if (stat(APTH_PATH_BINSH, &sb) == -1)
+            return 0;
         return 1;
     }
 
@@ -196,12 +201,187 @@ APTH_DEFINE_SYSCALL(int, system, const char* cmd) {
     sigaction(SIGQUIT, &sa_ign, &sa_quit);
 
     // Block SIGCHLD signal
-     sigemptyset(&ss_block);
+    sigemptyset(&ss_block);
     sigaddset(&ss_block, SIGCHLD);
     apth_syscall_raw(pthread_sigmask)(SIG_BLOCK, &ss_block, &ss_old);
 
     // Fork the current process
+    pstat = -1;
+    // Here we use hooked version of fork syscall to improve speed
+    switch (pid = apth_syscall(fork)())
+    {
+    case -1: // Error
+        break;
+    case 0: // Child
+        // Restore original signal dispositions and execute the command
+        sigaction(SIGINT, &sa_int, NULL);
+        sigaction(SIGQUIT, &sa_quit, NULL);
+        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &ss_old, NULL);
 
+        // Stop the APTH scheduling
+        apth_scheduler_pool_kill(); // TODO: implement this
+
+        // Execute the command through Bourne Shell
+        execl(APTH_PATH_BINSH, "sh", "-c", cmd, (char *)NULL);
+
+        // POSIX compliant return in case execution failed
+        exit(127);
+        break;
+    default: // Parent
+        // Wait until child process terminates
+        // Here we use hooked version of waitpid to improve performance
+        pid = apth_syscall(waitpid)(pid, &pstat, 0);
+        break;
+    }
+
+    // Restore original signal dispositions
+    sigaction(SIGINT, &sa_int, NULL);
+    sigaction(SIGQUIT, &sa_quit, NULL);
+    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &ss_old, NULL);
+
+    // Return error or child process result code
+    return (pid == -1 ? -1 : pstat);
+}
+
+APTH_DEFINE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
+                    fd_set *efds, struct timeval *timeout)
+{
+    apth_event_t ev;
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_select(hooked): called from thread \"%s\"", cur->name);
+
+    // POSIX.1-2001/SUSv3 compliance
+    if (nfd < 0 || nfd > FD_SETSIZE)
+        return apth_error(-1, EINVAL);
+    if (timeout != NULL)
+    {
+        // Check timeout sanity
+        if (timeout->tv_sec < 0 || timeout->tv_usec < 0 || timeout->tv_usec >= 1000000)
+            return apth_error(-1, EINVAL);
+        // TODO: why set a month here
+        if (timeout->tv_sec > 31 * 24 * 60 * 60) // 1 month
+            timeout->tv_sec = 31 * 24 * 60 * 60;
+    }
+
+    // First deal with the special situation of a plain microsecond delay
+    if (nfd == 0 && rfds == NULL && wfds == NULL && efds == NULL && timeout != NULL)
+    {
+        if (timeout->tv_sec == 0 && timeout->tv_usec < APTH_SYSCALL_SELECT_DIRECT_TO_SCHED_THRESHOLD_US)
+        {
+            // Very small delays are acceptable to be performed directly
+            while (apth_syscall_raw(select)(0, NULL, NULL, NULL, timeout) < 0 && errno == EINTR)
+                ;
+        }
+        else
+        {
+            // Larger delays have to go through the scheduler
+            ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(timeout->tv_sec, timeout->tv_usec));
+            apth_wait_event(ev);
+        }
+
+        // POSIX.1-2001/SUSv3 compliance
+        if (rfds != NULL)
+            FD_ZERO(rfds);
+        if (wfds != NULL)
+            FD_ZERO(wfds);
+        if (efds != NULL)
+            FD_ZERO(efds);
+        return 0;
+    }
+
+    // Now directly poll filedescriptor sets to avoid unnecessary (and resource consuming
+    // because of context switches, etc) event handling through the scheduler. We have to
+    // be careful here, because not all platforms guarantee us that the sets are unmodified
+    // if an error or timeout occurred. So we must prepare another set of them here.
+    struct timeval delay;
+    fd_set rspare, wspare, espare;
+    fd_set *rtmp, *wtmp, *etmp;
+    int selected;
+    int rc;
+
+    delay.tv_sec = 0;
+    delay.tv_usec = 0;
+    rtmp = NULL;
+    wtmp = NULL;
+    etmp = NULL;
+    if (rfds != NULL)
+    {
+        memcpy(&rspare, rfds, sizeof(fd_set));
+        rtmp = &rspare;
+    }
+    if (wfds != NULL)
+    {
+        memcpy(&wspare, wfds, sizeof(fd_set));
+        wtmp = &wspare;
+    }
+    if (efds != NULL)
+    {
+        memcpy(&espare, efds, sizeof(fd_set));
+        etmp = &espare;
+    }
+
+    while ((rc = apth_syscall_raw(select)(nfd, rtmp, wtmp, etmp, &delay)) < 0 && errno == EINTR)
+        ;
+    if (rc < 0)
+        // Pass-through immediate error
+        return apth_error(-1, errno);
+    else if (rc > 0 || (rc == 0 && timeout != NULL && apth_time_cmp(timeout, APTH_TIME_ZERO) == 0))
+    {
+        // Pass-through immediate success
+        // Copy back results
+        if (rfds != NULL)
+            memcpy(rfds, &rspare, sizeof(fd_set));
+        if (wfds != NULL)
+            memcpy(wfds, &wspare, sizeof(fd_set));
+        if (efds != NULL)
+            memcpy(efds, &espare, sizeof(fd_set));
+        return rc;
+    }
+
+    // Suspend currrent apth until one filedescriptor is ready or the timeout occurred.
+    apth_event_t ev_select;
+    apth_event_t ev_timeout;
+    struct list event_list;
+    list_init(&event_list);
+    rc = -1;
+    ev = ev_select = apth_event_select(APTH_EVENT_MODE_STATIC, &rc, nfd, rfds, wfds, efds);
+    apth_event_list_add(&event_list, ev);
+    ev_timeout = NULL;
+    if (timeout != NULL)
+    {
+        ev_timeout = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(timeout->tv_sec, timeout->tv_usec));
+        apth_event_list_add(&event_list, ev_timeout);
+    }
+    apth_wait_event_list(&event_list);
+    if (timeout != NULL)
+        apth_event_isolate(ev_timeout);
+
+    // Select return code semantics
+    if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
+        return apth_error(-1, EBADF);
+    selected = false;
+    if (ev_select->ev_status == APTH_EV_STATUS_OCCURRED)
+        selected = true;
+    if (timeout != NULL && ev_timeout->ev_status == APTH_EV_STATUS_OCCURRED)
+    {
+        selected = true;
+        // POSIX.1-2001/SUSv3 compliance
+        if (rfds != NULL)
+            FD_ZERO(rfds);
+        if (wfds != NULL)
+            FD_ZERO(wfds);
+        if (efds != NULL)
+            FD_ZERO(efds);
+        rc = 0;
+    }
+
+    return rc;
+}
+
+APTH_DEFINE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
+                    fd_set *efds, const struct timespec *ts, const sigset_t *mask)
+{
+    TODO("pselect");
 }
 
 APTH_DEFINE_SYSCALL(int, socket, int domain, int type, int protocol)
@@ -260,7 +440,7 @@ APTH_DEFINE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int 
     TODO("unimplemented recv");
 }
 
-APTH_DEFINE_SYSCALL(int, poll, struct pollfd fds[], nfds_t nfds, int timeout)
+APTH_DEFINE_SYSCALL(int, poll, struct pollfd* fds, nfds_t nfds, int timeout)
 {
     apth_hook_debug(poll);
     TODO("unimplemented poll");

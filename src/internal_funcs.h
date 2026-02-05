@@ -49,6 +49,7 @@ void apth_tch_free(apth_t t);
 
 uint64_t cpu_tick();
 apth_time_t apth_time(long sec, long usec);
+apth_time_t apth_timeout(long sec, long usec);
 void apth_time_set(apth_time_t *t1, apth_time_t *t2);
 void apth_time_add(apth_time_t *t1, apth_time_t *t2);
 void apth_time_sub(apth_time_t *t1, apth_time_t *t2);
@@ -72,8 +73,19 @@ int apth_util_sigdelete(int sig);
 
 // ============================== Event ==============================
 void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
+void apth_event_list_add(struct list *el, apth_event_t ev);
+void apth_event_isolate(apth_event_t ev);
 int apth_wait_event_list(struct list *el);
 bool apth_wait_event(apth_event_t ev);
+apth_event_t apth_event_fd(unsigned long spec, int fd);
+apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
+                               fd_set *rfds, fd_set *wfds, fd_set *efds);
+apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int sig);
+apth_event_t apth_event_time(unsigned long spec, apth_time_t tv);
+apth_event_t apth_event_tid(unsigned long spec, apth_t tid);
+apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv);
+
+bool apth_event_free(apth_event_t ev);
 
 // ============================== System call ==============================
 #define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
@@ -115,6 +127,11 @@ APTH_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
 APTH_DECLARE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
 APTH_DECLARE_SYSCALL(pid_t, fork, void)
 APTH_DECLARE_SYSCALL(int, system, const char *cmd)
+#define APTH_SYSCALL_SELECT_DIRECT_TO_SCHED_THRESHOLD_US 10000 // 10ms
+APTH_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
+                     fd_set *efds, struct timeval *timeout)
+APTH_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
+                    fd_set *efds, const struct timespec *ts, const sigset_t *mask)
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
@@ -127,7 +144,7 @@ APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int socket, void *buffer, size_t length,
                      int flags, struct sockaddr *address, socklen_t *address_len)
 APTH_DECLARE_SYSCALL(ssize_t, send, int socket, const void *buffer, size_t length, int flags)
 APTH_DECLARE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int flags)
-APTH_DECLARE_SYSCALL(int, poll, struct pollfd fds[], nfds_t nfds, int timeout)
+APTH_DECLARE_SYSCALL(int, poll, struct pollfd* fds, nfds_t nfds, int timeout)
 APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                      const void *option_value, socklen_t option_len)
 APTH_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)

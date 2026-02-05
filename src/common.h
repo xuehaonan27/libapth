@@ -10,5 +10,6 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <string.h>
 
 #endif /* __LIBAPTH_COMMON_H */

@@ -555,7 +555,8 @@ apth_event_t apth_event_fd(unsigned long spec, int fd)
     return ev;
 }
 
-apth_event_t apth_event_select(unsigned long spec, int *n, int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds)
+apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
+                               fd_set *rfds, fd_set *wfds, fd_set *efds)
 {
     // Fiedescriptor set select event
     apth_event_t ev = prepare_ev(spec);
@@ -641,6 +642,14 @@ bool apth_event_free(apth_event_t ev)
     return true;
 }
 
+void apth_event_list_add(struct list *el, apth_event_t ev) {
+    list_push_back(el, &ev->elem);
+}
+
+void apth_event_isolate(apth_event_t ev) {
+    list_remove(&ev->elem);
+}
+
 int apth_wait_event_list(struct list *el)
 {
     if (list_empty(el))
@@ -700,7 +709,7 @@ bool apth_wait_event(apth_event_t ev)
     ev->ev_status = APTH_EV_STATUS_PENDING;
 
     // Link event into current thread
-    list_push_back(&self->event_list, &ev->elem);
+    apth_event_list_add(&self->event_list, ev);
 
     // Move thread into waiting state and transfer control to scheduler
     self->state = APTH_STATE_WAITING;
