@@ -7,5 +7,6 @@
 #include <stddef.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #endif /* __LIBAPTH_COMMON_H */

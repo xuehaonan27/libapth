@@ -114,6 +114,12 @@ struct list
        ELEM_IDENT != list_end(&LIST);         \
        ELEM_IDENT = list_next(ELEM_IDENT))
 
+#define FOR_ELEMENT_IN_LIST_REF(LIST_REF, ELEM_IDENT) \
+  struct list_elem *ELEM_IDENT;                       \
+  for (ELEM_IDENT = list_begin(LIST_REF);             \
+       ELEM_IDENT != list_end(LIST_REF);              \
+       ELEM_IDENT = list_next(ELEM_IDENT))
+
 /** List initialization.
 
    A list may be initialized by calling list_init():
