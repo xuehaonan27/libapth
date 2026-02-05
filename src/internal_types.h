@@ -14,6 +14,8 @@
 
 #define _BIT(n) (1 << (n))
 
+struct apth_key_data;
+
 // ============================== APTH TCB ==============================
 
 // Thread control block.
@@ -84,11 +86,7 @@ struct apth_st
 
     // We allocate one block of references here. This should be enough to avoid
     // allocating any memory dynamically for most applications
-    struct apth_key_data
-    {
-        uintptr_t seq; // Sequence number.
-        void *data;    // Data pointer
-    } specific_1stblock[APTH_KEY_2NDLEVEL_SIZE];
+    struct apth_key_data specific_1stblock[APTH_KEY_2NDLEVEL_SIZE];
     struct apth_key_data *specific[APTH_KEY_1STLEVEL_SIZE];
 
     // Flag which is set when specific data is set.
@@ -190,14 +188,20 @@ struct apth_event_func_st
 };
 
 typedef int apth_goal_t;
-#define APTH_GOAL_UNTIL_OCCURRED _BIT(0)
-#define APTH_GOAL_UNTIL_FD_READABLE _BIT(1)
-#define APTH_GOAL_UNTIL_FD_WRITEABLE _BIT(2)
-#define APTH_GOAL_UNTIL_FD_EXCEPTION _BIT(3)
-#define APTH_GOAL_UNTIL_TID_NEW _BIT(4)
-#define APTH_GOAL_UNTIL_TID_READY _BIT(5)
-#define APTH_GOAL_UNTIL_TID_WAITING _BIT(6)
-#define APTH_GOAL_UNTIL_TID_DEAD _BIT(7)
+/* event occurange restrictions */
+#define APTH_GOAL_UNTIL_OCCURRED _BIT(11)
+#define APTH_GOAL_UNTIL_FD_READABLE _BIT(12)
+#define APTH_GOAL_UNTIL_FD_WRITEABLE _BIT(13)
+#define APTH_GOAL_UNTIL_FD_EXCEPTION _BIT(14)
+#define APTH_GOAL_UNTIL_TID_NEW _BIT(15)
+#define APTH_GOAL_UNTIL_TID_READY _BIT(16)
+#define APTH_GOAL_UNTIL_TID_WAITING _BIT(17)
+#define APTH_GOAL_UNTIL_TID_DEAD _BIT(18)
+
+/* event structure handling modes */
+#define APTH_EVENT_MODE_REUSE _BIT(20)
+#define APTH_EVENT_MODE_CHAIN _BIT(21)
+#define APTH_EVENT_MODE_STATIC _BIT(22)
 
 // APTH Events
 struct apth_event_st
@@ -337,6 +341,12 @@ extern apth_time_t apth_time_zero;
 #define APTH_TIME_ZERO &apth_time_zero
 
 // ============================== Thread Data ==============================
+
+struct apth_key_data
+{
+    uintptr_t seq; // Sequence number.
+    void *data;    // Data pointer
+};
 
 struct apth_keytab_st
 {

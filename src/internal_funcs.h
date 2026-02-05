@@ -72,6 +72,8 @@ int apth_util_sigdelete(int sig);
 
 // ============================== Event ==============================
 void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
+int apth_wait_event_list(struct list *el);
+bool apth_wait_event(apth_event_t ev);
 
 // ============================== System call ==============================
 #define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
@@ -128,6 +130,7 @@ APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
 APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 // ============================== Utility ==============================
+bool apth_util_fd_valid(int fd);
 void apth_util_fds_merge(int nfd,
                          fd_set *ifds1, fd_set *ofds1,
                          fd_set *ifds2, fd_set *ofds2,

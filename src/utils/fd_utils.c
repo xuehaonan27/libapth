@@ -1,5 +1,15 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
+#include <fcntl.h>
+
+bool apth_util_fd_valid(int fd)
+{
+    if (fd < 0 || fd >= FD_SETSIZE)
+        return false;
+    if (fcntl(fd, F_GETFL) == -1 && errno == EBADF)
+        return false;
+    return true;
+}
 
 void apth_util_fds_merge(int nfd,
                          fd_set *ifds1, fd_set *ofds1,

@@ -28,6 +28,9 @@ typedef struct apth_attr_st apth_attr_t;
 
 typedef unsigned int apth_key_t;
 
+// ==================== Functions ====================
+int apth_yield(void);
+
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>
 typedef struct timeval apth_time_t;

@@ -209,6 +209,23 @@ void list_push_back(struct list *list, struct list_elem *elem)
     list_insert(list_end(list), elem);
 }
 
+void list_append(struct list *first, struct list *second)
+{
+    assert(first != NULL);
+    assert(second != NULL);
+
+    if (list_empty(second))
+        return;
+    struct list_elem *first_end = list_end(first);
+    struct list_elem *sec_front = list_front(second);
+    struct list_elem *sec_back = list_back(second);
+
+    sec_front->prev = first_end->prev;
+    sec_back->next = first_end;
+    first_end->prev->next = sec_front;
+    first_end->prev = sec_back;
+}
+
 /** Removes ELEM from its list and returns the element that
    followed it.  Undefined behavior if ELEM is not in a list.
 

@@ -3,6 +3,7 @@
 #include "internal_funcs.h"
 #include "internal_types.h"
 #include "utils/debug.h"
+#include "utils/apth_errno.h"
 
 static void apth_sched_eventmanager_sighandler(int sig, siginfo_t *_dummy_info, void *arg)
 {
@@ -523,4 +524,203 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
     }
 
     return;
+}
+
+static apth_event_t prepare_ev(unsigned long spec)
+{
+    apth_event_t ev;
+    ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
+
+    if (ev == NULL)
+        return apth_error(APTH_EVENT_NULL, errno);
+
+    // Initialize common ingredients
+    ev->ev_status = APTH_EV_STATUS_PENDING;
+
+    return ev;
+}
+
+apth_event_t apth_event_fd(unsigned long spec, int fd)
+{
+    // Filedescriptor event
+    if (!apth_util_fd_valid(fd))
+        return apth_error(APTH_EVENT_NULL, EBADF);
+
+    apth_event_t ev = prepare_ev(spec);
+    ev->ev_type = APTH_EVENT_TYPE_FD;
+    ev->ev_goal = (int)(spec & (APTH_GOAL_UNTIL_FD_READABLE |
+                                APTH_GOAL_UNTIL_FD_WRITEABLE |
+                                APTH_GOAL_UNTIL_FD_EXCEPTION));
+    ev->ev_args.FD.fd = fd;
+    return ev;
+}
+
+apth_event_t apth_event_select(unsigned long spec, int *n, int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds)
+{
+    // Fiedescriptor set select event
+    apth_event_t ev = prepare_ev(spec);
+    ev->ev_type = APTH_EVENT_TYPE_SELECT;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
+    ev->ev_args.SELECT.n = n;
+    ev->ev_args.SELECT.nfd = nfd;
+    ev->ev_args.SELECT.rfds = rfds;
+    ev->ev_args.SELECT.wfds = wfds;
+    ev->ev_args.SELECT.efds = efds;
+    return ev;
+}
+
+apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int sig)
+{
+    // Signal set event
+    apth_event_t ev = prepare_ev(spec);
+    ev->ev_type = APTH_EVENT_TYPE_SIGS;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
+    ev->ev_args.SIGS.sigs = sigs;
+    ev->ev_args.SIGS.sig = sig;
+    return ev;
+}
+
+apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
+{
+    // Interrupt request event
+    apth_event_t ev = prepare_ev(spec);
+    ev->ev_type = APTH_EVENT_TYPE_TIME;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
+    ev->ev_args.TIME.tv = tv;
+    return ev;
+}
+
+apth_event_t apth_event_mutex(unsigned long spec /* TODO */)
+{
+    TODO("apth_event_mutex");
+}
+
+apth_event_t apth_event_cond(unsigned long spec /* TODO */)
+{
+    TODO("apth_event_cond");
+}
+
+apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
+{
+    // Thread id event
+    apth_event_t ev = prepare_ev(spec);
+    int goal;
+    ev->ev_type = APTH_EVENT_TYPE_TID;
+    if (spec & APTH_GOAL_UNTIL_TID_NEW)
+        goal = APTH_STATE_NEW;
+    else if (spec & APTH_GOAL_UNTIL_TID_READY)
+        goal = APTH_STATE_READY;
+    else if (spec & APTH_GOAL_UNTIL_TID_DEAD)
+        goal = APTH_STATE_TERMINATED;
+    else
+        goal = APTH_STATE_READY;
+
+    ev->ev_goal = goal;
+    ev->ev_args.TID.tid = tid;
+
+    return ev;
+}
+
+apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv)
+{
+    apth_event_t ev = prepare_ev(spec);
+    ev->ev_type = APTH_EVENT_TYPE_FUNC;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
+    ev->ev_args.FUNC.func = func;
+    ev->ev_args.FUNC.arg = arg;
+    ev->ev_args.FUNC.tv = tv;
+    return ev;
+}
+
+bool apth_event_free(apth_event_t ev)
+{
+    if (ev == NULL)
+        return apth_error(false, EINVAL);
+
+    free(ev);
+    return true;
+}
+
+int apth_wait_event_list(struct list *el)
+{
+    if (list_empty(el))
+        return apth_error(-1, EINVAL);
+
+    apth_t self = cur_apth();
+
+    apth_debug("apth_wait_events: enter from thread \"%s\"", self->name);
+
+    // Mark all events in the list as still pending
+    FOR_ELEMENT_IN_LIST_REF(el, e)
+    {
+        apth_event_t ev = apth_event_t_list_entry(e);
+        ev->ev_status = APTH_EV_STATUS_PENDING;
+        apth_debug("apth_wait_events: waiting on event 0x%lx", (unsigned long)ev);
+    }
+
+    // Link event list to current thread
+    // list_append(&self->event_list, el);
+    self->event_list = *el;
+
+    // Move apth into waiting state and transfer control to scheduler
+    self->state = APTH_STATE_WAITING;
+    apth_yield();
+
+    // Check for cancellation
+    apth_cancel_point();
+
+    // Unlink events from current thread
+    list_init(&self->event_list);
+
+    // Count number of actually occurred (or failed) events
+    int nonpending = 0;
+    FOR_ELEMENT_IN_LIST_REF(el, e)
+    {
+        apth_event_t ev = apth_event_t_list_entry(e);
+        if (ev->ev_status != APTH_EV_STATUS_PENDING)
+        {
+            apth_debug("apth_wait_event_list: non-pending event 0x%lx", (unsigned long)ev);
+            nonpending++;
+        }
+    }
+
+    // Leave to current thread with number of occurred events
+    apth_debug("apth_wait_event_list: leave to thread \"%s\"", self->name);
+    return nonpending;
+}
+
+bool apth_wait_event(apth_event_t ev)
+{
+    if (ev == APTH_EVENT_NULL)
+        return apth_error(false, EINVAL);
+    apth_t self = cur_apth();
+    apth_debug("apth_wait_events: enter from thread \"%s\"", self->name);
+
+    // Mark the event as still pending
+    ev->ev_status = APTH_EV_STATUS_PENDING;
+
+    // Link event into current thread
+    list_push_back(&self->event_list, &ev->elem);
+
+    // Move thread into waiting state and transfer control to scheduler
+    self->state = APTH_STATE_WAITING;
+    apth_yield();
+
+    // Check for cancellation
+    apth_cancel_point();
+
+    // Unlink event from current thread
+    list_remove(&ev->elem);
+    assert_msg(list_empty(&self->event_list), "insane");
+
+    // Judge whether the event has occurred
+    bool result = false;
+    if (ev->ev_status != APTH_EV_STATUS_PENDING)
+    {
+        result = true;
+    }
+
+    // Leave to current thread with number of occurred events
+    apth_debug("apth_wait_event_list: leave to thread \"%s\"", self->name);
+    return result;
 }
