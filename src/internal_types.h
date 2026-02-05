@@ -69,6 +69,31 @@ struct apth_st
     /* per-thread exception handling */
     // TODO: exception handling
 
+    /* Thread specific data */
+#define APTH_KEYS_MAX 1024
+
+// We keep thread specific data in a special data structure, a two-level
+// array. The top-level array contains pointers to dynamically allocated
+// arrays of a certain number of data pointers. So we can implement a
+// sparse array. Each dynmaic second-level array has APTH_KEY_2NDLEVEL_SIZE
+// entries. This value should not be too large.
+#define APTH_KEY_2NDLEVEL_SIZE 32
+
+#define APTH_KEY_1STLEVEL_SIZE \
+    ((APTH_KEYS_MAX + APTH_KEY_2NDLEVEL_SIZE - 1) / APTH_KEY_2NDLEVEL_SIZE)
+
+    // We allocate one block of references here. This should be enough to avoid
+    // allocating any memory dynamically for most applications
+    struct apth_key_data
+    {
+        uintptr_t seq; // Sequence number.
+        void *data;    // Data pointer
+    } specific_1stblock[APTH_KEY_2NDLEVEL_SIZE];
+    struct apth_key_data *specific[APTH_KEY_1STLEVEL_SIZE];
+
+    // Flag which is set when specific data is set.
+    bool specific_used;
+
     /* scheduler list handling */
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
@@ -317,7 +342,7 @@ struct apth_keytab_st
 {
     // Sequence numbers. Even numbers indicated vacant entries,
     // Note that zero is even.
-    uintptr_t seq;
+    _Atomic uintptr_t seq;
     // Destructor for the data.
     void (*destructor)(void *);
 };
@@ -325,7 +350,12 @@ struct apth_keytab_st
 // Check whether an entry is unused.
 #define APTH_KEY_UNUSED(p) (((p) & 1) == 0)
 
-// Check whether a key is usable.
+// Check whether a key is usable. We cannot reuse an allocated key if the
+// sequence counter would overflow after the next destory call. This would
+// mean that we potentially free memory for a key with the same sequence. This
+// is very unlikely to happen, A program would have to create and destroy
+// a key 2 ^ 31 (32-bits) or 2 ^ 63 (64-bits) times. If it should happen we
+// simply don't use this specific key anymore.
 #define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
 
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */

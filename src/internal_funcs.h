@@ -79,7 +79,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
 #define apth_syscall_init(name) apth_syscall_init_##name /* Get reference to LIBC system call initializer  */
 #define apth_syscall_pfn_t(name) name##_pfn_t            /* Get system call function pointer type */
 #define stringify(x) #x                                  /* Stringify the identifier `x` */
-#define hook_debug(name) apth_debug("Hook " stringify(name) " succeed")
+#define apth_hook_debug(name) apth_debug("Hook " stringify(name) " succeed")
 
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)              \
     typedef rettype (*apth_syscall_pfn_t(name))(__VA_ARGS__); \
@@ -104,6 +104,8 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
 #include <poll.h>
 #include <netdb.h>
 #include <resolv.h>
+
+APTH_DECLARE_SYSCALL(int, usleep, unsigned int usec)
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
