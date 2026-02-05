@@ -107,7 +107,9 @@ bool apth_wait_event(apth_event_t ev);
 #include <netdb.h>
 #include <resolv.h>
 
+APTH_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
 APTH_DECLARE_SYSCALL(int, usleep, unsigned int usec)
+APTH_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)

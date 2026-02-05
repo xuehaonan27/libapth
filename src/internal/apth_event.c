@@ -530,6 +530,7 @@ static apth_event_t prepare_ev(unsigned long spec)
 {
     apth_event_t ev;
     ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
+    // TODO: profile average thread holding events and prepare a preallocated event structure pool
 
     if (ev == NULL)
         return apth_error(APTH_EVENT_NULL, errno);
