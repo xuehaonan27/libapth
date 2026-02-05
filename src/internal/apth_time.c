@@ -1,5 +1,7 @@
 #include "internal_types.h"
 
+apth_time_t apth_time_zero = {0L, 0L};
+
 inline uint64_t cpu_tick()
 {
     uint32_t lo, hi;

@@ -38,6 +38,9 @@ apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         *(uint32_t *)(t->stackguard) = APTH_MAGIC;
     }
 
+    list_init(&t->event_list);
+    // TODO: initialize fields
+
     return t;
 }
 
@@ -51,6 +54,9 @@ void apth_tch_free(apth_t t)
         free(t->data_value);
     if (t->cleanups != NULL)
         apth_cleanup_popall(t, false);
+
+    // Clear other fields
+
     free(t);
     return;
 }

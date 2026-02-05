@@ -11,8 +11,8 @@ bool apth_cleanup_push(void (*func)(void *), void *arg)
         return apth_error(false, ENOMEM);
     cleanup->func = func;
     cleanup->arg = arg;
-    cleanup->next = apth_current()->cleanups;
-    apth_current()->cleanups = cleanup;
+    cleanup->next = cur_apth()->cleanups;
+    cur_apth()->cleanups = cleanup;
     return true;
 }
 
@@ -21,9 +21,9 @@ bool apth_cleanup_pop(bool execute)
     apth_cleanup_t cleanup;
     int retval = false;
 
-    if ((cleanup = apth_current()->cleanups) != NULL)
+    if ((cleanup = cur_apth()->cleanups) != NULL)
     {
-        apth_current()->cleanups = cleanup->next;
+        cur_apth()->cleanups = cleanup->next;
         if (execute)
             cleanup->func(cleanup->arg);
         free(cleanup);

@@ -61,8 +61,7 @@ void apth_ctx_restore(apth_cxt_t ctx);
 void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
 bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi);
 
-apth_t apth_tcb_alloc(size_t, void *);
-void apth_tch_free(apth_t);
+// ============================== Cleanup ==============================
 
 bool apth_cleanup_push(void (*)(void *), void *);
 bool apth_cleanup_pop(bool);
@@ -72,7 +71,7 @@ void apth_cleanup_popall(apth_t, bool);
 int apth_util_sigdelete(int sig);
 
 // ============================== Event ==============================
-void apth_sched_eventmanager(apth_time_t *now, int dopoll);
+void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
 
 // ============================== System call ==============================
 #define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
@@ -125,5 +124,19 @@ APTH_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrit
 APTH_DECLARE_SYSCALL(int, unsetenv, const char *n)
 APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
 APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
+
+// ============================== Utility ==============================
+void apth_util_fds_merge(int nfd,
+                         fd_set *ifds1, fd_set *ofds1,
+                         fd_set *ifds2, fd_set *ofds2,
+                         fd_set *ifds3, fd_set *ofds3);
+bool apth_util_fds_test(int nfd,
+                        fd_set *ifds1, fd_set *ofds1,
+                        fd_set *ifds2, fd_set *ofds2,
+                        fd_set *ifds3, fd_set *ofds3);
+int apth_util_fds_select(int nfd,
+                         fd_set *ifds1, fd_set *ofds1,
+                         fd_set *ifds2, fd_set *ofds2,
+                         fd_set *ifds3, fd_set *ofds3);
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

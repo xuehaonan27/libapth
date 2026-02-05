@@ -35,7 +35,7 @@ struct apth_st
     apth_time_t running; /* time range the thread was already running   */
 
     /* event handling */
-    apth_event_t events; /* events the tread is waiting for             */
+    struct list event_list; /* events the tread is waiting for          */
 
     /* per-thread signal handling */
     sigset_t sigpending; /* set    of pending signals                   */
@@ -59,7 +59,7 @@ struct apth_st
     int data_count;          /* number of stored values                 */
 
     /* cancellation support */
-    int cancelreq;            /* cancellation request is pending        */
+    bool cancelreq;           /* cancellation request is pending        */
     unsigned int cancelstate; /* cancellation state of thread           */
     apth_cleanup_t *cleanups; /* stack of thread cleanup handlers       */
 
@@ -98,17 +98,37 @@ const char *pth_state_names[] = {
 
 enum apth_event_type
 {
-    FD,
-    TIME,
-    MUTEX,
-    COND,
-    TID,
+    APTH_EVENT_TYPE_FD,
+    APTH_EVENT_TYPE_SELECT,
+    APTH_EVENT_TYPE_SIGS,
+    APTH_EVENT_TYPE_TIME,
+    APTH_EVENT_TYPE_MUTEX,
+    APTH_EVENT_TYPE_COND,
+    APTH_EVENT_TYPE_TID,
+    APTH_EVENT_TYPE_FUNC
 };
 
 // Waiting on FD
 struct apth_event_fd_st
 {
     int fd;
+};
+
+// Waiting on Select FD I/O
+struct apth_event_select_st
+{
+    int *n;
+    int nfd;
+    fd_set *rfds;
+    fd_set *wfds;
+    fd_set *efds;
+};
+
+// Waiting on signals
+struct apth_event_sigs_st
+{
+    sigset_t *sigs;
+    int *sig;
 };
 
 // Waiting on Time
@@ -118,8 +138,16 @@ struct apth_event_time_st
 };
 
 // Waiting on Mutex
+struct apth_event_mutex_st
+{
+    // TODO: mutex
+};
 
 // Waiting on Conditional variables
+struct apth_event_cond_st
+{
+    // TODO: cond
+};
 
 // Waiting on another thread
 struct apth_event_tid_st
@@ -127,43 +155,55 @@ struct apth_event_tid_st
     apth_t tid;
 };
 
-typedef int apth_goal_t;
-#define APTH_UTIL_OCCURRED _BIT(0)
-#define APTH_UTIL_FD_READABLE _BIT(1)
-#define APTH_UTIL_FD_WRITEABLE _BIT(2)
-#define APTH_UTIL_FD_EXCEPTION _BIT(3)
-#define APTH_UTIL_TID_NEW _BIT(4)
-#define APTH_UTIL_TID_READY _BIT(5)
-#define APTH_UTIL_TID_WAITING _BIT(6)
-#define APTH_UTIL_TID_DEAD _BIT(7)
-
-struct apth_event_inner_st
+typedef int (*apth_event_custom_func_t)(void *);
+// Waiting on custom functions
+struct apth_event_func_st
 {
+    apth_event_custom_func_t func;
+    void *arg;
+    apth_time_t tv;
+};
+
+typedef int apth_goal_t;
+#define APTH_GOAL_UNTIL_OCCURRED _BIT(0)
+#define APTH_GOAL_UNTIL_FD_READABLE _BIT(1)
+#define APTH_GOAL_UNTIL_FD_WRITEABLE _BIT(2)
+#define APTH_GOAL_UNTIL_FD_EXCEPTION _BIT(3)
+#define APTH_GOAL_UNTIL_TID_NEW _BIT(4)
+#define APTH_GOAL_UNTIL_TID_READY _BIT(5)
+#define APTH_GOAL_UNTIL_TID_WAITING _BIT(6)
+#define APTH_GOAL_UNTIL_TID_DEAD _BIT(7)
+
+// APTH Events
+struct apth_event_st
+{
+    struct list_elem elem;
+    apth_ev_status_t ev_status;
     enum apth_event_type ev_type;
     apth_goal_t ev_goal;
     union
     {
         struct apth_event_fd_st FD;
+        struct apth_event_select_st SELECT;
+        struct apth_event_sigs_st SIGS;
         struct apth_event_time_st TIME;
+        struct apth_event_mutex_st MUTEX;
+        struct apth_event_cond_st COND;
         struct apth_event_tid_st TID;
+        struct apth_event_func_st FUNC;
     } ev_args;
-};
-
-// APTH Events
-struct apth_event_st
-{
-    struct apth_event_st *ev_next;
-    struct apth_event_st *ev_prev;
-    apth_ev_status_t ev_status;
-    struct apth_event_inner_st inner;
+#define apth_event_t_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_event_st, elem)
 };
 typedef struct apth_event_st *apth_event_t;
+#define APTH_EVENT_NULL NULL
 
 // ============================== Thread Context ==============================
 // APTH Thread context
 struct apth_cxt_st
 {
     ucontext_t uc;
+    sigset_t sigs;
     int error;
     bool restored;
 };
@@ -193,6 +233,7 @@ struct apth_perpthr_scheduler
     apth_time_t running;         // time the scheduler runs
     apth_t cur;                  // current APTH
     _Atomic bool opening;        // scheduler is opening
+    int apth_sigpipe[2];         // internal signal occurrence pipe
     sigset_t apth_sigpending;    // mask of pending signals
     sigset_t apth_sigblock;      // mask of signals we block in scheduler
     sigset_t apth_sigcatch;      // mask of signals we have to catch
@@ -213,6 +254,8 @@ struct apth_worker_st
     pthread_attr_t attr; // Worker pthread attribute
     apth_sched_t sched;  // Hold scheduler
     struct list_elem elem;
+#define apth_worker_t_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_worker_st, elem)
 };
 // We don't want to expose this struct to public space
 typedef struct apth_worker_st *apth_worker_t;
@@ -265,6 +308,8 @@ struct apth_attr_st
 };
 
 #define APTH_TIME_NOW (apth_time_t *)(0)
+extern apth_time_t apth_time_zero;
+#define APTH_TIME_ZERO &apth_time_zero
 
 // ============================== Thread Data ==============================
 

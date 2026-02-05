@@ -68,8 +68,7 @@ apth_worker_t get_worker_by_id(int worker_id)
     // TODO: lock the GLOBAL_POOL wrkpthrs list lock
     FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
-        // struct apth_worker_t_list_elem *elem = apth_worker_t_list_entry(e);
-        apth_worker_t worker = list_entry(e, struct apth_worker_st, elem);
+        apth_worker_t worker = apth_worker_t_list_entry(e);
         if (worker->worker_id == worker_id)
         {
             result = worker;
@@ -278,12 +277,12 @@ static void *worker_start_routine(void *arg)
         if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
         {
             apth_debug("apth scheduler: no NEW or READY threads, have to wait for new work");
-            apth_sched_eventmanager(&snapshot, false /* wait */);
+            apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);
         }
         else
         {
             apth_debug("apth scheduler: already NEW or READY threads exists, so just poll for even more work");
-            apth_sched_eventmanager(&snapshot, true /* wait */);
+            apth_sched_eventmanager(sched, &snapshot, true /* dopoll */);
         }
     }
 
