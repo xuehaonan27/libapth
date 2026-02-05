@@ -110,6 +110,11 @@ bool apth_wait_event(apth_event_t ev);
 APTH_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
 APTH_DECLARE_SYSCALL(int, usleep, unsigned int usec)
 APTH_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
+APTH_DECLARE_SYSCALL(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
+APTH_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
+APTH_DECLARE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
+APTH_DECLARE_SYSCALL(pid_t, fork, void)
+APTH_DECLARE_SYSCALL(int, system, const char *cmd)
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)

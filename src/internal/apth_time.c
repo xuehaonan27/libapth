@@ -17,6 +17,18 @@ apth_time_t apth_time(long sec, long usec)
     return tv;
 }
 
+apth_time_t apth_timeout(long sec, long usec)
+{
+    apth_time_t tv;
+    apth_time_t tvd;
+
+    apth_time_set(&tv, APTH_TIME_NOW);
+    tvd.tv_sec = sec;
+    tvd.tv_usec = usec;
+    apth_time_add(&tv, &tvd);
+    return tv;
+}
+
 void apth_time_set(apth_time_t *t1, apth_time_t *t2)
 {
     if (t2 == APTH_TIME_NOW)

@@ -1,5 +1,4 @@
-#define _POSIX_C_SOURCE 199309L
-#include <signal.h>
+#include "common.h"
 #include "internal_funcs.h"
 #include "internal_types.h"
 #include "utils/debug.h"
@@ -14,7 +13,7 @@ static void apth_sched_eventmanager_sighandler(int sig, siginfo_t *_dummy_info, 
 
     // Write signal to signal pipe in order to awake the select()
     c = (int)sig;
-    apth_syscall(write)(sched->apth_sigpipe[1], &c, sizeof(char));
+    apth_syscall_raw(write)(sched->apth_sigpipe[1], &c, sizeof(char));
     return;
 }
 
@@ -247,7 +246,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 
         // Clear pipe and let select() wait for read-part of the pipe.
         char minibuf[128];
-        while (apth_syscall(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
+        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
             ;
         FD_SET(sched->apth_sigpipe[0], &rfds);
         if (fdmax < sched->apth_sigpipe[0])
@@ -270,7 +269,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
         // Allow some signals to be delivered: either to our catching handler or directly
         // to the configured handler for signals not catched by events
         sigset_t oss;
-        apth_syscall(sigprocmask)(SIG_SETMASK, &sched->apth_sigblock, &oss);
+        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sched->apth_sigblock, &oss);
 
         // Now do the polling for filedescriptor I/O and timers.
         // When the scheduler sleeps at all, then here.
@@ -279,11 +278,11 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
             // !dopoll: then there's some events occured.
             // !fdmax == -1, then there's some fd to wait for.
             while (
-                (rc = apth_syscall(select)(fdmax + 1, &rfds, &wfds, &efds, pdelay)) < 0 && errno == EINTR)
+                (rc = apth_syscall_raw(select)(fdmax + 1, &rfds, &wfds, &efds, pdelay)) < 0 && errno == EINTR)
                 ;
 
         // Restore signal mask and actions and handle signals
-        apth_syscall(sigprocmask)(SIG_SETMASK, &oss, NULL);
+        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &oss, NULL);
         for (int sig = 1; sig < APTH_NSIG; sig++)
         {
             if (sigismember(&sched->apth_sigcatch, sig))
@@ -387,7 +386,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
                                     FD_SET(event->ev_args.FD.fd, &efds);
 
                                 apth_time_set(&delay, APTH_TIME_ZERO);
-                                while ((rc2 = apth_syscall(select)(event->ev_args.FD.fd + 1, &rfds, &wfds, &efds, &delay)) < 0 && errno == EINTR)
+                                while ((rc2 = apth_syscall_raw(select)(event->ev_args.FD.fd + 1, &rfds, &wfds, &efds, &delay)) < 0 && errno == EINTR)
                                     ;
 
                                 if (rc2 > 0)
@@ -452,7 +451,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
                                     pefds = &tefds;
                                 }
                                 pth_time_set(&delay, APTH_TIME_ZERO);
-                                while ((rc2 = apth_syscall(select)(event->ev_args.SELECT.nfd + 1, prfds, pwfds, pefds, &delay)) < 0 && errno == EINTR)
+                                while ((rc2 = apth_syscall_raw(select)(event->ev_args.SELECT.nfd + 1, prfds, pwfds, pefds, &delay)) < 0 && errno == EINTR)
                                     ;
                                 if (rc2 < 0)
                                 {

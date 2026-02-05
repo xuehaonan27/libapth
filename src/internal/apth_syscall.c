@@ -1,9 +1,10 @@
+#include "common.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
-#include "common.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include <pthread.h>
+#include <sys/wait.h>
 
 void apth_syscall_system_init(void)
 {
@@ -97,6 +98,110 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, unsigned int sec)
     apth_wait_event(ev);
 
     return 0;
+}
+
+// APTH variant of POSIX pthread_sigmask(3)
+APTH_DEFINE_SYSCALL(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
+{
+    int rv;
+
+    // Change the explicitly remembered signal mask copy for the scheduler
+    TODO("pthread_sigmask");
+}
+
+// APTH variant of POSIX sigwait(3)
+APTH_DEFINE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
+{
+    apth_event_t ev;
+    sigset_t pending;
+
+    if (set == NULL || sigp == NULL)
+        return apth_error(EINVAL, EINVAL);
+
+    // Check whether signal is already pending
+    if (sigpending(&pending) < 0)
+        sigemptyset(&pending);
+    for (int sig = 1; sig < APTH_NSIG; sig++)
+    {
+        if (sigismember(set, sig) && sigismember(&pending, sig))
+        {
+            apth_util_sigdelete(sig);
+            *sigp = sig;
+            return 0;
+        }
+    }
+
+    // Create event and wait on it
+    if ((ev = apth_event(APTH_EVENT_MODE_STATIC, set, sigp)) == NULL)
+        return apth_error(errno, errno);
+    apth_wait_event(ev);
+
+    // nothing to do, scheduler has already set *sigp for us
+    return 0;
+}
+
+// APTH variant of waitpid(2)
+APTH_DEFINE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
+{
+    apth_event_t ev;
+    pid_t pid;
+    apth_t cur = cur_apth();
+
+    apth_debug("apth_waitpid: called from thread \"%s\"", cur->name);
+    for (;;)
+    {
+        // Do a non-blocking poll for the pid using raw LIBC call
+        while ((pid = apth_syscall_raw(waitpid)(wpid, status, options | WNOHANG)) < 0 && errno == EINTR)
+            ;
+
+        // If pid was found or caller requested a polling return immediately
+        if (pid == -1 || pid > 0 || (pid == 0 && (options & WNOHANG)))
+            break;
+
+        // Else wait a little bit
+        ev = apth_event(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
+        apth_wait_event(ev);
+    }
+
+    apth_debug("apth_waitpid: leave to thread \"%s\"", cur->name);
+    return pid;
+}
+
+APTH_DEFINE_SYSCALL(pid_t , fork, void) {
+    pid_t pid;
+    
+    TODO("fork")
+}
+
+// APTH variant of system(3)
+APTH_DEFINE_SYSCALL(int, system, const char* cmd) {
+    struct sigaction sa_ign, sa_int, sa_quit;
+    sigset_t ss_block, ss_old;
+    struct stat sb;
+    pid_t pid;
+    int pstat;
+
+    // POSIX calling convention: determine whether the Bourne Shell ("sh") is
+    // available on this platform
+    if (cmd == NULL) {
+        if (stat(APTH_PATH_BINSH, &sb) == -1) return 0;
+        return 1;
+    }
+
+    // Temporarily ignore SIGINT and SIGQUIT actions
+    sa_ign.sa_handler = SIG_IGN;
+    sigemptyset(&sa_ign.sa_mask);
+    sa_ign.sa_flags = 0;
+    sigaction(SIGINT, &sa_ign, &sa_int);
+    sigaction(SIGQUIT, &sa_ign, &sa_quit);
+
+    // Block SIGCHLD signal
+     sigemptyset(&ss_block);
+    sigaddset(&ss_block, SIGCHLD);
+    apth_syscall_raw(pthread_sigmask)(SIG_BLOCK, &ss_block, &ss_old);
+
+    // Fork the current process
+
 }
 
 APTH_DEFINE_SYSCALL(int, socket, int domain, int type, int protocol)

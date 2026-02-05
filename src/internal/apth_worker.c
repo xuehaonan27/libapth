@@ -1,5 +1,4 @@
-#define _POSIX_C_SOURCE 199309L
-#include <signal.h>
+#include "common.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
 
@@ -113,8 +112,7 @@ static void *worker_start_routine(void *arg)
 
     // block all signals in the scheduler thread
     sigfillset(&sigs);
-    apth_syscall(sigprocmask)(SIG_SETMASK, &sigs, NULL);
-    // pthread_sigmask(SIG_SETMASK, &sigs, NULL);
+    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
     // initialize the snapshot time for bootstrapping the loop
     apth_time_set(&snapshot, APTH_TIME_NOW);

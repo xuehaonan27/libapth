@@ -368,4 +368,8 @@ struct apth_keytab_st
 // simply don't use this specific key anymore.
 #define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
 
+#include <paths.h>
+#define APTH_PATH_BINSH _PATH_BSHELL
+
+
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */

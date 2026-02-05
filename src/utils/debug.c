@@ -23,7 +23,7 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         va_end(ap);
         n = strlen(str);
         str[n++] = '\n';
-        apth_syscall(write)(STDERR_FILENO, str, n);
+        apth_syscall_raw(write)(STDERR_FILENO, str, n);
     }
     return;
 }

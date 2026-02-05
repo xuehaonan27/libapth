@@ -1,6 +1,4 @@
-#define _POSIX_C_SOURCE 199309L // For struct sigaction
-#include <signal.h>
-
+#include "common.h"
 #include "internal_funcs.h"
 #include "internal_types.h"
 
@@ -20,7 +18,7 @@ int apth_util_sigdelete(int sig)
     // Block signal and remember old mask
     sigemptyset(&ss);
     sigaddset(&ss, sig);
-    apth_syscall(sigprocmask)(SIG_BLOCK, &ss, &oss);
+    apth_syscall_raw(pthread_sigmask)(SIG_BLOCK, &ss, &oss);
 
     // Set signal action to our dummy handler
     sa.sa_handler = apth_util_sigdelete_sighandler;
@@ -28,7 +26,7 @@ int apth_util_sigdelete(int sig)
     sa.sa_flags = 0;
     if (sigaction(sig, &sa, &osa) != 0)
     {
-        apth_syscall(sigprocmask)(SIG_SETMASK, &oss, NULL);
+        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &oss, NULL);
         return -1;
     }
 
@@ -39,6 +37,6 @@ int apth_util_sigdelete(int sig)
 
     // Restore signal mask and handler
     sigaction(sig, &osa, NULL);
-    apth_syscall(sigprocmask)(SIG_SETMASK, &oss, NULL);
+    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &oss, NULL);
     return 0;
 }
