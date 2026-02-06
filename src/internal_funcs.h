@@ -131,20 +131,23 @@ APTH_DECLARE_SYSCALL(int, system, const char *cmd)
 APTH_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
                      fd_set *efds, struct timeval *timeout)
 APTH_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
-                    fd_set *efds, const struct timespec *ts, const sigset_t *mask)
+                     fd_set *efds, const struct timespec *ts, const sigset_t *mask)
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
 APTH_DECLARE_SYSCALL(int, close, int fd)
-APTH_DECLARE_SYSCALL(ssize_t, read, int fildes, void *buf, size_t nbyte)
-APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbyte)
+APTH_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
+APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
+APTH_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
+APTH_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
+
 APTH_DECLARE_SYSCALL(ssize_t, sendto, int socket, const void *message, size_t length,
                      int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
 APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int socket, void *buffer, size_t length,
                      int flags, struct sockaddr *address, socklen_t *address_len)
 APTH_DECLARE_SYSCALL(ssize_t, send, int socket, const void *buffer, size_t length, int flags)
 APTH_DECLARE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int flags)
-APTH_DECLARE_SYSCALL(int, poll, struct pollfd* fds, nfds_t nfds, int timeout)
+APTH_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                      const void *option_value, socklen_t option_len)
 APTH_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
@@ -167,5 +170,6 @@ int apth_util_fds_select(int nfd,
                          fd_set *ifds1, fd_set *ofds1,
                          fd_set *ifds2, fd_set *ofds2,
                          fd_set *ifds3, fd_set *ofds3);
+int apth_fdmode(int fd, int newmode);
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

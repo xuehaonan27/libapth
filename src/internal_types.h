@@ -368,8 +368,20 @@ struct apth_keytab_st
 // simply don't use this specific key anymore.
 #define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
 
+// ============================== Filedescriptors ==============================
+// Filedescriptor blocking modes
+enum
+{
+    APTH_FDMODE_ERROR = -1,
+    APTH_FDMODE_POLL = 0,
+    APTH_FDMODE_BLOCK,
+    APTH_FDMODE_NONBLOCK
+};
+#include <fcntl.h>
+// Non-blocking flags
+#define APTH_O_NONBLOCKING O_NONBLOCK
+
 #include <paths.h>
 #define APTH_PATH_BINSH _PATH_BSHELL
-
 
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */

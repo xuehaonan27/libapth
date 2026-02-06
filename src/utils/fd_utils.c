@@ -94,3 +94,28 @@ int apth_util_fds_select(int nfd,
     }
     return n;
 }
+
+// Switch a filedescriptor's I/O mode
+int apth_fdmode(int fd, int newmode)
+{
+    int fdmode;
+    int oldmode;
+
+    // Retrieve old mode (usually a very cheap operation)
+    fdmode = fcntl(fd, F_GETFL, NULL);
+    if (fdmode == -1)
+        oldmode = APTH_FDMODE_ERROR;
+    else if (fdmode & APTH_O_NONBLOCKING)
+        oldmode = APTH_FDMODE_NONBLOCK;
+    else
+        oldmode = APTH_FDMODE_BLOCK;
+
+    // Set new mode (usually a more expensive operation)
+    if (oldmode == APTH_FDMODE_BLOCK && newmode == APTH_FDMODE_NONBLOCK)
+        fcntl(fd, F_SETFL, (fdmode | APTH_O_NONBLOCKING));
+    if (oldmode == APTH_FDMODE_NONBLOCK && newmode == APTH_FDMODE_BLOCK)
+        fcntl(fd, F_SETFL, (fdmode & ~(APTH_O_NONBLOCKING)));
+
+    // Return old mode
+    return oldmode;
+}

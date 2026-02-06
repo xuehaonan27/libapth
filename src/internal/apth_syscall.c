@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
+#include <malloc.h>
 
 void apth_syscall_system_init(void)
 {
@@ -402,16 +404,369 @@ APTH_DEFINE_SYSCALL(int, close, int fd)
     TODO("unimplemented close");
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, read, int fildes, void *buf, size_t nbyte)
+APTH_DEFINE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
 {
     apth_hook_debug(read);
-    TODO("unimplemented read");
+
+    apth_event_t cur = cur_apth();
+    apth_debug("apth_syscall_read: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (nbytes == 0)
+        return 0;
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // Check mode of filedescriptor
+    int fdmode;
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_POLL)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll filedescriptor if not already in non-blocking operation
+    if (fdmode == APTH_FDMODE_BLOCK)
+    {
+        // Now directly poll filedescriptor for readability to avoid
+        // unnecessary (and resource consuming because of context switches,
+        // etc) event handling through the scheduler
+        struct timeval delay;
+        apth_event_t ev;
+        fd_set fds;
+        int n;
+
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+        while ((n = apth_syscall_raw(select)(fd + 1, &fds, NULL, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+        if (n < 0 && (errno == EINVAL || errno == EBADF))
+            return apth_error(-1, errno);
+
+        // If filedescriptor is still not readable, let thread sleep until it is
+        if (n == 0)
+        {
+            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+        }
+    }
+
+    // Now perform actual read. We are now guaranteed to not block, either
+    // because we were already in non-blocking mode or we determined above
+    // by polling that the next read(2) call will not block. But keep in mind,
+    // that only 1 next read(2) call is guaranteed to not block (except for
+    // the EINTR situation)
+    ssize_t rv;
+    while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
+        ;
+
+    apth_debug("apth_syscall_read: leave to thread \"%s\"", cur->name);
+    return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbyte)
+APTH_DEFINE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
 {
     apth_hook_debug(write);
-    TODO("unimplemented write");
+
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_write: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (nbytes == 0)
+        return 0;
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // Force filedescriptor into non-blocking mode
+    int fdmode;
+    ssize_t rv;
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll filedescriptor if not already in non-blocking operation
+    if (fdmode != APTH_FDMODE_NONBLOCK)
+    {
+        // Now directly poll filedescriptor for writeability to avoid
+        // unneccessary (and resource consuming because of context switches,
+        // etc) event handling through the scheduler
+        struct timeval delay;
+        apth_event_t ev;
+        fd_set fds;
+        int n;
+        ssize_t s;
+
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+        while ((n = apth_syscall_raw(select)(fd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+        if (n < 0 && (errno == EINVAL || errno == EBADF))
+            return pth_error(-1, errno);
+
+        rv = 0;
+        for (;;)
+        {
+            /* if filedescriptor is still not writeable,
+               let thread sleep until it is or event occurs */
+            if (n < 1)
+            {
+                ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+                apth_wait_event(ev);
+            }
+
+            /* now perform the actual write operation */
+            while ((s = apth_syscall_raw(write)(fd, buf, nbytes)) < 0 && errno == EINTR)
+                ;
+            if (s > 0)
+                rv += s;
+
+            /* although we're physically now in non-blocking mode,
+               iterate unless all data is written or an error occurs, because
+               we've to mimic the usual blocking I/O behaviour of write(2). */
+            if (s > 0 && s < (ssize_t)nbytes)
+            {
+                nbytes -= s;
+                buf = (void *)((char *)buf + s);
+                n = 0;
+                continue;
+            }
+
+            /* pass error to caller, but not for partial writes (rv > 0) */
+            if (s < 0 && rv == 0)
+                rv = -1;
+
+            /* stop looping */
+            break;
+        }
+    }
+    else
+    {
+        // In non-blocking mode, just perform the actual write operation
+        while ((rv = apth_syscall_raw(write)(fd, buf, nbytes)) < 0 && errno == EINTR)
+            ;
+    }
+
+    // Restore filedescriptor mode
+    apth_shield { apth_fdmode(fd, fdmode); }
+
+    apth_debug("apth_syscall_write: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
+{
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_readv: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
+        return apth_error(-1, EINVAL);
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // Check mode of filedescriptor
+    int fdmode;
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_POLL)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll filedescriptor if not already in non-blocking operation
+    if (fdmode == APTH_FDMODE_BLOCK)
+    {
+        struct timeval delay;
+        apth_event_t ev;
+        fd_set fds;
+        int n;
+
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+        while ((n = apth_syscall_raw(select)(fd + 1, &fds, NULL, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+
+        // If filedescriptor is still not readable, let thread sleep until it is
+        if (n < 1)
+        {
+            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+        }
+    }
+
+    ssize_t rv;
+    while ((rv = apth_syscall_raw(readv)(fd, iov, iovcnt)) < 0 && errno == EINTR)
+        ;
+
+    apth_debug("apth_syscall_readv: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+// Calculate number of bytes in a struct iovec
+static ssize_t apth_writev_iov_bytes(const struct iovec *iov, int iovcnt)
+{
+    ssize_t bytes = 0;
+    for (int i = 0; i < iovcnt; i++)
+    {
+        if (iov[i].iov_len <= 0)
+            continue;
+        bytes += iov[i].iov_len;
+    }
+    return bytes;
+}
+
+// Advance the virtual pointer of a struct iov
+static void apth_writev_iov_advance(const struct iovec *riov, int riovcnt, size_t advance,
+                                    struct iovec **liov, int *liovcnt,
+                                    struct iovec *tiov, int tiovcnt)
+{
+    if (*liov == NULL && *liovcnt == 0)
+    {
+        // Initialize with real (const) structure on first step
+        *liov = (struct iovec *)riov;
+        *liovcnt = riovcnt;
+    }
+    if (advance > 0)
+    {
+        if (*liov == riov && *liovcnt == riovcnt)
+        {
+            // Reinitialize with a copy to be able to adjust it
+            *liov = &tiov[0];
+            for (int i = 0; i < riovcnt; i++)
+            {
+                tiov[i].iov_base = riov[i].iov_base;
+                tiov[i].iov_len = riov[i].iov_len;
+            }
+        }
+        // Advance the virtual pointer
+        while (*liovcnt > 0 && advance > 0)
+        {
+            if ((*liov)->iov_len > advance)
+            {
+                (*liov)->iov_base = (char *)((*liov)->iov_base) + advance;
+                (*liov)->iov_len -= advance;
+                break;
+            }
+            else
+            {
+                advance -= (*liov)->iov_len;
+                (*liovcnt)--;
+                (*liov)++;
+            }
+        }
+    }
+    return;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
+{
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_writev: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
+        return apth_error(-1, EINVAL);
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // force filedescriptor into non-blocking mode
+    int fdmode;
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll filedescriptor if not already in non-blocking operation
+    ssize_t rv;
+    if (fdmode != APTH_FDMODE_NONBLOCK)
+    {
+        // Provide temporary iovec structure
+        struct iovec tiov_stack[32];
+        struct iovec *tiov;
+        int tiovcnt;
+
+        if (iovcnt > sizeof(tiov_stack))
+        {
+            tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
+            if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
+                return apth_error(-1, errno);
+        }
+        else
+        {
+            tiovcnt = sizeof(tiov_stack);
+            tiov = tiov_stack;
+        }
+
+        // Init return value and number of bytes to write
+        rv = 0;
+        size_t nbytes = apth_writev_iov_bytes(iov, iovcnt);
+
+        // Init local iovec structure
+        int liovcnt = 0;
+        struct iovec *liov = NULL;
+        apth_writev_iov_advance(iov, iovcnt, 0, &liov, &liovcnt, tiov, tiovcnt);
+
+        // First directly poll filedescriptor for writeability to avoid...
+        struct timeval delay;
+        apth_event_t ev;
+        fd_set fds;
+        int n;
+
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+        while ((n = apth_syscall_raw(select)(fd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+
+        for (;;)
+        {
+            // If filedescriptor is still not writeable, let thread sleep until it is
+            if (n < 1)
+            {
+                ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+                apth_wait_event(ev);
+            }
+
+            // Now perform actual write operation
+            ssize_t s;
+            while ((s = apth_syscall_raw(writev)(fd, liov, liovcnt)) < 0 && errno == EINTR)
+                ;
+
+            if (s > 0)
+                rv += s;
+
+            // Although we are physically now in non-blocking mode, iterate unless
+            // all data is written or an error occurs, because we have to mimic
+            // the usual blocking I/O behaviour of writev(2)
+            if (s > 0 && s < (ssize_t)nbytes)
+            {
+                nbytes -= s;
+                pth_writev_iov_advance(iov, iovcnt, s, &liov, &liovcnt, tiov, tiovcnt);
+                n = 0;
+                continue;
+            }
+
+            // Pass error to caller, but not for partial writes (rv > 0)
+            if (s < 0 && rv == 0)
+                rv = -1;
+
+            // Stop looping
+            break;
+        }
+
+        // Cleanup
+        if (iovcnt > sizeof(tiov_stack))
+            free(tiov);
+    }
+    else
+    {
+        // Just perform the actual write operation
+        while ((rv = apth_syscall_raw(writev)(fd, iov, iovcnt)) < 0 && errno == EINTR)
+            ;
+    }
+
+    // Restore filedescriptor mode
+    apth_shield { apth_fdmode(fd, fdmode); }
+
+    apth_debug("apth_syscall_writev: leave to thread \"%s\"", cur->name);
+    return rv;
 }
 
 APTH_DEFINE_SYSCALL(ssize_t, sendto, int socket, const void *message, size_t length,
@@ -440,7 +795,7 @@ APTH_DEFINE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int 
     TODO("unimplemented recv");
 }
 
-APTH_DEFINE_SYSCALL(int, poll, struct pollfd* fds, nfds_t nfds, int timeout)
+APTH_DEFINE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 {
     apth_hook_debug(poll);
     TODO("unimplemented poll");
@@ -493,5 +848,5 @@ APTH_DEFINE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 //                                      struct hostent **__restrict __result,
 //                                      int *__restrict __h_errnop);
 
-#undef hook_debug
+#undef apth_hook_debug
 #undef APTH_DEFINE_SYSCALL
