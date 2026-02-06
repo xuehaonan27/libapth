@@ -40,7 +40,7 @@ APTH_DEFINE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec
     apth_time_add(&until, &offset);
 
     // And let apth sleeps until this time is elapsed
-    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
+    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == APTH_EVENT_NULL)
         return apth_error(-1, errno);
     apth_wait_event(ev);
 
@@ -395,7 +395,87 @@ APTH_DEFINE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DEFINE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
 {
     apth_hook_debug(connect);
-    TODO("unimplemented connect");
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_connect: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // Force filedescriptor into non-blocking mode
+    int fdmode;
+    if ((fdmode == apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Try to connect
+    int rv;
+    while ((rv = apth_syscall_raw(connect)(fd, (struct sockaddr *)address, address_len)) == -1 && errno == EINTR)
+        ;
+
+    // Restore filedescriptor mode
+    apth_shield { apth_fdmode(fd, fdmode); }
+
+    // If it is still on progress wait until socket is really writeable
+    if (rv == -1 && errno == EINPROGRESS && fdmode != APTH_FDMODE_NONBLOCK)
+    {
+        apth_event_t ev;
+        ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+        if (ev == NULL)
+            return apth_error(-1, errno);
+        apth_wait_event(ev);
+
+        int err;
+        socklen_t errlen;
+        errlen = sizeof(err);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen) == -1)
+            return -1;
+        if (err == 0)
+            return 0;
+        return apth_error(rv, err);
+    }
+
+    apth_debug("apth_syscall_connect: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+APTH_DEFINE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrlen)
+{
+    apth_hook_debug(accept);
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_accept: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    // Force filedescriptor into non-blocking mode
+    int fdmode;
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll socket via accept
+    apth_event_t ev = APTH_EVENT_NULL;
+    int rv;
+    while ((rv = apth_syscall_raw(accept)(fd, addr, addrlen)) == -1 && (errno == EAGAIN || errno == EWOULDBLOCK) && fdmode != APTH_FDMODE_NONBLOCK)
+    {
+        // Do lazy event allocation
+        ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+        if (ev == APTH_EVENT_NULL)
+            return apth_error(-1, errno);
+        // Wait until accept has a chance
+        apth_wait_event(ev);
+    }
+
+    // Restore filedescriptor mode
+    apth_shield
+    {
+        apth_fdmode(fd, fdmode);
+        if (rv != -1)
+            apth_fdmode(rv, fdmode);
+    }
+
+    apth_debug("apth_syscall_accept: leave to thread \"%s\"", cur->name);
+    return rv;
 }
 
 APTH_DEFINE_SYSCALL(int, close, int fd)
@@ -408,7 +488,7 @@ APTH_DEFINE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
 {
     apth_hook_debug(read);
 
-    apth_event_t cur = cur_apth();
+    apth_t cur = cur_apth();
     apth_debug("apth_syscall_read: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance

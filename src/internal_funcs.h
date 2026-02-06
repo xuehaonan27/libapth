@@ -136,17 +136,18 @@ APTH_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
 APTH_DECLARE_SYSCALL(int, close, int fd)
+APTH_DECLARE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrlen)
 APTH_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
 APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
 APTH_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
 APTH_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
 
-APTH_DECLARE_SYSCALL(ssize_t, sendto, int socket, const void *message, size_t length,
+APTH_DECLARE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
                      int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
-APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int socket, void *buffer, size_t length,
-                     int flags, struct sockaddr *address, socklen_t *address_len)
-APTH_DECLARE_SYSCALL(ssize_t, send, int socket, const void *buffer, size_t length, int flags)
-APTH_DECLARE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int flags)
+APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
+                     int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+APTH_DECLARE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
+APTH_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
 APTH_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                      const void *option_value, socklen_t option_len)
