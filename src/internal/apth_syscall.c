@@ -769,30 +769,176 @@ APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, sendto, int socket, const void *message, size_t length,
+APTH_DEFINE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
+                    int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+{
+    apth_hook_debug(recvfrom);
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_recvfrom: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (nbytes == 0)
+        return 0;
+    if (!apth_util_fd_valid(sockfd))
+        return apth_error(-1, EBADF);
+
+    // Check mode of filedescriptor
+    int fdmode;
+    if ((fdmode = apth_fdmode(sockfd, APTH_FDMODE_POLL)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    // Poll filedescriptor if not already in non-blocking operation
+    if (fdmode == APTH_FDMODE_BLOCK)
+    {
+        // Now directly poll filedescriptor for readability to avoid
+        // unnecessary (and resource consuming because of context switches,
+        // etc) event handling through the scheduler
+        if (!apth_util_fd_valid(sockfd))
+            return apth_error(-1, EBADF);
+
+        struct timeval delay;
+        fd_set fds;
+        int n;
+        apth_event_t ev;
+
+        FD_ZERO(&fds);
+        FD_SET(sockfd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+
+        while ((n = apth_syscall_raw(select)(sockfd + 1, &fds, NULL, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+
+        if (n < 0 && (errno == EINVAL || errno == EBADF))
+            return apth_error(-1, errno);
+
+        // If filedescriptor is still not readable, let apth sleep until it is
+        if (n == 0)
+        {
+            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, sockfd);
+            apth_wait_event(ev);
+        }
+    }
+
+    // Now perform actual read. We are now guaranteed to not block, either because
+    // we were already in non-blocking mode or we determined above by polling that
+    // the next recvfrom(2) call will not block. But keep in mind, that only 1 next
+    // recvfrom(2) call is guaranteed to not block (except for the EINTR situation)
+    ssize_t rv;
+    while ((rv = apth_syscall_raw(recvfrom)(socket, buf, nbytes, flags, src_addr, addrlen)) < 0 && errno == EINTR)
+        ;
+
+    apth_debug("apth_syscall_recvfrom: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
                     int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
 {
     apth_hook_debug(sendto);
-    TODO("unimplemented sendto");
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_sendto: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (nbytes == 0)
+        return 0;
+    if (!apth_util_fd_valid(sockfd))
+        return apth_error(-1, EBADF);
+
+    // Force filedescriptor into non-blocking mode
+    int fdmode;
+    if ((fdmode = apth_fdmode(sockfd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+
+    ssize_t rv;
+    // Poll filedescriptor if not already in non-blocking operation
+    if (fdmode != APTH_FDMODE_NONBLOCK)
+    {
+        // Now directly poll filedescriptor for writeability to avoid
+        // unnecessary (and resource consuming because of context switches,
+        // etc) event handling through the scheduler
+        if (!apth_util_fd_valid(sockfd))
+        {
+            apth_fdmode(sockfd, fdmode);
+            return apth_error(-1, EBADF);
+        }
+
+        struct timeval delay;
+        apth_event_t ev;
+        fd_set fds;
+        ssize_t s;
+        int n;
+
+        FD_ZERO(&fds);
+        FD_SET(sockfd, &fds);
+        delay.tv_sec = 0;
+        delay.tv_usec = 0;
+        while ((n = apth_syscall_raw(select)(sockfd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
+            ;
+        if (n < 0 && (errno == EINVAL || errno == EBADF))
+            return apth_error(-1, errno);
+
+        rv = 0;
+        for (;;)
+        {
+            // If filedescriptor is still not writable, let apth sleep until it is
+            if (n == 0)
+            {
+                ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, sockfd);
+                apth_wait_event(ev);
+            }
+
+            // Now perform the actual send operation
+            while ((s = apth_syscall_raw(sendto)(sockfd, buf, nbytes, flags, dest_addr, dest_len)) < 0 && errno == EINTR)
+                ;
+            if (s > 0)
+                rv += s;
+
+            // Although we are physically now in non-blocking mode, iterate unless
+            // all data is written or an error occurs, because we have to mimic
+            // the usual blocking I/O behaviour of write(2).
+            if (s > 0 && s < (ssize_t)nbytes)
+            {
+                nbytes -= s;
+                buf = (void *)((char *)buf + s);
+                n = 0;
+                continue;
+            }
+
+            // Pass error to caller, but not for partial writes (rv > 0)
+            if (s < 0 && rv == 0)
+                rv = -1;
+
+            // Stop looping
+            break;
+        }
+    }
+    else
+    {
+        // Just perfrom the actual send operation
+        while ((rv = apth_syscall_raw(sendto)(sockfd, buf, nbytes, flags, dest_addr, dest_len)) < 0 && errno == EINTR)
+            ;
+    }
+
+    // Restore filedescriptor mode
+    apth_shield { apth_fdmode(sockfd, fdmode); }
+
+    apth_debug("apth_syscall_sendto: leave to thread \"%s\"", cur->name);
+    return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, recvfrom, int socket, void *buffer, size_t length,
-                    int flags, struct sockaddr *address, socklen_t *address_len)
-{
-    apth_hook_debug(recvfrom);
-    TODO("unimplemented recvfrom");
-}
-
-APTH_DEFINE_SYSCALL(ssize_t, send, int socket, const void *buffer, size_t length, int flags)
-{
-    apth_hook_debug(send);
-    TODO("unimplemented send");
-}
-
-APTH_DEFINE_SYSCALL(ssize_t, recv, int socket, void *buffer, size_t length, int flags)
+APTH_DEFINE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
 {
     apth_hook_debug(recv);
-    TODO("unimplemented recv");
+    // Here we use hooked syscall
+    return apth_syscall(recvfrom)(sockfd, buf, len, flags, NULL, 0);
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
+{
+    apth_hook_debug(send);
+    // Here we use hooked syscall
+    return apth_syscall(sendto)(sockfd, buf, len, flags, NULL, 0);
 }
 
 APTH_DEFINE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
