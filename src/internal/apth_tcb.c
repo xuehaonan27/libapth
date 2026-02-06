@@ -1,6 +1,7 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
+#include "utils/apth_sysutils.h"
 
 apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
 {
@@ -44,7 +45,7 @@ apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
     return t;
 }
 
-void apth_tch_free(apth_t t)
+void apth_tcb_free(apth_t t)
 {
     if (t == NULL)
         return;
@@ -56,6 +57,7 @@ void apth_tch_free(apth_t t)
         apth_cleanup_popall(t, false);
 
     // Clear other fields
+    // TODO("Clear other fields");
 
     free(t);
     return;

@@ -12,6 +12,7 @@ static bool WORKER_POOL_INITIALIZED = false;
 static struct apth_global_scheduler_pool GLOBAL_POOL;
 
 static pthread_key_t __CUR_WORKER_KEY;
+static pthread_key_t __CUR_SCHED_KEY;
 
 void worker_key_t_init(void)
 {
@@ -19,7 +20,13 @@ void worker_key_t_init(void)
     assert_msg(result == 0, "fail pthread_key_create");
 }
 
-static apth_worker_t cur_worker(void)
+void sched_key_t_init(void)
+{
+    int result = pthread_key_create(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
+    assert_msg(result == 0, "fail pthread_key_create");
+}
+
+apth_worker_t cur_worker(void)
 {
     return (apth_worker_t)pthread_getspecific(__CUR_WORKER_KEY);
 }
@@ -30,9 +37,16 @@ static void set_cur_worker(apth_worker_t worker)
     assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
-static apth_sched_t cur_sched(void)
+apth_sched_t cur_sched(void)
 {
-    return cur_worker()->sched;
+    // return cur_worker()->sched;
+    return (apth_sched_t)pthread_getspecific(__CUR_SCHED_KEY);
+}
+
+static void set_cur_sched(apth_sched_t sched)
+{
+    int result = pthread_setspecific(__CUR_WORKER_KEY, sched);
+    assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
 apth_t cur_apth(void)
@@ -45,10 +59,8 @@ void set_cur_apth(apth_t t)
     cur_sched()->cur = t;
 }
 
-void worker_key_t_destr_fn(void *p)
-{
-    // TODO
-}
+void worker_key_t_destr_fn(void *p) { /* nop */ }
+void sched_key_t_destr_fn(void *p) { /* nop */ }
 
 // Get worker by `worker_id`
 apth_worker_t get_worker_by_id(int worker_id)
@@ -101,7 +113,15 @@ static void *worker_start_routine(void *arg)
     apth_sched_t sched;
     if ((sched = (apth_sched_t)malloc(sizeof(struct apth_perpthr_scheduler))) == NULL)
         return apth_error(NULL, ENOMEM);
-    apth_scheduler_init(sched, me);
+    if (!apth_scheduler_init(sched, me))
+    {
+        // Fail to initialize
+        return apth_error(NULL, errno);
+    }
+
+    // Set TLS
+    set_cur_worker(me);
+    set_cur_sched(sched);
 
     apth_debug("apth_scheduler: bootstrapping");
     sigset_t sigs;

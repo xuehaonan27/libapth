@@ -1,17 +1,25 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
-#include "debug.h"
-#include "atomic_wrapper.h"
+#include "utils/debug.h"
+#include "utils/atomic_wrapper.h"
+#include "utils/apth_errno.h"
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
 _Atomic unsigned int apth_nthreads = 0;
 
 // Initialize a scheduler onto `worker` and put the new scheduler in `sched`.
-void apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
+bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 {
     sched->id = worker->worker_id;
-    // TODO: initialize sched_ctx
+
+    if (pipe(sched->apth_sigpipe) == -1)
+        return apth_error(false, errno);
+    if (apth_fdmode(sched->apth_sigpipe[0], APTH_FDMODE_NONBLOCK) == APTH_FDMODE_ERROR)
+        return apth_error(false, errno);
+    if (apth_fdmode(sched->apth_sigpipe[1], APTH_FDMODE_NONBLOCK) == APTH_FDMODE_ERROR)
+        return apth_error(false, errno);
+
     list_init(&sched->new_list);
     list_init(&sched->ready_list);
     list_init(&sched->waiting_list);
@@ -20,11 +28,15 @@ void apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->worker = worker;
     sched->switches = 0;
     sched->thrcnt = 0;
+    apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
 
-    // initialize load support
+    // Initialize load support
     sched->loadval = 1.0;
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
+
+    // Mark the scheduler as opening
+    atomic_store_release(&sched->opening, true);
 }
 
 void inc_thrcnt(apth_sched_t sched)
@@ -95,4 +107,40 @@ void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
         apth_time_set(&sched->apth_loadticknext, now);
         apth_time_add(&sched->apth_loadticknext, &apth_loadtickgap);
     }
+}
+
+// Drop all threads (except for the currently active one)
+void apth_scheduler_drop(apth_sched_t sched)
+{
+#define CLEAR_T_LIST(name)                     \
+    FOR_ELEMENT_IN_LIST(sched->name##_list, e) \
+    {                                          \
+        apth_t t = apth_t_list_entry(e);       \
+        apth_tch_free(t);                      \
+    }                                          \
+    list_init(&sched->name##_list);
+
+    // Clear the apth queues
+    CLEAR_T_LIST(new);
+    CLEAR_T_LIST(ready);
+    CLEAR_T_LIST(waiting);
+    CLEAR_T_LIST(suspended);
+    CLEAR_T_LIST(terminated);
+#undef CLEAR_T_LIST
+    return;
+}
+
+// Kill the schduler ingredients
+void apth_scheduler_kill(apth_sched_t sched)
+{
+    // Drop all apths
+    apth_scheduler_drop(sched);
+
+    // Remove the internal signal pipe
+    close(sched->apth_sigpipe[0]);
+    close(sched->apth_sigpipe[1]);
+
+    // Mark the scheduler as closed
+    atomic_store_release(&sched->opening, false);
+    return;
 }

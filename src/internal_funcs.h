@@ -6,9 +6,9 @@
 // ============================== Worker ==============================
 
 void worker_key_t_init(void);
-// apth_worker_t cur_worker(void);
+apth_worker_t cur_worker(void);
 // void set_cur_worker(apth_worker_t worker);
-// apth_sched_t cur_sched(void);
+apth_sched_t cur_sched(void);
 apth_t cur_apth(void);
 void set_cur_apth(apth_t t);
 void worker_key_t_destr_fn(void *p);
@@ -19,7 +19,7 @@ int add_worker_thread(void);
 
 // ============================== Scheduler ==============================
 
-void apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
+bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
 void inc_thrcnt(apth_sched_t sched);
 void dec_thrcnt(apth_sched_t sched);
 
@@ -42,7 +42,7 @@ void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
 
 // ============================== TCB ==============================
 apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
-void apth_tch_free(apth_t t);
+void apth_tcb_free(apth_t t);
 
 // ============================== Time ==============================
 #define APTH_TIME(sec, usec) {sec, usec}
@@ -63,13 +63,22 @@ void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
 bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi);
 
 // ============================== Cleanup ==============================
-
-bool apth_cleanup_push(void (*)(void *), void *);
-bool apth_cleanup_pop(bool);
 void apth_cleanup_popall(apth_t, bool);
+void apth_thread_clenaup(apth_t th);
+
+// ============================== Cancel ==============================
+static inline void apth_do_cancel(void *result);
+
+static inline bool apth_cancel_enabled(int value);
+static inline bool apth_cancel_async_enabled(int value);
+static inline bool apth_cancel_enabled_and_canceled(int value);
+static inline bool apth_cancel_enabled_and_canceled_and_async(int value);
 
 // ============================== Signal ==============================
 int apth_util_sigdelete(int sig);
+
+// ============================== TLS ==============================
+void apth_key_destroydata(apth_t th);
 
 // ============================== Event ==============================
 void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
