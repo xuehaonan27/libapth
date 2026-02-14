@@ -51,10 +51,8 @@ void apth_tcb_free(apth_t t)
         return;
     if (t->stack != NULL && !t->stackloan)
         free(t->stack);
-    if (t->data_value != NULL)
-        free(t->data_value);
-    if (t->cleanups != NULL)
-        apth_cleanup_popall(t, false);
+
+    apth_thread_clenaup(t);
 
     // Clear other fields
     // TODO("Clear other fields");

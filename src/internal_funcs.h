@@ -25,20 +25,24 @@ void dec_thrcnt(apth_sched_t sched);
 
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
+#define head_apth_of(name) head_apth_of_##name
 #define DECLARE_SCHED_LIST_OP(name)                         \
     void push_apth_to(name)(apth_t th, apth_sched_t sched); \
-    apth_t pop_apth_from(name)(apth_sched_t sched);
+    apth_t pop_apth_from(name)(apth_sched_t sched);         \
+    apth_t head_apth_of(name)(apth_sched_t sched);
 DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
 #undef DECLARE_SCHED_LIST_OP
+#undef head_apth_of
 #undef pop_apth_from
 #undef push_apth_to
 
 bool apth_sched_is_opening(apth_sched_t sched);
 void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
+static bool apth_is_not_null_and_valid(apth_t th);
 
 // ============================== TCB ==============================
 apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
@@ -64,15 +68,15 @@ bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char 
 
 // ============================== Cleanup ==============================
 void apth_cleanup_popall(apth_t, bool);
-void apth_thread_clenaup(apth_t th);
+static void apth_thread_clenaup(apth_t th);
 
 // ============================== Cancel ==============================
 static inline void apth_do_cancel(void *result);
 
-static inline bool apth_cancel_enabled(int value);
-static inline bool apth_cancel_async_enabled(int value);
-static inline bool apth_cancel_enabled_and_canceled(int value);
-static inline bool apth_cancel_enabled_and_canceled_and_async(int value);
+// static inline bool apth_cancel_enabled(int value);
+// static inline bool apth_cancel_async_enabled(int value);
+// static inline bool apth_cancel_enabled_and_canceled(int value);
+// static inline bool apth_cancel_enabled_and_canceled_and_async(int value);
 
 // ============================== Signal ==============================
 int apth_util_sigdelete(int sig);

@@ -21,10 +21,6 @@ struct apth_key_data;
 // Thread control block.
 struct apth_st
 {
-    /* priority queue handling */
-    apth_t q_next;
-    apth_t q_prev;
-
     /* standard thread control block ingredients */
     int prio;                    /* base priority of thread             */
     char name[APTH_TCB_NAMELEN]; /* name of thread                      */
@@ -53,16 +49,29 @@ struct apth_st
     void *start_arg;             /* start argument                      */
 
     /* thread joining */
-    bool joinable;  /* whether thread is joinable                       */
+    // bool joinable;  /* whether thread is joinable                       */
+    _Atomic apth_t joinid; /* Who is joining me? */
+#define IS_DETACHED(pd) ((pd)->joinid == (pd))
     void *join_arg; /* joining argument                                 */
 
-    /* per-thread specific storage */
-    const void **data_value; /* thread specific  values                 */
-    int data_count;          /* number of stored values                 */
-
     /* cancellation support */
-    bool cancelreq;           /* cancellation request is pending        */
-    unsigned int cancelstate; /* cancellation state of thread           */
+    bool cancelreq;              /* cancellation request is pending        */
+    _Atomic unsigned int cancelhandling; /* cancellation state of thread           */
+    // Bit set if cancellation is disabled
+#define CANCELSTATE_BITMASK _BIT(0)
+    // Bit set if asynchronous cancellation mode is selected
+#define CANCELTYPE_BITMASK _BIT(1)
+//     // Bit set if canceling has been initiated
+// #define CANCELING_BITMASK _BIT(2)
+//     // Bit set if canceled
+// #define CANCELED_BITMASK _BIT(3)
+//     // Bit set if thread is exiting
+// #define EXITING_BITMASK _BIT(4)
+//     // Bit set if thread terminated and TCB is freed
+// #define TERMINATED_BITMASK _BIT(5)
+//     // Bit set if thread is supposed to change XID
+// #define SETXID_BITMASK _BIT(6)
+#define APTH_CANCELED ((void *)-1)
     apth_cleanup_t *cleanups; /* stack of thread cleanup handlers       */
 
     /* mutex ring */
@@ -96,6 +105,7 @@ struct apth_st
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
+    struct list *belongs_to_list;
 };
 #define APTH_NULL (apth_t) NULL
 
@@ -323,19 +333,39 @@ struct apth_cleanup_st
 };
 typedef struct apth_cleanup_st *apth_cleanup_t;
 
+// ============================== Thread Attr ==============================
 // Thread attributes
 struct apth_attr_st
 {
-    apth_t a_tid;
-    int a_prio;
-    int a_dispatches;
-    char a_name[APTH_TCB_NAMELEN];
-    bool a_joinable;
-    unsigned int a_cancelstate;
-    size_t a_stacksize;
-    char *a_stackaddr;
+    // Scheduler parameters and priority
+    struct sched_param schedparam;
+    int schedpolicy;
+    // Various flags like detachstate, scope, etc
+    int flags;
+    // Size of guard area
+    size_t guardsize;
+    // Stack handling
+    void *stackaddr;
+    size_t stacksize;
+
+    /* These are extensions. Modified according to APTH needs */
+    // Affinity map
+    cpu_set_t *cpuset;
+    size_t cpusetsize;
+    sigset_t sigmask;
+    bool sigmask_set;
 };
 
+#define ATTR_FLAG_DETACHSTATE 0x0001
+#define ATTR_FLAG_NOTINHERITSCHED 0x0002
+#define ATTR_FLAG_SCOPEPROCESS 0x0004
+#define ATTR_FLAG_STACKADDR 0x0008
+#define ATTR_FLAG_OLDATTR 0x0010
+#define ATTR_FLAG_SCHED_SET 0x0020
+#define ATTR_FLAG_POLICY_SET 0x0040
+#define ATTR_FLAG_DO_RSEQ 0x0080
+
+// ============================== Time ==============================
 #define APTH_TIME_NOW (apth_time_t *)(0)
 extern apth_time_t apth_time_zero;
 #define APTH_TIME_ZERO &apth_time_zero

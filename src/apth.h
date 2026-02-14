@@ -1,6 +1,8 @@
 #ifndef __LIBAPTH_H
 #define __LIBAPTH_H
 
+#include <stdbool.h>
+
 // Thread identifier
 typedef struct apth_st *apth_t;
 struct apth_st;
@@ -23,6 +25,9 @@ typedef enum
     APTH_EV_STATUS_FAILED,
 } apth_ev_status_t;
 
+
+// ==================== Thread Attributes ====================
+ 
 struct apth_attr_st;
 typedef struct apth_attr_st apth_attr_t;
 
@@ -30,6 +35,26 @@ typedef unsigned int apth_key_t;
 
 // ==================== Functions ====================
 int apth_yield(void);
+
+// ==================== Cleanup ====================
+enum {
+    APTH_CANCEL_ENABLE = 0,
+#define APTH_CANCEL_ENABLE APTH_CANCEL_ENABLE
+    APTH_CANCEL_DISABLE
+#define APTH_CANCEL_DISABLE APTH_CANCEL_DISABLE
+};
+enum {
+    APTH_CANCEL_DEFERRED = 0,
+#define APTH_CANCEL_DEFERRED APTH_CANCEL_DEFERRED
+    APTH_CANCEL_ASYNCHRONOUS
+#define APTH_CANCEL_ASYNCHRONOUS APTH_CANCEL_ASYNCHRONOUS
+};
+
+bool apth_cleanup_push(void (*)(void *), void *);
+bool apth_cleanup_pop(int);
+
+void apth_exit(void *retval);
+
 
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>

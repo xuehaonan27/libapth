@@ -2,36 +2,6 @@
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
 
-bool apth_cleanup_push(void (*func)(void *), void *arg)
-{
-    apth_cleanup_t cleanup;
-    if (func == NULL)
-        return apth_error(false, EINVAL);
-    if ((cleanup = (apth_cleanup_t)malloc(sizeof(struct apth_cleanup_st))) == NULL)
-        return apth_error(false, ENOMEM);
-    cleanup->func = func;
-    cleanup->arg = arg;
-    cleanup->next = cur_apth()->cleanups;
-    cur_apth()->cleanups = cleanup;
-    return true;
-}
-
-bool apth_cleanup_pop(bool execute)
-{
-    apth_cleanup_t cleanup;
-    int retval = false;
-
-    if ((cleanup = cur_apth()->cleanups) != NULL)
-    {
-        cur_apth()->cleanups = cleanup->next;
-        if (execute)
-            cleanup->func(cleanup->arg);
-        free(cleanup);
-        retval = true;
-    }
-    return retval;
-}
-
 void apth_cleanup_popall(apth_t t, bool execute)
 {
     apth_cleanup_t cleanup;
@@ -43,5 +13,20 @@ void apth_cleanup_popall(apth_t t, bool execute)
             cleanup->func(cleanup->arg);
         free(cleanup);
     }
+    return;
+}
+
+// Cleanup a particular thread
+static void apth_thread_clenaup(apth_t th)
+{
+    // Run the cleaup handlers
+    if (th->cleanups != NULL)
+        apth_cleanup_popall(th, true);
+
+    // Run the specific data destructors
+    apth_key_destroydata(th);
+
+    // Release still acquired synchronizing primitives
+    TODO("release sync primitives");
     return;
 }

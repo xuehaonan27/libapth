@@ -52,25 +52,41 @@ void dec_thrcnt(apth_sched_t sched)
 
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
+#define head_apth_of(name) head_apth_of_##name
 #define new_apth_to(name) new_apth_to_##name
 #define list_of(name) name##_list
 // TODO: acquire list lock, since the caller pthread may not be ourself
 // TODO: release list lock
-#define DEFINE_SCHED_LIST_OP(name)                         \
-    void push_apth_to(name)(apth_t th, apth_sched_t sched) \
-    {                                                      \
-        list_push_back(&sched->list_of(name), &th->elem);  \
-    }                                                      \
-    apth_t pop_apth_from(name)(apth_sched_t sched)         \
-    {                                                      \
-        apth_t th = NULL;                                  \
-        struct list_elem *e;                               \
-        if (!list_empty(&sched->list_of(name)))            \
-        {                                                  \
-            e = list_pop_front(&sched->list_of(name));     \
-            th = apth_t_list_entry(e);                     \
-        }                                                  \
-        return th;                                         \
+#define DEFINE_SCHED_LIST_OP(name)                            \
+    void push_apth_to(name)(apth_t th, apth_sched_t sched)    \
+    {                                                         \
+        assert(th->belongs_to_list == NULL);                  \
+        list_push_back(&sched->list_of(name), &th->elem);     \
+        th->belongs_to_list = &sched->list_of(name);          \
+    }                                                         \
+    apth_t pop_apth_from(name)(apth_sched_t sched)            \
+    {                                                         \
+        apth_t th = NULL;                                     \
+        struct list_elem *e;                                  \
+        assert(th->belongs_to_list == &sched->list_of(name)); \
+        if (!list_empty(&sched->list_of(name)))               \
+        {                                                     \
+            e = list_pop_front(&sched->list_of(name));        \
+            th = apth_t_list_entry(e);                        \
+        }                                                     \
+        th->belongs_to_list = NULL;                           \
+        return th;                                            \
+    }                                                         \
+    apth_t head_apth_of(name)(apth_sched_t sched)             \
+    {                                                         \
+        apth_t th = NULL;                                     \
+        struct list_elem *e;                                  \
+        if (!list_empty(&sched->list_of(name)))               \
+        {                                                     \
+            e = list_front(&sched->list_of(name));            \
+            th = apth_t_list_entry(e);                        \
+        }                                                     \
+        return th;                                            \
     }
 
 DEFINE_SCHED_LIST_OP(new)
@@ -82,6 +98,7 @@ DEFINE_SCHED_LIST_OP(terminated)
 #undef DEFINE_SCHED_LIST_OP
 #undef list_of
 #undef new_apth_to
+#undef head_apth_of
 #undef pop_apth_from
 #undef push_apth_to
 
@@ -143,4 +160,42 @@ void apth_scheduler_kill(apth_sched_t sched)
     // Mark the scheduler as closed
     atomic_store_release(&sched->opening, false);
     return;
+}
+
+static bool apth_is_not_null_and_valid(apth_t th)
+{
+    // Assert sanity
+    apth_sched_t sched = cur_sched();
+    struct list *sl;
+    switch (th->state)
+    {
+    case APTH_STATE_NEW:
+        sl = &sched->new_list;
+        break;
+    case APTH_STATE_READY:
+        sl = &sched->ready_list;
+        break;
+    case APTH_STATE_WAITING:
+        sl = &sched->waiting_list;
+        break;
+    case APTH_STATE_TERMINATED:
+        sl = &sched->terminated_list;
+        break;
+    default:
+        PANIC("should not reach here");
+        break;
+    }
+    struct list *l = th->belongs_to_list;
+
+    assert(l == sl);
+
+    // List contains
+    bool found = false;
+    FOR_ELEMENT_IN_LIST_REF(l, e)
+    {
+        apth_t t = apth_t_list_entry(e);
+        if (t == th)
+            found = true;
+    }
+    return found;
 }

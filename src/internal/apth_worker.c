@@ -271,7 +271,7 @@ static void *worker_start_routine(void *arg)
         if (th->state == APTH_STATE_TERMINATED)
         {
             apth_debug("apth scheduler: marking thread \"%s\" as terminated", th->name);
-            if (!th->joinable)
+            if (IS_DETACHED(th))
                 apth_tcb_free(th);
             else
                 push_apth_to_terminated(th, sched);
