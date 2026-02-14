@@ -117,10 +117,10 @@ bool apth_event_free(apth_event_t ev);
     static apth_syscall_pfn_t(name) apth_syscall_raw(name);
 
 #define APTH_DEFINE_SYSCALL(rettype, name, ...)                                                      \
-    static apth_syscall_pfn_t(name) apth_syscall_raw(name) = apth_syscall_init(name);                \
-    static rettype apth_syscall_init(name)(__VA_ARGS__)                                              \
+    static apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;                                   \
+    static rettype apth_syscall_init(name)(void)                                                     \
     {                                                                                                \
-        assert_msg(apth_syscall_raw(name) == apth_syscall_init(name), "sanity");                     \
+        assert_msg(apth_syscall_raw(name) == NULL, "sanity");                                        \
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
         apth_debug("found syscall " stringify(name) " = %p", func);                                  \
         apth_syscall_raw(name) = func;                                                               \

@@ -9,9 +9,44 @@
 #include <sys/uio.h>
 #include <malloc.h>
 
+#define APTH_LIST_OF_SYSCALLS \
+    X(nanosleep)              \
+    X(usleep)                 \
+    X(sleep)                  \
+    X(pthread_sigmask)        \
+    X(sigwait)                \
+    X(waitpid)                \
+    X(fork)                   \
+    X(system)                 \
+    X(select)                 \
+    X(pselect)                \
+    X(socket)                 \
+    X(connect)                \
+    X(close)                  \
+    X(accept)                 \
+    X(read)                   \
+    X(write)                  \
+    X(readv)                  \
+    X(writev)                 \
+    X(sendto)                 \
+    X(recvfrom)               \
+    X(send)                   \
+    X(recv)                   \
+    X(poll)                   \
+    X(setsockopt)             \
+    X(fcntl)                  \
+    X(setenv)                 \
+    X(unsetenv)               \
+    X(getenv)                 \
+    X(gethostbyname)
+
 void apth_syscall_system_init(void)
 {
-    TODO("apth_syscall_system_init");
+    apth_debug("apth_syscall_system_init: enter");
+#define X(name) apth_syscall_init(name)();
+    APTH_LIST_OF_SYSCALLS
+#undef X
+    apth_debug("apth_syscall_system_init: leave");
 }
 
 void apth_syscall_system_drop(void)

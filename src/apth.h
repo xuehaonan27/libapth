@@ -3,6 +3,13 @@
 
 #include <stdbool.h>
 
+// Initialize and destruct.
+// int apth_init(void) __attribute__((constructor));
+// int apth_drop(void) __attribute__((destructor));
+
+int apth_init(void);
+int apth_drop(void);
+
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>
 typedef struct timeval apth_time_t;
@@ -20,14 +27,6 @@ typedef enum
     APTH_STATE_WAITING,       /* suspended, waiting until event occurred */
     APTH_STATE_TERMINATED,    /* terminated, waiting to be joined        */
 } apth_state_t;
-
-// Event status code
-typedef enum
-{
-    APTH_EV_STATUS_PENDING,
-    APTH_EV_STATUS_OCCURRED,
-    APTH_EV_STATUS_FAILED,
-} apth_ev_status_t;
 
 // ==================== Thread Attributes ====================
 

@@ -14,6 +14,14 @@
 
 #define _BIT(n) (1 << (n))
 
+// Event status code
+typedef enum
+{
+    APTH_EV_STATUS_PENDING,
+    APTH_EV_STATUS_OCCURRED,
+    APTH_EV_STATUS_FAILED,
+} apth_ev_status_t;
+
 // ============================== Thread Context ==============================
 // APTH Thread context
 struct apth_cxt_st
