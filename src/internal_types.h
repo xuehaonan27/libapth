@@ -14,7 +14,134 @@
 
 #define _BIT(n) (1 << (n))
 
-struct apth_key_data;
+// ============================== Thread Context ==============================
+// APTH Thread context
+struct apth_cxt_st
+{
+    ucontext_t uc;
+    sigset_t sigs;
+    int error;
+    bool restored;
+};
+typedef struct apth_cxt_st *apth_cxt_t;
+
+// ============================== Time ==============================
+#define APTH_TIME_NOW (apth_time_t *)(0)
+extern apth_time_t apth_time_zero;
+#define APTH_TIME_ZERO &apth_time_zero
+
+// ============================== Thread Data ==============================
+
+struct apth_key_data
+{
+    uintptr_t seq; // Sequence number.
+    void *data;    // Data pointer
+};
+
+struct apth_keytab_st
+{
+    // Sequence numbers. Even numbers indicated vacant entries,
+    // Note that zero is even.
+    _Atomic uintptr_t seq;
+    // Destructor for the data.
+    void (*destructor)(void *);
+};
+
+// Check whether an entry is unused.
+#define APTH_KEY_UNUSED(p) (((p) & 1) == 0)
+
+// Check whether a key is usable. We cannot reuse an allocated key if the
+// sequence counter would overflow after the next destory call. This would
+// mean that we potentially free memory for a key with the same sequence. This
+// is very unlikely to happen, A program would have to create and destroy
+// a key 2 ^ 31 (32-bits) or 2 ^ 63 (64-bits) times. If it should happen we
+// simply don't use this specific key anymore.
+#define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
+
+// ============================== Thread Cleanup ==============================
+
+// Thread cleanup handlers
+struct apth_cleanup_st
+{
+    struct apth_cleanup_st *next;
+    void (*func)(void *);
+    void *arg;
+};
+typedef struct apth_cleanup_st *apth_cleanup_t;
+
+// ============================== Thread Scheduler ==============================
+typedef int sched_id;
+
+// We don't want to expose this struct to public space
+typedef struct apth_perpthr_scheduler *apth_sched_t;
+
+// We don't want to expose this struct to public space
+typedef struct apth_worker_st *apth_worker_t;
+
+#define APTH_NSIG 65
+
+// Per-thread scheduler. Note that we do not treat scheduler as a separated
+// thread but a background role. Besides, since the main thread only runs on
+// one of schedulers, holding a special reference field to the main thread is
+// meaningless here.
+struct apth_perpthr_scheduler
+{
+    sched_id id;                 // scheduler ID
+    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
+    struct list new_list;        // new threads
+    struct list ready_list;      // threads ready to run [elem: struct apth_st]
+    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
+    struct list suspended_list;  // suspended threads [elem: struct apth_st]
+    struct list terminated_list; // terminated threads [elem: struct apth_st]
+    apth_worker_t worker;        // pthread worker carrying this scheduler
+    unsigned int switches;       // context switch times
+    unsigned int thrcnt;         // APTH threads now running on this scheduler
+    apth_time_t running;         // time the scheduler runs
+    apth_t cur;                  // current APTH
+    _Atomic bool opening;        // scheduler is opening
+    int apth_sigpipe[2];         // internal signal occurrence pipe
+    sigset_t apth_sigpending;    // mask of pending signals
+    sigset_t apth_sigblock;      // mask of signals we block in scheduler
+    sigset_t apth_sigcatch;      // mask of signals we have to catch
+    sigset_t apth_sigraised;     // mask of raised signals
+    apth_time_t apth_loadticknext;
+    float loadval;
+};
+
+// Pthread worker occupying CPU and carrying APTH loads
+struct apth_worker_st
+{
+    int worker_id;       // worker ID
+    pthread_t tid;       // a worker pthread
+    pthread_attr_t attr; // Worker pthread attribute
+    apth_sched_t sched;  // Hold scheduler
+    struct list_elem elem;
+#define apth_worker_t_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_worker_st, elem)
+};
+
+// Argument passed to worker's pthread
+struct apth_worker_pthread_arg
+{
+    apth_worker_t self; // pointer to this worker
+};
+typedef struct apth_worker_pthread_arg *apth_worker_arg_t;
+
+// The whole process shares this pool. This pool should be placed in heap.
+// Accessing to this pool should be synchronized.
+struct apth_global_scheduler_pool
+{
+    // TODO: there should be a lock protecting access to this pool.
+    // TODO: this lock should be RW-lock since there's a lot of reads and a few writes.
+    // TODO: and at Pthread level.
+    int worker_count;          // total worker pthreads count
+    struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
+
+    /* Immutable fields */
+    int init_worker_count;                    // initially spawned workers
+    struct apth_worker_st *workers_mem_start; // start memory address of init workers
+    // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
+};
 
 // ============================== APTH TCB ==============================
 
@@ -55,7 +182,7 @@ struct apth_st
     void *join_arg; /* joining argument                                 */
 
     /* cancellation support */
-    bool cancelreq;              /* cancellation request is pending        */
+    bool cancelreq;                      /* cancellation request is pending        */
     _Atomic unsigned int cancelhandling; /* cancellation state of thread           */
     // Bit set if cancellation is disabled
 #define CANCELSTATE_BITMASK _BIT(0)
@@ -117,15 +244,6 @@ struct apth_st
 // high (> 0). On most systems this should usually be the former.
 #define APTH_STACKGROWTH (-1)
 #define APTH_MAGIC 0xCAFEBABE
-
-const char *pth_state_names[] = {
-    "scheduler",
-    "new",
-    "ready",
-    "running",
-    "waiting",
-    "dead",
-};
 
 // ============================== Thread Events ==============================
 
@@ -237,102 +355,6 @@ struct apth_event_st
 typedef struct apth_event_st *apth_event_t;
 #define APTH_EVENT_NULL NULL
 
-// ============================== Thread Context ==============================
-// APTH Thread context
-struct apth_cxt_st
-{
-    ucontext_t uc;
-    sigset_t sigs;
-    int error;
-    bool restored;
-};
-typedef struct apth_cxt_st *apth_cxt_t;
-
-// ============================== Thread Scheduler ==============================
-typedef int sched_id;
-
-#define APTH_NSIG 65
-
-// Per-thread scheduler. Note that we do not treat scheduler as a separated
-// thread but a background role. Besides, since the main thread only runs on
-// one of schedulers, holding a special reference field to the main thread is
-// meaningless here.
-struct apth_perpthr_scheduler
-{
-    sched_id id;                 // scheduler ID
-    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
-    struct list new_list;        // new threads
-    struct list ready_list;      // threads ready to run [elem: struct apth_st]
-    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
-    struct list suspended_list;  // suspended threads [elem: struct apth_st]
-    struct list terminated_list; // terminated threads [elem: struct apth_st]
-    apth_worker_t worker;        // pthread worker carrying this scheduler
-    unsigned int switches;       // context switch times
-    unsigned int thrcnt;         // APTH threads now running on this scheduler
-    apth_time_t running;         // time the scheduler runs
-    apth_t cur;                  // current APTH
-    _Atomic bool opening;        // scheduler is opening
-    int apth_sigpipe[2];         // internal signal occurrence pipe
-    sigset_t apth_sigpending;    // mask of pending signals
-    sigset_t apth_sigblock;      // mask of signals we block in scheduler
-    sigset_t apth_sigcatch;      // mask of signals we have to catch
-    sigset_t apth_sigraised;     // mask of raised signals
-    apth_time_t apth_loadticknext;
-    float loadval;
-};
-// We don't want to expose this struct to public space
-typedef struct apth_perpthr_scheduler *apth_sched_t;
-
-// ============================== Worker ==============================
-
-// Pthread worker occupying CPU and carrying APTH loads
-struct apth_worker_st
-{
-    int worker_id;       // worker ID
-    pthread_t tid;       // a worker pthread
-    pthread_attr_t attr; // Worker pthread attribute
-    apth_sched_t sched;  // Hold scheduler
-    struct list_elem elem;
-#define apth_worker_t_list_entry(LIST_ELEM) \
-    list_entry(LIST_ELEM, struct apth_worker_st, elem)
-};
-// We don't want to expose this struct to public space
-typedef struct apth_worker_st *apth_worker_t;
-
-// Argument passed to worker's pthread
-struct apth_worker_pthread_arg
-{
-    apth_worker_t self; // pointer to this worker
-};
-typedef struct apth_worker_pthread_arg *apth_worker_arg_t;
-
-// The whole process shares this pool. This pool should be placed in heap.
-// Accessing to this pool should be synchronized.
-struct apth_global_scheduler_pool
-{
-    // TODO: there should be a lock protecting access to this pool.
-    // TODO: this lock should be RW-lock since there's a lot of reads and a few writes.
-    // TODO: and at Pthread level.
-    int worker_count;          // total worker pthreads count
-    struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
-
-    /* Immutable fields */
-    int init_worker_count;                    // initially spawned workers
-    struct apth_worker_st *workers_mem_start; // start memory address of init workers
-    // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
-};
-
-// ============================== Thread Cleanup ==============================
-
-// Thread cleanup handlers
-struct apth_cleanup_st
-{
-    apth_cleanup_t next;
-    void (*func)(void *);
-    void *arg;
-};
-typedef struct apth_cleanup_st *apth_cleanup_t;
-
 // ============================== Thread Attr ==============================
 // Thread attributes
 struct apth_attr_st
@@ -364,39 +386,6 @@ struct apth_attr_st
 #define ATTR_FLAG_SCHED_SET 0x0020
 #define ATTR_FLAG_POLICY_SET 0x0040
 #define ATTR_FLAG_DO_RSEQ 0x0080
-
-// ============================== Time ==============================
-#define APTH_TIME_NOW (apth_time_t *)(0)
-extern apth_time_t apth_time_zero;
-#define APTH_TIME_ZERO &apth_time_zero
-
-// ============================== Thread Data ==============================
-
-struct apth_key_data
-{
-    uintptr_t seq; // Sequence number.
-    void *data;    // Data pointer
-};
-
-struct apth_keytab_st
-{
-    // Sequence numbers. Even numbers indicated vacant entries,
-    // Note that zero is even.
-    _Atomic uintptr_t seq;
-    // Destructor for the data.
-    void (*destructor)(void *);
-};
-
-// Check whether an entry is unused.
-#define APTH_KEY_UNUSED(p) (((p) & 1) == 0)
-
-// Check whether a key is usable. We cannot reuse an allocated key if the
-// sequence counter would overflow after the next destory call. This would
-// mean that we potentially free memory for a key with the same sequence. This
-// is very unlikely to happen, A program would have to create and destroy
-// a key 2 ^ 31 (32-bits) or 2 ^ 63 (64-bits) times. If it should happen we
-// simply don't use this specific key anymore.
-#define APTH_KEY_USABLE(p) (((uintptr_t)(p)) < ((uintptr_t)((p) + 2)))
 
 // ============================== Filedescriptors ==============================
 // Filedescriptor blocking modes

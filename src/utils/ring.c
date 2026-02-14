@@ -92,7 +92,7 @@ void ring_push_front(struct ring *r, struct ring_elem *elem)
     return;
 }
 
-struct ring_elem *ring_pop_back(struct ring *r, struct ring_elem *elem)
+struct ring_elem *ring_pop_back(struct ring *r)
 {
     struct ring_elem *elem;
     elem = ring_last(r);
@@ -101,7 +101,7 @@ struct ring_elem *ring_pop_back(struct ring *r, struct ring_elem *elem)
     return elem;
 }
 
-struct ring_elem *ring_pop_front(struct ring *r, struct ring_elem *elem)
+struct ring_elem *ring_pop_front(struct ring *r)
 {
     struct ring_elem *elem;
     elem = ring_first(r);

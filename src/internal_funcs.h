@@ -11,7 +11,6 @@ apth_worker_t cur_worker(void);
 apth_sched_t cur_sched(void);
 apth_t cur_apth(void);
 void set_cur_apth(apth_t t);
-void worker_key_t_destr_fn(void *p);
 apth_worker_t get_worker_by_id(int worker_id);
 int worker_count(void);
 static int apth_global_scheduler_pool_init(void);
@@ -113,10 +112,11 @@ bool apth_event_free(apth_event_t ev);
 
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)              \
     typedef rettype (*apth_syscall_pfn_t(name))(__VA_ARGS__); \
-    rettype apth_syscall(name)(__VA_ARGS__);
+    rettype apth_syscall(name)(__VA_ARGS__);                  \
+    static rettype apth_syscall_init(name)(__VA_ARGS__);      \
+    static apth_syscall_pfn_t(name) apth_syscall_raw(name);
 
 #define APTH_DEFINE_SYSCALL(rettype, name, ...)                                                      \
-    static rettype apth_syscall_init(name)(__VA_ARGS__);                                             \
     static apth_syscall_pfn_t(name) apth_syscall_raw(name) = apth_syscall_init(name);                \
     static rettype apth_syscall_init(name)(__VA_ARGS__)                                              \
     {                                                                                                \

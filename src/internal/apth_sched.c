@@ -142,10 +142,10 @@ static void apth_scheduler_kill(apth_sched_t sched)
 {
 // Drop all apths
 #define CLEAR_T_LIST(name)                     \
-    FOR_ELEMENT_IN_LIST(sched->name##_list, e) \
+    FOR_ELEMENT_IN_LIST(sched->name##_list, e##name) \
     {                                          \
-        apth_t t = apth_t_list_entry(e);       \
-        apth_tch_free(t);                      \
+        apth_t t = apth_t_list_entry(e##name);       \
+        apth_tcb_free(t);                      \
     }                                          \
     list_init(&sched->name##_list);
 

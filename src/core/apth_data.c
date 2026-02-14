@@ -1,7 +1,7 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
-#include "archplattoold.h"
-#include "atomic_wrapper.h"
+#include "utils/archplattoold.h"
+#include "utils/atomic_wrapper.h"
 #include <stdlib.h>
 
 static struct apth_keytab_st APTH_KEYS[APTH_KEYS_MAX];

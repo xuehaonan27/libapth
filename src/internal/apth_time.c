@@ -65,7 +65,6 @@ void apth_time_sub(apth_time_t *t1, apth_time_t *t2)
 int apth_time_cmp(apth_time_t *t1, apth_time_t *t2)
 {
     int rc;
-    int rc;
 
     rc = t1->tv_sec - t2->tv_sec;
     if (rc == 0)

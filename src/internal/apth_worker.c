@@ -6,12 +6,16 @@
 #include "utils/apth_sysutils.h"
 #include <pthread.h>
 #include <string.h>
+#include <stdlib.h>
 
 static bool WORKER_POOL_INITIALIZED = false;
 static struct apth_global_scheduler_pool GLOBAL_POOL;
 
 static pthread_key_t __CUR_WORKER_KEY;
 static pthread_key_t __CUR_SCHED_KEY;
+
+static void worker_key_t_destr_fn(void *) { /* nop */ }
+static void sched_key_t_destr_fn(void *) { /* nop */ }
 
 void worker_key_t_init(void)
 {
@@ -57,9 +61,6 @@ void set_cur_apth(apth_t t)
 {
     cur_sched()->cur = t;
 }
-
-void worker_key_t_destr_fn(void *p) { /* nop */ }
-void sched_key_t_destr_fn(void *p) { /* nop */ }
 
 // Get worker by `worker_id`
 apth_worker_t get_worker_by_id(int worker_id)
@@ -145,7 +146,7 @@ static int apth_global_scheduler_pool_init(void)
 
     // TODO: handle possible OOM with apth_error
     struct apth_worker_st *workers_mem;
-    if ((workers_mem = malloc(online_cores, sizeof(struct apth_worker_st))) == NULL)
+    if ((workers_mem = malloc(online_cores * sizeof(struct apth_worker_st))) == NULL)
         return apth_error(-1, ENOMEM);
 
     GLOBAL_POOL.workers_mem_start = workers_mem;

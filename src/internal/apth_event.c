@@ -7,7 +7,7 @@
 static void apth_sched_eventmanager_sighandler(int sig, siginfo_t *_dummy_info, void *arg)
 {
     char c;
-    apth_sched_t sched = (struct apth_sched_st *)arg;
+    apth_sched_t sched = (struct apth_perpthr_scheduler *)arg;
     // Remember raised signal
     sigaddset(&sched->apth_sigraised, sig);
 
@@ -23,7 +23,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 {
     apth_debug("apth_sched_eventmanager: enter in %s mode", dopoll ? "polling" : "waiting");
 
-    while (1)
+    for (;;)
     {
         bool loop_repeat = false;
 
@@ -327,7 +327,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 
         // For all apths in the waiting queue
         apth_t th_last = APTH_NULL;
-        FOR_ELEMENT_IN_LIST(sched->waiting_list, e)
+        FOR_ELEMENT_IN_LIST(sched->waiting_list, wth_e)
         {
             // Move last apth with events occurred to ready queue.
             // Insert it with a slightly increased queue priority.
@@ -341,7 +341,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
                 th_last = APTH_NULL;
             }
 
-            apth_t th = apth_t_list_entry(e);
+            apth_t th = apth_t_list_entry(wth_e);
 
             // Do the late handling of the fd I/O and signal events in the waiting event
             bool any_occurred = false;
@@ -642,11 +642,13 @@ bool apth_event_free(apth_event_t ev)
     return true;
 }
 
-void apth_event_list_add(struct list *el, apth_event_t ev) {
+void apth_event_list_add(struct list *el, apth_event_t ev)
+{
     list_push_back(el, &ev->elem);
 }
 
-void apth_event_isolate(apth_event_t ev) {
+void apth_event_isolate(apth_event_t ev)
+{
     list_remove(&ev->elem);
 }
 
@@ -683,9 +685,9 @@ int apth_wait_event_list(struct list *el)
 
     // Count number of actually occurred (or failed) events
     int nonpending = 0;
-    FOR_ELEMENT_IN_LIST_REF(el, e)
+    FOR_ELEMENT_IN_LIST_REF(el, e2)
     {
-        apth_event_t ev = apth_event_t_list_entry(e);
+        apth_event_t ev = apth_event_t_list_entry(e2);
         if (ev->ev_status != APTH_EV_STATUS_PENDING)
         {
             apth_debug("apth_wait_event_list: non-pending event 0x%lx", (unsigned long)ev);

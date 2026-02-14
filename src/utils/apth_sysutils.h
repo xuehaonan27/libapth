@@ -2,7 +2,7 @@
 #define __LIBAPTH_UTILS_APTH_SYSUTILS_H
 
 #include "debug.h"
-#include <apth_errno.h>
+#include "apth_errno.h"
 #include <unistd.h>
 
 // Get number of online CPU cores
