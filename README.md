@@ -9,3 +9,4 @@
 6. Can write tests according to manual pages of pthread
 7. Unify format of debug messages
 8. For any passed in apth_t, check its validity first.
+9. Make all internal functions private (static)

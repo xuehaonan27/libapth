@@ -58,5 +58,10 @@ void apth_tcb_free(apth_t t)
     // TODO("Clear other fields");
 
     free(t);
+
+    // Decrement
+    apth_sched_t sched = cur_sched();
+    dec_thrcnt(sched);
+
     return;
 }

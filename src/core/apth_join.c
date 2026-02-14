@@ -27,7 +27,6 @@ int apth_join(apth_t tid, void **value)
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
 
-    // TODO: determine that this tid is valid
     if (tid == APTH_NULL || apth_is_not_null_and_valid(tid))
         return apth_error(ESRCH, ESRCH);
     // Is the apth joinable?

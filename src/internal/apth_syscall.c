@@ -14,6 +14,11 @@ void apth_syscall_system_init(void)
     TODO("apth_syscall_system_init");
 }
 
+void apth_syscall_system_drop(void)
+{
+    TODO("apth_syscall_system_drop");
+}
+
 // APTH variant of nanosleep(2)
 APTH_DEFINE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
 {

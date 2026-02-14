@@ -26,7 +26,8 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
     unsigned int stacksize;
     void *stackaddr;
     apth_time_t ts;
-    apth_t cur = cur_apth();
+    apth_sched_t sched = cur_sched();
+    apth_t cur = sched->cur;
 
     apth_debug("apth_create: enter");
 
@@ -115,6 +116,9 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // the scheduler will pick it up for dispatching
     t->state = APTH_STATE_NEW;
     push_apth_to_new(t, cur_sched()); // TODO: is sched initialized by here
+    
+    // Increment scheduler thread count
+    inc_thrcnt(sched);
 
     apth_debug("apth_create: leave");
     return t;

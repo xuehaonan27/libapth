@@ -14,14 +14,16 @@ void set_cur_apth(apth_t t);
 void worker_key_t_destr_fn(void *p);
 apth_worker_t get_worker_by_id(int worker_id);
 int worker_count(void);
-int apth_global_scheduler_pool_init(bool caller_pthr_gets_involved);
+static int apth_global_scheduler_pool_init(void);
+static int apth_global_scheduler_pool_drop(void);
 int add_worker_thread(void);
 
 // ============================== Scheduler ==============================
 
-bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
-void inc_thrcnt(apth_sched_t sched);
-void dec_thrcnt(apth_sched_t sched);
+static bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
+static void apth_scheduler_kill(apth_sched_t sched);
+static void inc_thrcnt(apth_sched_t sched);
+static void dec_thrcnt(apth_sched_t sched);
 
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
@@ -40,9 +42,10 @@ DECLARE_SCHED_LIST_OP(terminated)
 #undef pop_apth_from
 #undef push_apth_to
 
-bool apth_sched_is_opening(apth_sched_t sched);
-void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
+static bool apth_sched_is_opening(apth_sched_t sched);
+static void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
 static bool apth_is_not_null_and_valid(apth_t th);
+static void *scheduler_routine(void *arg);
 
 // ============================== TCB ==============================
 apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);

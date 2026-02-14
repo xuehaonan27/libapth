@@ -1,4 +1,3 @@
-#include "common.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
 
@@ -101,213 +100,6 @@ int worker_count(void)
     return result;
 }
 
-// Start routine for a scheduler pthread. The prototype of this function matches
-// that required by Pthread.
-static void *worker_start_routine(void *arg)
-{
-    // Now we are in a separated Pthread
-    apth_worker_arg_t worker_arg = (apth_worker_arg_t)arg;
-    apth_worker_t me = worker_arg->self;
-
-    // Allocate and initialize the scheduler
-    apth_sched_t sched;
-    if ((sched = (apth_sched_t)malloc(sizeof(struct apth_perpthr_scheduler))) == NULL)
-        return apth_error(NULL, ENOMEM);
-    if (!apth_scheduler_init(sched, me))
-    {
-        // Fail to initialize
-        return apth_error(NULL, errno);
-    }
-
-    // Set TLS
-    set_cur_worker(me);
-    set_cur_sched(sched);
-
-    apth_debug("apth_scheduler: bootstrapping");
-    sigset_t sigs;
-    apth_time_t snapshot;
-    apth_time_t running;
-    struct sigaction sa;
-    sigset_t ss;
-
-    // block all signals in the scheduler thread
-    sigfillset(&sigs);
-    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
-
-    // initialize the snapshot time for bootstrapping the loop
-    apth_time_set(&snapshot, APTH_TIME_NOW);
-
-    // TODO: initialize other parts of the worker
-    // TODO: go into a endless loop.
-    while (apth_sched_is_opening(sched))
-    {
-        // TODO: acquire list lock (maybe stealing lock)
-
-        // Move all new threads to ready list
-        apth_t th;
-        while ((th = pop_apth_from_new(sched)) != APTH_NULL)
-        {
-            th->state = APTH_STATE_READY;
-            // TODO: insert into ready queue according to policy
-            // TODO: here just append
-            push_apth_to_ready(th, sched);
-        }
-
-        // Update statistics
-        apth_sched_calc_load(sched, &snapshot);
-
-        // Find the next thread in ready queue and set it to be run
-        th = pop_apth_from_ready(sched);
-
-        if (th == APTH_NULL)
-        {
-            // there is no more thread to ready, panic
-            PANIC("APTH SCHEDULER INTERNAL ERROR: no more threads available to schedule");
-        }
-        // Set current thread and TCB to TCB, now using TCB is enough
-        set_cur_apth(th);
-
-        // Handle signals
-        if (th->sigpendcnt > 0)
-        {
-            sigpending(&sched->apth_sigpending);
-            for (int sig = 1; sig < APTH_NSIG; sig++)
-            {
-                if (sigismember(&th->sigpending, sig) && !sigismember(&sched->apth_sigpending, sig))
-                {
-                    pthread_kill(pthread_self(), sig);
-                }
-            }
-        }
-
-        // Set running start time for new thread and perform a context switch to it
-        apth_debug("apth scheduler: switching to thread %p (\"%s\")", th, th->name);
-
-        // Update thread times
-        apth_time_set(&th->lastran, APTH_TIME_NOW);
-
-        // Update scheduler times
-        apth_time_set(&running, &th->lastran);
-        apth_time_sub(&running, &snapshot);
-        apth_time_add(&sched->running, &running);
-
-        // Switch the thread
-        th->dispatches += 1;
-        apth_ctx_switch(sched->sched_ctx, th->ctx);
-
-        // Update scheduler times
-        apth_time_set(&snapshot, APTH_TIME_NOW);
-        apth_debug("apth scheduler: cameback from thread %p (\"%s\")", th, th->name);
-
-        // Update thread times
-        apth_time_set(&running, &snapshot);
-        apth_time_sub(&running, &th->lastran);
-        apth_time_add(&th->running, &running);
-        apth_debug("apth_scheduler: thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
-
-        // Handle signals
-        if (th->sigpendcnt > 0)
-        {
-            sigset_t sigstillpending;
-            sigpending(&sigstillpending);
-            for (int sig = 1; sig < APTH_NSIG; sig++)
-            {
-                if (sigismember(&th->sigpending, sig))
-                {
-                    if (!sigismember(&sigstillpending, sig))
-                    {
-                        // already handled by the apth scheduled just now, remove
-                        sigdelset(&th->sigpending, sig);
-                        th->sigpendcnt--;
-                    }
-                    else if (!sigismember(&sched->apth_sigpending, sig))
-                    {
-                        // A new signal arrives during the apth is scheduled to run
-                        // and it happens to be in the signal pending set of `th`.
-                        // We must re-deliver this signal for `th` the next time
-                        // it is going to be scheduled. Since re-deliver an existing signal
-                        // won't trigger anything, we must first delete the signal at
-                        // pthread level, and later the scheduler will pthread_kill the
-                        // signal according to `th->sigpending` the next time `th` is
-                        // scheduled.
-                        apth_util_sigdelete(sig);
-                    }
-                }
-            }
-        }
-
-        // Check for stack overflow
-        if (th->stackguard != NULL)
-        {
-            if (*th->stackguard != APTH_MAGIC)
-            {
-                apth_debug("apth scheduler: stack overflow detected for thread %p (\"%s\")",
-                           th, th->name);
-                // If the application doesn't catch SIGSEGVs, then terminate manually
-                // with a SIGSEGV now
-                if (sigaction(SIGSEGV, NULL, &sa) == 0)
-                {
-                    if (sa.sa_handler == SIG_DFL)
-                    {
-                        fprintf(stderr, "APTH STACK OVERFLOW: thread pid_t=0x%lx, name=\"%s\"\n",
-                                (unsigned long)th, th->name);
-                        kill(getpid(), SIGSEGV); // Kill to all threads in the whole process
-                        sigfillset(&ss);
-                        sigdelset(&ss, SIGSEGV);
-                        sigsuspend(&ss);
-                        abort();
-                    }
-                }
-
-                // Else terminate the thread only and send a SIGSEGV which allows the application
-                // to handle the situation
-                th->join_arg = (void *)APTH_MAGIC;
-                th->state = APTH_STATE_TERMINATED;
-                pthread_kill(pthread_self(), SIGSEGV);
-            }
-        }
-
-        // If previous thread is now marked as dead, kick it out
-        if (th->state == APTH_STATE_TERMINATED)
-        {
-            apth_debug("apth scheduler: marking thread \"%s\" as terminated", th->name);
-            if (IS_DETACHED(th))
-                apth_tcb_free(th);
-            else
-                push_apth_to_terminated(th, sched);
-            set_cur_apth(APTH_NULL);
-        }
-
-        // If thread wants to wait for an event, move it to waiting queue now
-        if (th != NULL && th->state == APTH_STATE_WAITING)
-        {
-            apth_debug("apth scheduler: moving thread \"%s\", to waiting queue", th->name);
-            push_apth_to_waiting(th, sched);
-            set_cur_apth(APTH_NULL);
-        }
-
-        // Insert thread back to ready queue if not inserted into waiting queue
-        // TODO: migrate old threads in ready queue into higher prio?
-        if (th != NULL)
-            push_apth_to_ready(th, sched);
-
-        // Manage events in the waiting queue
-        if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
-        {
-            apth_debug("apth scheduler: no NEW or READY threads, have to wait for new work");
-            apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);
-        }
-        else
-        {
-            apth_debug("apth scheduler: already NEW or READY threads exists, so just poll for even more work");
-            apth_sched_eventmanager(sched, &snapshot, true /* dopoll */);
-        }
-    }
-
-    // Not reached
-    return NULL;
-}
-
 static int apth_worker_init(apth_worker_t worker, int worker_id)
 {
     worker->worker_id = worker_id;
@@ -318,8 +110,19 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     arg->self = worker;
     // TODO: initialize the worker argument, like core affinity
     // TODO: should this pthread be detached or something?
-    int result = pthread_create(&worker->tid, &worker->attr, worker_start_routine, arg);
+    int result = pthread_create(&worker->tid, &worker->attr, scheduler_routine, arg);
     return result;
+}
+
+static int apth_worker_drop(apth_worker_t worker)
+{
+    // Drop the scheduler
+    apth_scheduler_kill(worker->sched);
+
+    void **pthr_rslt;
+    pthread_join(worker->tid, pthr_rslt);
+    assert(*pthr_rslt == NULL);
+    return 0;
 }
 
 // Initialize the APTH scheduler pool. The argument indicates whether the caller
@@ -327,7 +130,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 // be true. But for something like JVM, the initializing main thread will continue
 // the spawn of JVM in a separated new thread. In such case, since the caller Pthread
 // will exit soon, it should not be a worker thread.
-int apth_global_scheduler_pool_init(bool caller_pthr_gets_involved)
+static int apth_global_scheduler_pool_init(void)
 {
     if (WORKER_POOL_INITIALIZED)
     {
@@ -338,6 +141,7 @@ int apth_global_scheduler_pool_init(bool caller_pthr_gets_involved)
     long online_cores = cpu_cores();
 
     // TODO: initialize the pool lock
+    // TODO: acquire pool lock
 
     // TODO: handle possible OOM with apth_error
     struct apth_worker_st *workers_mem;
@@ -364,6 +168,30 @@ int apth_global_scheduler_pool_init(bool caller_pthr_gets_involved)
     // apth_debug("Spawned %ld workers", atomic_load(&GLOBAL_POOL.worker_count));
     apth_debug("Spawned %ld workers", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
+
+    return 0;
+}
+
+static int apth_global_scheduler_pool_drop(void)
+{
+    if (!WORKER_POOL_INITIALIZED)
+    {
+        PANIC("Worker pool not initialized!");
+        return -1;
+    }
+
+    // TODO: acquire pool lock
+
+    FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
+    {
+        apth_worker_t worker = apth_worker_t_list_entry(e);
+        int drop_result;
+        if ((drop_result = apth_worker_drop(worker)) != 0)
+            return apth_error(drop_result, errno);
+    }
+
+    free(GLOBAL_POOL.workers_mem_start);
+    WORKER_POOL_INITIALIZED = false;
 
     return 0;
 }
