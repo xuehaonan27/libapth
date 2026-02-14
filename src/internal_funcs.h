@@ -113,7 +113,7 @@ bool apth_event_free(apth_event_t ev);
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)              \
     typedef rettype (*apth_syscall_pfn_t(name))(__VA_ARGS__); \
     rettype apth_syscall(name)(__VA_ARGS__);                  \
-    static rettype apth_syscall_init(name)(__VA_ARGS__);      \
+    static rettype apth_syscall_init(name)(void);             \
     static apth_syscall_pfn_t(name) apth_syscall_raw(name);
 
 #define APTH_DEFINE_SYSCALL(rettype, name, ...)                                                      \
