@@ -2,7 +2,7 @@
 #include "internal_funcs.h"
 #include <fcntl.h>
 
-bool apth_util_fd_valid(int fd)
+APTH_INTERNAL bool apth_util_fd_valid(int fd)
 {
     if (fd < 0 || fd >= FD_SETSIZE)
         return false;
@@ -11,10 +11,10 @@ bool apth_util_fd_valid(int fd)
     return true;
 }
 
-void apth_util_fds_merge(int nfd,
-                         fd_set *ifds1, fd_set *ofds1,
-                         fd_set *ifds2, fd_set *ofds2,
-                         fd_set *ifds3, fd_set *ofds3)
+APTH_INTERNAL void apth_util_fds_merge(int nfd,
+                                       fd_set *ifds1, fd_set *ofds1,
+                                       fd_set *ifds2, fd_set *ofds2,
+                                       fd_set *ifds3, fd_set *ofds3)
 {
     int s;
 
@@ -34,10 +34,10 @@ void apth_util_fds_merge(int nfd,
 }
 
 // test whether fds in the input fd sets occurred in the output fds
-bool apth_util_fds_test(int nfd,
-                        fd_set *ifds1, fd_set *ofds1,
-                        fd_set *ifds2, fd_set *ofds2,
-                        fd_set *ifds3, fd_set *ofds3)
+APTH_INTERNAL bool apth_util_fds_test(int nfd,
+                                      fd_set *ifds1, fd_set *ofds1,
+                                      fd_set *ifds2, fd_set *ofds2,
+                                      fd_set *ifds3, fd_set *ofds3)
 {
     int s;
 
@@ -59,10 +59,10 @@ bool apth_util_fds_test(int nfd,
 // Clear fds in input fd sets if not occurred in output fd sets and return
 // number of remaining input fds. This number uses BSD select(2) semantics: a
 // fd in two set counts twice!
-int apth_util_fds_select(int nfd,
-                         fd_set *ifds1, fd_set *ofds1,
-                         fd_set *ifds2, fd_set *ofds2,
-                         fd_set *ifds3, fd_set *ofds3)
+APTH_INTERNAL int apth_util_fds_select(int nfd,
+                                       fd_set *ifds1, fd_set *ofds1,
+                                       fd_set *ifds2, fd_set *ofds2,
+                                       fd_set *ifds3, fd_set *ofds3)
 {
     int s;
     int n;
@@ -96,7 +96,7 @@ int apth_util_fds_select(int nfd,
 }
 
 // Switch a filedescriptor's I/O mode
-int apth_fdmode(int fd, int newmode)
+APTH_INTERNAL int apth_fdmode(int fd, int newmode)
 {
     int fdmode;
     int oldmode;

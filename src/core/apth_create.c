@@ -33,7 +33,7 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Consistency
     if (start_routine == NULL)
-        return apth_error(APTH_NULL, EINVAL);
+        return apth_error(EINVAL, EINVAL);
 
     // Support the special case of main()
     // TODO: check what is this
@@ -43,7 +43,7 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
     stackaddr = (attr == NULL ? NULL : attr->stackaddr);
 
     if ((t = apth_tcb_alloc(stacksize, stackaddr)) == NULL)
-        return apth_error(APTH_NULL, errno);
+        return apth_error(errno, errno);
 
     // Configure remainning attributes
     // TODO: here check whether the parent fields will be inherited partially
@@ -102,24 +102,25 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
-    if (!apth_ctx_set(&t->ctx, apth_create_trampoline,
+    if (!apth_ctx_set(t->ctx, apth_create_trampoline,
                       t->stack, (char *)(t->stack + t->stacksize)))
     {
         apth_shield
         {
             apth_tcb_free(t);
         }
-        return apth_error(APTH_NULL, errno);
+        return apth_error(EINVAL, EINVAL);
     }
 
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
     t->state = APTH_STATE_NEW;
     push_apth_to_new(t, cur_sched()); // TODO: is sched initialized by here
-    
+
     // Increment scheduler thread count
     inc_thrcnt(sched);
 
+    *newthr = t;
     apth_debug("apth_create: leave");
-    return t;
+    return 0;
 }

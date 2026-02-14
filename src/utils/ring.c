@@ -125,12 +125,12 @@ bool ring_favorite(struct ring *r, struct ring_elem *elem)
 }
 
 // Check whether an element is contained in ring
-int ring_contains(struct ring *r, struct ring_elem *elem)
+bool ring_contains(struct ring *r, struct ring_elem *elem)
 {
     struct ring_elem *iter;
-    int ret_val;
+    bool ret_val;
     if (r == NULL || elem == NULL)
-        return apth_error(false, EINVAL);
+        return false;
 
     ret_val = false;
 

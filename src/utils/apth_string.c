@@ -1,4 +1,6 @@
 #include "apth_string.h"
+#include <stdlib.h>
+#include <ctype.h>
 
 #if HAVE_LONGLONG
 #define LLONG long long
@@ -649,7 +651,7 @@ int apth_snprintf(char *str, size_t count, const char *fmt, ...)
     int rv;
 
     va_start(ap, fmt);
-    rv = pth_vsnprintf(str, count, fmt, ap);
+    rv = apth_vsnprintf(str, count, fmt, ap);
     va_end(ap);
     return rv;
 }
@@ -659,10 +661,10 @@ char *apth_vasprintf(const char *fmt, va_list ap)
     char *rv;
     int n;
 
-    n = pth_vsnprintf(NULL, -1, fmt, ap);
+    n = apth_vsnprintf(NULL, -1, fmt, ap);
     if ((rv = (char *)malloc(n + 1)) == NULL)
         return NULL;
-    pth_vsnprintf(rv, n + 1, fmt, ap);
+    apth_vsnprintf(rv, n + 1, fmt, ap);
     return rv;
 }
 
@@ -672,7 +674,7 @@ char *apth_asprintf(const char *fmt, ...)
     char *rv;
 
     va_start(ap, fmt);
-    rv = pth_vasprintf(fmt, ap);
+    rv = apth_vasprintf(fmt, ap);
     va_end(ap);
     return rv;
 }

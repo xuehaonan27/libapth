@@ -7,7 +7,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
-#include <malloc.h>
+#include <stdlib.h>
 
 #define APTH_LIST_OF_SYSCALLS \
     X(nanosleep)              \
@@ -40,18 +40,25 @@
     X(getenv)                 \
     X(gethostbyname)
 
-void apth_syscall_system_init(void)
+APTH_INTERNAL int apth_syscall_system_init(void)
 {
     apth_debug("apth_syscall_system_init: enter");
-#define X(name) apth_syscall_init(name)();
+#define X(name)                                                                                       \
+    if (apth_syscall_init(name)() != 0)                                                               \
+    {                                                                                                 \
+        apth_debug("apth_syscall_system_init: fail to initialize system call `%s`", stringify(name)); \
+        return -1;                                                                                    \
+    }
     APTH_LIST_OF_SYSCALLS
 #undef X
     apth_debug("apth_syscall_system_init: leave");
+    return 0;
 }
 
-void apth_syscall_system_drop(void)
+APTH_INTERNAL int apth_syscall_system_drop(void)
 {
     TODO("apth_syscall_system_drop");
+    return 0;
 }
 
 // APTH variant of nanosleep(2)
@@ -113,7 +120,7 @@ APTH_DEFINE_SYSCALL(int, usleep, unsigned int usec)
     apth_time_add(&until, &offset);
 
     /* and let thread sleep until this time is elapsed */
-    if ((ev = apth_event(APTH_EVENT_MODE_STATIC, until)) == NULL)
+    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
         return apth_error(-1, errno);
     apth_wait_event(ev);
 
@@ -136,7 +143,7 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, unsigned int sec)
     apth_time_add(&until, &offset);
 
     // And let thread sleep until this time is elapsed
-    if ((ev = apth_event(APTH_EVENT_MODE_STATIC, until)) == NULL)
+    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
         return sec;
     apth_wait_event(ev);
 
@@ -175,7 +182,7 @@ APTH_DEFINE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
     }
 
     // Create event and wait on it
-    if ((ev = apth_event(APTH_EVENT_MODE_STATIC, set, sigp)) == NULL)
+    if ((ev = apth_event_sigs(APTH_EVENT_MODE_STATIC, set, sigp)) == NULL)
         return apth_error(errno, errno);
     apth_wait_event(ev);
 
@@ -202,7 +209,7 @@ APTH_DEFINE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
             break;
 
         // Else wait a little bit
-        ev = apth_event(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
+        ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
         apth_wait_event(ev);
     }
 
@@ -261,7 +268,7 @@ APTH_DEFINE_SYSCALL(int, system, const char *cmd)
         apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &ss_old, NULL);
 
         // Stop the APTH scheduling
-        apth_scheduler_pool_kill(); // TODO: implement this
+        apth_scheduler_kill(cur_sched());
 
         // Execute the command through Bourne Shell
         execl(APTH_PATH_BINSH, "sh", "-c", cmd, (char *)NULL);
@@ -621,7 +628,7 @@ APTH_DEFINE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
         while ((n = apth_syscall_raw(select)(fd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
             ;
         if (n < 0 && (errno == EINVAL || errno == EBADF))
-            return pth_error(-1, errno);
+            return apth_error(-1, errno);
 
         rv = 0;
         for (;;)
@@ -858,7 +865,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt
             if (s > 0 && s < (ssize_t)nbytes)
             {
                 nbytes -= s;
-                pth_writev_iov_advance(iov, iovcnt, s, &liov, &liovcnt, tiov, tiovcnt);
+                apth_writev_iov_advance(iov, iovcnt, s, &liov, &liovcnt, tiov, tiovcnt);
                 n = 0;
                 continue;
             }

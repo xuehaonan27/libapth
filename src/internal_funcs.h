@@ -2,35 +2,37 @@
 #define __LIBAPTH_INTERNAL_FUNCS_H
 
 #include "internal_types.h"
+#include "utils/archplattoold.h"
 
 // ============================== Worker ==============================
 
-void worker_key_t_init(void);
-apth_worker_t cur_worker(void);
-// void set_cur_worker(apth_worker_t worker);
-apth_sched_t cur_sched(void);
-apth_t cur_apth(void);
-void set_cur_apth(apth_t t);
-apth_worker_t get_worker_by_id(int worker_id);
-int worker_count(void);
-static int apth_global_scheduler_pool_init(void);
-static int apth_global_scheduler_pool_drop(void);
-int add_worker_thread(void);
+APTH_INTERNAL void worker_key_t_init(void);
+APTH_INTERNAL apth_worker_t cur_worker(void);
+APTH_INTERNAL void set_cur_worker(apth_worker_t worker);
+APTH_INTERNAL apth_sched_t cur_sched(void);
+APTH_INTERNAL void set_cur_sched(apth_sched_t sched);
+APTH_INTERNAL apth_t cur_apth(void);
+APTH_INTERNAL void set_cur_apth(apth_t t);
+APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id);
+APTH_INTERNAL int worker_count(void);
+APTH_INTERNAL int apth_global_scheduler_pool_init(void);
+APTH_INTERNAL int apth_global_scheduler_pool_drop(void);
+APTH_INTERNAL int add_worker_thread(void);
 
 // ============================== Scheduler ==============================
 
-static bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
-static void apth_scheduler_kill(apth_sched_t sched);
-static void inc_thrcnt(apth_sched_t sched);
-static void dec_thrcnt(apth_sched_t sched);
+APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
+APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched);
+APTH_INTERNAL void inc_thrcnt(apth_sched_t sched);
+APTH_INTERNAL void dec_thrcnt(apth_sched_t sched);
 
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
 #define head_apth_of(name) head_apth_of_##name
-#define DECLARE_SCHED_LIST_OP(name)                         \
-    void push_apth_to(name)(apth_t th, apth_sched_t sched); \
-    apth_t pop_apth_from(name)(apth_sched_t sched);         \
-    apth_t head_apth_of(name)(apth_sched_t sched);
+#define DECLARE_SCHED_LIST_OP(name)                                       \
+    APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched); \
+    APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched);         \
+    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched);
 DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
@@ -41,39 +43,41 @@ DECLARE_SCHED_LIST_OP(terminated)
 #undef pop_apth_from
 #undef push_apth_to
 
-static bool apth_sched_is_opening(apth_sched_t sched);
-static void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
-static bool apth_is_not_null_and_valid(apth_t th);
-static void *scheduler_routine(void *arg);
+APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched);
+APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
+APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th);
+APTH_INTERNAL void *scheduler_routine(void *arg);
 
 // ============================== TCB ==============================
-apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
-void apth_tcb_free(apth_t t);
+APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
+APTH_INTERNAL void apth_tcb_free(apth_t t);
 
 // ============================== Time ==============================
 #define APTH_TIME(sec, usec) {sec, usec}
 
-uint64_t cpu_tick();
-apth_time_t apth_time(long sec, long usec);
-apth_time_t apth_timeout(long sec, long usec);
-void apth_time_set(apth_time_t *t1, apth_time_t *t2);
-void apth_time_add(apth_time_t *t1, apth_time_t *t2);
-void apth_time_sub(apth_time_t *t1, apth_time_t *t2);
-int apth_time_cmp(apth_time_t *t1, apth_time_t *t2);
-double apth_time_t2d(apth_time_t *t);
+APTH_INTERNAL uint64_t cpu_tick();
+APTH_INTERNAL apth_time_t apth_time(long sec, long usec);
+APTH_INTERNAL apth_time_t apth_timeout(long sec, long usec);
+APTH_INTERNAL void apth_time_set(apth_time_t *t1, apth_time_t *t2);
+APTH_INTERNAL void apth_time_add(apth_time_t *t1, apth_time_t *t2);
+APTH_INTERNAL void apth_time_sub(apth_time_t *t1, apth_time_t *t2);
+APTH_INTERNAL int apth_time_cmp(apth_time_t *t1, apth_time_t *t2);
+APTH_INTERNAL double apth_time_t2d(apth_time_t *t);
 
 // ============================== Context ==============================
-bool apth_ctx_save(apth_cxt_t ctx);
-void apth_ctx_restore(apth_cxt_t ctx);
-void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
-bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi);
+APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx);
+APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx);
+APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
+APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
+                                char *stack_addr_lo, char *stack_addr_hi);
 
 // ============================== Cleanup ==============================
-void apth_cleanup_popall(apth_t, bool);
-static void apth_thread_clenaup(apth_t th);
+APTH_INTERNAL void apth_cleanup_popall(apth_t, bool);
+APTH_INTERNAL void apth_thread_clenaup(apth_t th);
 
 // ============================== Cancel ==============================
-static inline void apth_do_cancel(void *result);
+APTH_INTERNAL void apth_do_cancel(void *result);
+APTH_INTERNAL void apth_cancel_point(void);
 
 // static inline bool apth_cancel_enabled(int value);
 // static inline bool apth_cancel_async_enabled(int value);
@@ -81,28 +85,31 @@ static inline void apth_do_cancel(void *result);
 // static inline bool apth_cancel_enabled_and_canceled_and_async(int value);
 
 // ============================== Signal ==============================
-int apth_util_sigdelete(int sig);
+APTH_INTERNAL int apth_util_sigdelete(int sig);
 
 // ============================== TLS ==============================
-void apth_key_destroydata(apth_t th);
+APTH_INTERNAL void apth_key_destroydata(apth_t th);
 
 // ============================== Event ==============================
-void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
-void apth_event_list_add(struct list *el, apth_event_t ev);
-void apth_event_isolate(apth_event_t ev);
-int apth_wait_event_list(struct list *el);
-bool apth_wait_event(apth_event_t ev);
-apth_event_t apth_event_fd(unsigned long spec, int fd);
-apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
-                               fd_set *rfds, fd_set *wfds, fd_set *efds);
-apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int sig);
-apth_event_t apth_event_time(unsigned long spec, apth_time_t tv);
-apth_event_t apth_event_tid(unsigned long spec, apth_t tid);
-apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv);
-
-bool apth_event_free(apth_event_t ev);
+APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
+APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
+APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
+APTH_INTERNAL int apth_wait_event_list(struct list *el);
+APTH_INTERNAL bool apth_wait_event(apth_event_t ev);
+APTH_INTERNAL apth_event_t apth_event_fd(unsigned long spec, int fd);
+APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
+                                             fd_set *rfds, fd_set *wfds, fd_set *efds);
+APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int *sig);
+APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv);
+APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid);
+APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func,
+                                           void *arg, apth_time_t tv);
+APTH_INTERNAL bool apth_event_free(apth_event_t ev);
 
 // ============================== System call ==============================
+APTH_INTERNAL int apth_syscall_system_init(void);
+APTH_INTERNAL int apth_syscall_system_drop(void);
+
 #define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
 #define apth_syscall_raw(name) apth_syscall_raw_##name   /* Get reference to LIBC system call */
 #define apth_syscall_init(name) apth_syscall_init_##name /* Get reference to LIBC system call initializer  */
@@ -112,19 +119,22 @@ bool apth_event_free(apth_event_t ev);
 
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)              \
     typedef rettype (*apth_syscall_pfn_t(name))(__VA_ARGS__); \
+    APTH_INTERNAL int apth_syscall_init(name)(void);          \
     rettype apth_syscall(name)(__VA_ARGS__);                  \
-    static rettype apth_syscall_init(name)(void);             \
-    static apth_syscall_pfn_t(name) apth_syscall_raw(name);
+    extern apth_syscall_pfn_t(name) apth_syscall_raw(name);
 
 #define APTH_DEFINE_SYSCALL(rettype, name, ...)                                                      \
-    static apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;                                   \
-    static rettype apth_syscall_init(name)(void)                                                     \
+    MAYBE_UNUSED APTH_INTERNAL apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;               \
+    APTH_INTERNAL int apth_syscall_init(name)(void)                                                  \
     {                                                                                                \
         assert_msg(apth_syscall_raw(name) == NULL, "sanity");                                        \
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
+        if (func == NULL)                                                                            \
+            return -1;                                                                               \
         apth_debug("found syscall " stringify(name) " = %p", func);                                  \
         apth_syscall_raw(name) = func;                                                               \
         assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
+        return 0;                                                                                    \
     }                                                                                                \
     rettype apth_syscall(name)(__VA_ARGS__)
 
@@ -174,19 +184,19 @@ APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
 APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 // ============================== Utility ==============================
-bool apth_util_fd_valid(int fd);
-void apth_util_fds_merge(int nfd,
-                         fd_set *ifds1, fd_set *ofds1,
-                         fd_set *ifds2, fd_set *ofds2,
-                         fd_set *ifds3, fd_set *ofds3);
-bool apth_util_fds_test(int nfd,
-                        fd_set *ifds1, fd_set *ofds1,
-                        fd_set *ifds2, fd_set *ofds2,
-                        fd_set *ifds3, fd_set *ofds3);
-int apth_util_fds_select(int nfd,
-                         fd_set *ifds1, fd_set *ofds1,
-                         fd_set *ifds2, fd_set *ofds2,
-                         fd_set *ifds3, fd_set *ofds3);
-int apth_fdmode(int fd, int newmode);
+APTH_INTERNAL bool apth_util_fd_valid(int fd);
+APTH_INTERNAL void apth_util_fds_merge(int nfd,
+                                       fd_set *ifds1, fd_set *ofds1,
+                                       fd_set *ifds2, fd_set *ofds2,
+                                       fd_set *ifds3, fd_set *ofds3);
+APTH_INTERNAL bool apth_util_fds_test(int nfd,
+                                      fd_set *ifds1, fd_set *ofds1,
+                                      fd_set *ifds2, fd_set *ofds2,
+                                      fd_set *ifds3, fd_set *ofds3);
+APTH_INTERNAL int apth_util_fds_select(int nfd,
+                                       fd_set *ifds1, fd_set *ofds1,
+                                       fd_set *ifds2, fd_set *ofds2,
+                                       fd_set *ifds3, fd_set *ofds3);
+APTH_INTERNAL int apth_fdmode(int fd, int newmode);
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

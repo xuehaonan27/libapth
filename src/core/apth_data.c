@@ -81,7 +81,7 @@ void *apth_getspecific(apth_key_t key)
     return result;
 }
 
-void *apth_setspecific(apth_key_t key, const void *value)
+int apth_setspecific(apth_key_t key, const void *value)
 {
     apth_t self;
     unsigned int idx1st;

@@ -4,7 +4,7 @@
 #include "utils/atomic_wrapper.h"
 
 // Enter a cancellation point
-void apth_cancel_point(void)
+APTH_INTERNAL void apth_cancel_point(void)
 {
     apth_t cur = cur_apth();
 
@@ -19,7 +19,7 @@ void apth_cancel_point(void)
 }
 
 // Called when a thread reacts on a cancellation request.
-static inline void apth_do_cancel(void *result)
+APTH_INTERNAL void apth_do_cancel(void *result)
 {
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
@@ -38,7 +38,7 @@ static inline void apth_do_cancel(void *result)
         self->join_arg = result;
         self->state = APTH_STATE_TERMINATED;
         apth_debug("apth_do_cancel: switching from thread \"%s\" to scheduler", self->name);
-        apth_ctx_switch(&self->ctx, &sched->sched_ctx);
+        apth_ctx_switch(self->ctx, sched->sched_ctx);
     }
 
     PANIC("Should not reach here");

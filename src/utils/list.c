@@ -313,7 +313,7 @@ bool list_empty(struct list *list)
 }
 
 /** Swaps the `struct list_elem *'s that A and B point to. */
-static voidswap(struct list_elem **a, struct list_elem **b)
+static void swap(struct list_elem **a, struct list_elem **b)
 {
     struct list_elem *t = *a;
     *a = *b;

@@ -11,7 +11,7 @@ int apth_yield(void)
     // TODO: decide a `to` apth and give it a priority
 
     apth_debug("apth_yield: give up control to scheduler");
-    apth_ctx_switch(&cur->ctx, &sched->sched_ctx);
+    apth_ctx_switch(cur->ctx, sched->sched_ctx);
     apth_debug("apth_yield: got back control from scheduler");
     return 0;
 }

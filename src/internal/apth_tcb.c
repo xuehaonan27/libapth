@@ -2,8 +2,9 @@
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
+#include <stdlib.h>
 
-apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
+APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
 {
     apth_t t;
 
@@ -45,7 +46,7 @@ apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
     return t;
 }
 
-void apth_tcb_free(apth_t t)
+APTH_INTERNAL void apth_tcb_free(apth_t t)
 {
     if (t == NULL)
         return;

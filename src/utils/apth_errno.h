@@ -2,6 +2,7 @@
 #define __LIBAPTH_UTILS_APTH_ERRNO_H
 
 #include <errno.h>
+#include "debug.h"
 
 #define apth_shield                                           \
     for (int apth_errno_storage = errno, apth_errno_flag = 1; \
@@ -10,10 +11,10 @@
 
 /* return plus setting an errno value */
 #ifdef APTH_DEBUG
-#define apth_error(return_val, errno_val)                                  \
-    (errno = (errno_val),                                                  \
-     apth_debug4("return 0x%lx with errno %d(\"%s\")",                     \
-                 (unsigned long)(return_val), (errno), strerror((errno))), \
+#define apth_error(return_val, errno_val)                                 \
+    (errno = (errno_val),                                                 \
+     apth_debug("return 0x%lx with errno %d(\"%s\")",                     \
+                (unsigned long)(return_val), (errno), strerror((errno))), \
      (return_val))
 #else
 #define apth_error(return_val, errno_val) \

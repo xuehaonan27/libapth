@@ -5,7 +5,7 @@
 static void apth_util_sigdelete_sighandler(int _sig) { /* nop */ return; }
 
 // Delete the signal from this kernel thread
-int apth_util_sigdelete(int sig)
+APTH_INTERNAL int apth_util_sigdelete(int sig)
 {
     sigset_t ss, oss;
     struct sigaction sa, osa;

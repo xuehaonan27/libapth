@@ -29,7 +29,7 @@ void ring_push_front(struct ring *, struct ring_elem *);
 struct ring_elem *ring_pop_back(struct ring *);
 struct ring_elem *ring_pop_front(struct ring *);
 bool ring_favorite(struct ring *, struct ring_elem *);
-int ring_contains(struct ring *, struct ring_elem *);
+bool ring_contains(struct ring *, struct ring_elem *);
 size_t ring_size(struct ring *);
 bool ring_empty(struct ring *);
 

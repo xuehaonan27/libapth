@@ -3,8 +3,9 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
+#include <malloc.h>
 
-static void apth_sched_eventmanager_sighandler(int sig, siginfo_t *_dummy_info, void *arg)
+static void apth_sched_eventmanager_sighandler(int sig, MAYBE_UNUSED siginfo_t *_dummy_info, void *arg)
 {
     char c;
     apth_sched_t sched = (struct apth_perpthr_scheduler *)arg;
@@ -19,7 +20,7 @@ static void apth_sched_eventmanager_sighandler(int sig, siginfo_t *_dummy_info, 
 
 // Look whether some events already occurred (or failed) and move corresponding
 // apthes from waiting queue back to ready queue
-void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
+APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 {
     apth_debug("apth_sched_eventmanager: enter in %s mode", dopoll ? "polling" : "waiting");
 
@@ -336,7 +337,7 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
                 list_remove(&th_last->elem);
                 th_last->state = APTH_STATE_READY;
                 // TODO: give th_last a higher prio
-                push_apth_to_ready(&sched->ready_list, th_last);
+                push_apth_to_ready(th_last, sched);
                 apth_debug("apth_sched_eventmanager: apth \"%s\" moved from waiting to ready queue", th_last->name);
                 th_last = APTH_NULL;
             }
@@ -450,13 +451,13 @@ void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
                                     memcpy(&tefds, event->ev_args.SELECT.efds, sizeof(efds));
                                     pefds = &tefds;
                                 }
-                                pth_time_set(&delay, APTH_TIME_ZERO);
+                                apth_time_set(&delay, APTH_TIME_ZERO);
                                 while ((rc2 = apth_syscall_raw(select)(event->ev_args.SELECT.nfd + 1, prfds, pwfds, pefds, &delay)) < 0 && errno == EINTR)
                                     ;
                                 if (rc2 < 0)
                                 {
                                     event->ev_status = APTH_EV_STATUS_FAILED;
-                                    pth_debug2("pth_sched_eventmanager: [I/O] event failed for thread \"%s\"",
+                                    apth_debug("pth_sched_eventmanager: [I/O] event failed for thread \"%s\"",
                                                th->name);
                                 }
                             }
@@ -540,7 +541,7 @@ static apth_event_t prepare_ev(unsigned long spec)
     return ev;
 }
 
-apth_event_t apth_event_fd(unsigned long spec, int fd)
+APTH_INTERNAL apth_event_t apth_event_fd(unsigned long spec, int fd)
 {
     // Filedescriptor event
     if (!apth_util_fd_valid(fd))
@@ -555,8 +556,8 @@ apth_event_t apth_event_fd(unsigned long spec, int fd)
     return ev;
 }
 
-apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
-                               fd_set *rfds, fd_set *wfds, fd_set *efds)
+APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
+                                             fd_set *rfds, fd_set *wfds, fd_set *efds)
 {
     // Fiedescriptor set select event
     apth_event_t ev = prepare_ev(spec);
@@ -570,7 +571,7 @@ apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
     return ev;
 }
 
-apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int sig)
+APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int *sig)
 {
     // Signal set event
     apth_event_t ev = prepare_ev(spec);
@@ -581,7 +582,7 @@ apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int sig)
     return ev;
 }
 
-apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
+APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
 {
     // Interrupt request event
     apth_event_t ev = prepare_ev(spec);
@@ -591,17 +592,17 @@ apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
     return ev;
 }
 
-apth_event_t apth_event_mutex(unsigned long spec /* TODO */)
+APTH_INTERNAL apth_event_t apth_event_mutex(unsigned long spec /* TODO */)
 {
     TODO("apth_event_mutex");
 }
 
-apth_event_t apth_event_cond(unsigned long spec /* TODO */)
+APTH_INTERNAL apth_event_t apth_event_cond(unsigned long spec /* TODO */)
 {
     TODO("apth_event_cond");
 }
 
-apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
+APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
 {
     // Thread id event
     apth_event_t ev = prepare_ev(spec);
@@ -622,7 +623,7 @@ apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
     return ev;
 }
 
-apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv)
+APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv)
 {
     apth_event_t ev = prepare_ev(spec);
     ev->ev_type = APTH_EVENT_TYPE_FUNC;
@@ -633,7 +634,7 @@ apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, 
     return ev;
 }
 
-bool apth_event_free(apth_event_t ev)
+APTH_INTERNAL bool apth_event_free(apth_event_t ev)
 {
     if (ev == NULL)
         return apth_error(false, EINVAL);
@@ -642,17 +643,17 @@ bool apth_event_free(apth_event_t ev)
     return true;
 }
 
-void apth_event_list_add(struct list *el, apth_event_t ev)
+APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev)
 {
     list_push_back(el, &ev->elem);
 }
 
-void apth_event_isolate(apth_event_t ev)
+APTH_INTERNAL void apth_event_isolate(apth_event_t ev)
 {
     list_remove(&ev->elem);
 }
 
-int apth_wait_event_list(struct list *el)
+APTH_INTERNAL int apth_wait_event_list(struct list *el)
 {
     if (list_empty(el))
         return apth_error(-1, EINVAL);
@@ -700,7 +701,7 @@ int apth_wait_event_list(struct list *el)
     return nonpending;
 }
 
-bool apth_wait_event(apth_event_t ev)
+APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
 {
     if (ev == APTH_EVENT_NULL)
         return apth_error(false, EINVAL);

@@ -1,8 +1,10 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
+#include "utils/debug.h"
+#include <stdlib.h>
 
-void apth_cleanup_popall(apth_t t, bool execute)
+APTH_INTERNAL void apth_cleanup_popall(apth_t t, bool execute)
 {
     apth_cleanup_t cleanup;
 
@@ -17,7 +19,7 @@ void apth_cleanup_popall(apth_t t, bool execute)
 }
 
 // Cleanup a particular thread
-static void apth_thread_clenaup(apth_t th)
+APTH_INTERNAL void apth_thread_clenaup(apth_t th)
 {
     // Run the cleaup handlers
     if (th->cleanups != NULL)

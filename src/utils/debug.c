@@ -4,6 +4,7 @@
 #include "apth_errno.h"
 #include "apth_string.h"
 #include "internal_funcs.h"
+#include <stdlib.h>
 
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...)
 {
@@ -15,7 +16,7 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
     {
         va_start(ap, message);
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%d:%s:%04d: ", (int)getpid(), file, line);
+            apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
         else
             str[0] = NUL;
         n = strlen(str);
@@ -43,7 +44,6 @@ void apth_todo_fn(const char *file, int line, const char *function, const char *
 void apth_dump_thread_list(FILE *fp, const char *qn, struct list *l)
 {
     apth_t t;
-    int n;
     int i;
 
     fprintf(fp, "| Thread Queue %s:\n", qn);

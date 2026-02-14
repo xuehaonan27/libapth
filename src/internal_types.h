@@ -207,7 +207,7 @@ struct apth_st
 //     // Bit set if thread is supposed to change XID
 // #define SETXID_BITMASK _BIT(6)
 #define APTH_CANCELED ((void *)-1)
-    apth_cleanup_t *cleanups; /* stack of thread cleanup handlers       */
+    apth_cleanup_t cleanups; /* stack of thread cleanup handlers       */
 
     /* mutex ring */
     struct ring mutexring; /* ring of aquired mutex structures          */

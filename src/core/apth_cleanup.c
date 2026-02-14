@@ -1,4 +1,8 @@
 #include "internal_funcs.h"
+#include "utils/debug.h"
+#include "utils/archplattoold.h"
+#include "utils/apth_errno.h"
+#include <stdlib.h>
 
 bool apth_cleanup_push(void (*func)(void *), void *arg)
 {

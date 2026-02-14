@@ -26,8 +26,8 @@ int apth_cancel(apth_t th)
 
     unsigned int cc_h = atomic_load_acquire(&th->cancelhandling);
     // When cancellation is enabled in async mode we cancel the thread immediately
-    if (cc_h & CANCELSTATE_BITMASK == 0 /* Cancel enabled */
-        && cc_h & CANCELTYPE_BITMASK != 0 /* Asynchronous */)
+    if ((cc_h & CANCELSTATE_BITMASK) == 0 /* Cancel enabled */
+        && (cc_h & CANCELTYPE_BITMASK) != 0 /* Asynchronous */)
     {
         // Remove thread from its queue
         // TODO: lock the thread list

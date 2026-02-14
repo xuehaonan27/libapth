@@ -4,13 +4,14 @@
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
+#include <stdlib.h>
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
 _Atomic unsigned int apth_nthreads = 0;
 
 // Initialize a scheduler onto `worker` and put the new scheduler in `sched`.
-static bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
+APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 {
     sched->id = worker->worker_id;
 
@@ -40,14 +41,14 @@ static bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     atomic_store_release(&sched->opening, true);
 }
 
-static void inc_thrcnt(apth_sched_t sched)
+APTH_INTERNAL void inc_thrcnt(apth_sched_t sched)
 {
     sched->thrcnt += 1;
     // TODO: increment apth_nthreads
     atomic_fetch_add_relaxed(&apth_nthreads, 1);
 }
 
-static void dec_thrcnt(apth_sched_t sched)
+APTH_INTERNAL void dec_thrcnt(apth_sched_t sched)
 {
     unsigned int c = sched->thrcnt;
     sched->thrcnt = c == 0 ? c : c - 1;
@@ -68,36 +69,36 @@ static void dec_thrcnt(apth_sched_t sched)
 #define list_of(name) name##_list
 // TODO: acquire list lock, since the caller pthread may not be ourself
 // TODO: release list lock
-#define DEFINE_SCHED_LIST_OP(name)                            \
-    void push_apth_to(name)(apth_t th, apth_sched_t sched)    \
-    {                                                         \
-        assert(th->belongs_to_list == NULL);                  \
-        list_push_back(&sched->list_of(name), &th->elem);     \
-        th->belongs_to_list = &sched->list_of(name);          \
-    }                                                         \
-    apth_t pop_apth_from(name)(apth_sched_t sched)            \
-    {                                                         \
-        apth_t th = NULL;                                     \
-        struct list_elem *e;                                  \
-        assert(th->belongs_to_list == &sched->list_of(name)); \
-        if (!list_empty(&sched->list_of(name)))               \
-        {                                                     \
-            e = list_pop_front(&sched->list_of(name));        \
-            th = apth_t_list_entry(e);                        \
-        }                                                     \
-        th->belongs_to_list = NULL;                           \
-        return th;                                            \
-    }                                                         \
-    apth_t head_apth_of(name)(apth_sched_t sched)             \
-    {                                                         \
-        apth_t th = NULL;                                     \
-        struct list_elem *e;                                  \
-        if (!list_empty(&sched->list_of(name)))               \
-        {                                                     \
-            e = list_front(&sched->list_of(name));            \
-            th = apth_t_list_entry(e);                        \
-        }                                                     \
-        return th;                                            \
+#define DEFINE_SCHED_LIST_OP(name)                                       \
+    APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched) \
+    {                                                                    \
+        assert(th->belongs_to_list == NULL);                             \
+        list_push_back(&sched->list_of(name), &th->elem);                \
+        th->belongs_to_list = &sched->list_of(name);                     \
+    }                                                                    \
+    APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)         \
+    {                                                                    \
+        apth_t th = NULL;                                                \
+        struct list_elem *e;                                             \
+        assert(th->belongs_to_list == &sched->list_of(name));            \
+        if (!list_empty(&sched->list_of(name)))                          \
+        {                                                                \
+            e = list_pop_front(&sched->list_of(name));                   \
+            th = apth_t_list_entry(e);                                   \
+        }                                                                \
+        th->belongs_to_list = NULL;                                      \
+        return th;                                                       \
+    }                                                                    \
+    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched)          \
+    {                                                                    \
+        apth_t th = NULL;                                                \
+        struct list_elem *e;                                             \
+        if (!list_empty(&sched->list_of(name)))                          \
+        {                                                                \
+            e = list_front(&sched->list_of(name));                       \
+            th = apth_t_list_entry(e);                                   \
+        }                                                                \
+        return th;                                                       \
     }
 
 DEFINE_SCHED_LIST_OP(new)
@@ -113,14 +114,14 @@ DEFINE_SCHED_LIST_OP(terminated)
 #undef pop_apth_from
 #undef push_apth_to
 
-static bool apth_sched_is_opening(apth_sched_t sched)
+APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched)
 {
     return atomic_load_relaxed(&sched->opening);
 }
 
 static apth_time_t apth_loadtickgap = APTH_TIME(1, 0);
 
-static void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
+APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
 {
     if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
     {
@@ -138,15 +139,15 @@ static void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
 }
 
 // Kill the schduler ingredients
-static void apth_scheduler_kill(apth_sched_t sched)
+APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched)
 {
 // Drop all apths
-#define CLEAR_T_LIST(name)                     \
+#define CLEAR_T_LIST(name)                           \
     FOR_ELEMENT_IN_LIST(sched->name##_list, e##name) \
-    {                                          \
+    {                                                \
         apth_t t = apth_t_list_entry(e##name);       \
-        apth_tcb_free(t);                      \
-    }                                          \
+        apth_tcb_free(t);                            \
+    }                                                \
     list_init(&sched->name##_list);
 
     // Clear the apth queues
@@ -167,11 +168,11 @@ static void apth_scheduler_kill(apth_sched_t sched)
     return;
 }
 
-static bool apth_is_not_null_and_valid(apth_t th)
+APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
 {
     // Assert sanity
     apth_sched_t sched = cur_sched();
-    struct list *sl;
+    struct list *sl = NULL;
     switch (th->state)
     {
     case APTH_STATE_NEW:
@@ -192,7 +193,7 @@ static bool apth_is_not_null_and_valid(apth_t th)
     }
     struct list *l = th->belongs_to_list;
 
-    assert(l == sl);
+    assert(l == sl && l != NULL);
 
     // List contains
     bool found = false;
@@ -207,7 +208,7 @@ static bool apth_is_not_null_and_valid(apth_t th)
 
 // Start routine for a scheduler pthread. The prototype of this function matches
 // that required by Pthread.
-static void *scheduler_routine(void *arg)
+APTH_INTERNAL void *scheduler_routine(void *arg)
 {
     // Now we are in a separated Pthread
     apth_worker_arg_t worker_arg = (apth_worker_arg_t)arg;

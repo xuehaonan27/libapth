@@ -60,7 +60,7 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
 int apth_key_create(apth_key_t *key, void (*destr)(void *));
 int apth_key_delete(apth_key_t key);
 void *apth_getspecific(apth_key_t key);
-void *apth_setspecific(apth_key_t key, const void *value);
+int apth_setspecific(apth_key_t key, const void *value);
 int apth_detach(apth_t th);
 void apth_exit(void *retval);
 int apth_join(apth_t tid, void **value);

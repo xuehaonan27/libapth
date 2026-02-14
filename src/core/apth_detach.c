@@ -2,6 +2,7 @@
 #include "internal_types.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
+#include "utils/debug.h"
 
 int apth_detach(apth_t th)
 {

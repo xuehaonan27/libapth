@@ -6,4 +6,37 @@
 #define apth_likely(x) __builtin_expect(!!(x), 1)
 #define apth_unlikely(x) __builtin_expect(!!(x), 0)
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#define MAYBE_UNUSED [[maybe_unused]]
+#elif defined(__GNUC__) || defined(__clang__)
+#define MAYBE_UNUSED __attribute__((unused))
+#else
+#define MAYBE_UNUSED
+#endif
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+#ifdef APTH_BUILDING_DLL
+#ifdef __GNUC__
+#define APTH_API __attribute__((dllexport))
+#else
+#define APTH_API __declspec(dllexport)
+#endif
+#else
+#ifdef __GNUC__
+#define APTH_API __attribute__((dllimport))
+#else
+#define APTH_API __declspec(dllimport)
+#endif
+#endif
+#define APTH_INTERNAL
+#else
+#if __GNUC__ >= 4
+#define APTH_API __attribute__((visibility("default")))
+#define APTH_INTERNAL __attribute__((visibility("hidden")))
+#else
+#define APTH_API
+#define APTH_INTERNAL
+#endif
+#endif
+
 #endif // __LIBAPTH_UTILS_ARCHPLATTOOLD_H

@@ -29,41 +29,41 @@ void sched_key_t_init(void)
     assert_msg(result == 0, "fail pthread_key_create");
 }
 
-apth_worker_t cur_worker(void)
+APTH_INTERNAL apth_worker_t cur_worker(void)
 {
     return (apth_worker_t)pthread_getspecific(__CUR_WORKER_KEY);
 }
 
-static void set_cur_worker(apth_worker_t worker)
+APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 {
     int result = pthread_setspecific(__CUR_WORKER_KEY, worker);
     assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
-apth_sched_t cur_sched(void)
+APTH_INTERNAL apth_sched_t cur_sched(void)
 {
     // return cur_worker()->sched;
     return (apth_sched_t)pthread_getspecific(__CUR_SCHED_KEY);
 }
 
-static void set_cur_sched(apth_sched_t sched)
+APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
 {
     int result = pthread_setspecific(__CUR_WORKER_KEY, sched);
     assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
-apth_t cur_apth(void)
+APTH_INTERNAL apth_t cur_apth(void)
 {
     return cur_sched()->cur;
 }
 
-void set_cur_apth(apth_t t)
+APTH_INTERNAL void set_cur_apth(apth_t t)
 {
     cur_sched()->cur = t;
 }
 
 // Get worker by `worker_id`
-apth_worker_t get_worker_by_id(int worker_id)
+APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
 {
     // Fast path: fortunately worker_id falls in initial worker threads
     // which is usually the situation
@@ -91,7 +91,7 @@ apth_worker_t get_worker_by_id(int worker_id)
 }
 
 // Count of total workers
-int worker_count(void)
+APTH_INTERNAL int worker_count(void)
 {
     int result;
     // TODO: acquire read lock
@@ -120,9 +120,9 @@ static int apth_worker_drop(apth_worker_t worker)
     // Drop the scheduler
     apth_scheduler_kill(worker->sched);
 
-    void **pthr_rslt;
-    pthread_join(worker->tid, pthr_rslt);
-    assert(*pthr_rslt == NULL);
+    void *pthr_rslt;
+    pthread_join(worker->tid, &pthr_rslt);
+    assert(pthr_rslt == NULL);
     return 0;
 }
 
@@ -131,7 +131,7 @@ static int apth_worker_drop(apth_worker_t worker)
 // be true. But for something like JVM, the initializing main thread will continue
 // the spawn of JVM in a separated new thread. In such case, since the caller Pthread
 // will exit soon, it should not be a worker thread.
-static int apth_global_scheduler_pool_init(void)
+APTH_INTERNAL int apth_global_scheduler_pool_init(void)
 {
     if (WORKER_POOL_INITIALIZED)
     {
@@ -173,7 +173,7 @@ static int apth_global_scheduler_pool_init(void)
     return 0;
 }
 
-static int apth_global_scheduler_pool_drop(void)
+APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
 {
     if (!WORKER_POOL_INITIALIZED)
     {
@@ -197,7 +197,7 @@ static int apth_global_scheduler_pool_drop(void)
     return 0;
 }
 
-int add_worker_thread(void)
+APTH_INTERNAL int add_worker_thread(void)
 {
     apth_worker_t new_worker;
     struct apth_worker_t_list_elem *new_worker_elem;
