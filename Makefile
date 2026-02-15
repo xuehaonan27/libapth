@@ -88,6 +88,7 @@ run-tests: tests
 	@for test in $(TEST_BINS); do \
 		if [ -f $$test ]; then \
 			echo "\n>>> Running: $$test"; \
+			LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(BUILD_DIR)/lib \
 			LD_PRELOAD=$(BUILD_DIR)/lib/libapth.so $$test || echo "Test failed: $$test"; \
 		fi; \
 	done

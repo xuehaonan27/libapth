@@ -5,7 +5,13 @@
 // int apth_init(void) __attribute__((constructor));
 // int apth_drop(void) __attribute__((destructor));
 
-int apth_init(void);
+
+typedef struct {
+    int workers;
+} apth_init_t;
+
+int apth_initvals_init(apth_init_t *initvals, int workers);
+int apth_init(apth_init_t *initvals);
 int apth_drop(void);
 
 // Thread identifier

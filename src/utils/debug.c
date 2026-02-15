@@ -24,6 +24,31 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         va_end(ap);
         n = strlen(str);
         str[n++] = '\n';
+        str[n++] = '\0';
+        apth_syscall_raw(write)(STDERR_FILENO, str, n);
+    }
+    return;
+}
+
+static void apth_vdebug_fn(const char *file, int line, const char *function,
+                           const char *msg1, const char *msg2, va_list args)
+{
+    static char str[1024];
+    size_t n;
+
+    apth_shield
+    {
+        if (file != NULL)
+            apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
+        else
+            str[0] = '\0';
+        n = strlen(str);
+        apth_vsnprintf(str + n, sizeof(str) - n, msg1, args);
+        n = strlen(str);
+        apth_vsnprintf(str + n, sizeof(str) - n, msg2, args);
+        n = strlen(str);
+        str[n++] = '\n';
+        str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
     }
     return;
@@ -31,13 +56,19 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 
 NORETURN void apth_panic_fn(const char *file, int line, const char *function, const char *message, ...)
 {
-    apth_debug_fn(file, line, function, "APTH PANICS: %s", message);
+    va_list args;
+    va_start(args, message);
+    apth_vdebug_fn(file, line, function, "APTH PANICS: ", message, args);
+    va_end(args);
     abort();
 }
 
 NORETURN void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...)
 {
-    apth_debug_fn(file, line, function, "APTH NOT IMPLEMENTED: %s", message);
+    va_list args;
+    va_start(args, message);
+    apth_vdebug_fn(file, line, function, "APTH NOT IMPLEMENTED: %s", message, args);
+    va_end(args);
     abort();
 }
 

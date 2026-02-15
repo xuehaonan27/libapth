@@ -6,8 +6,17 @@
 
 static bool LIBAPTH_INITIALIZED = false;
 
+int apth_initvals_init(apth_init_t *initvals, int workers)
+{
+    if (workers <= 0)
+    {
+        return -1;
+    }
+    initvals->workers = workers;
+}
+
 // Initialize the libapth package.
-int apth_init(void)
+int apth_init(apth_init_t *initvals)
 {
     if (LIBAPTH_INITIALIZED)
         return apth_error(EPERM, EPERM);
@@ -19,8 +28,13 @@ int apth_init(void)
 
     apth_debug("apth_init: enter");
 
+    worker_key_t_init();
+    sched_key_t_init();
+
+    // TODO: check `initvals`
+
     // Initialize the scheduler
-    if (apth_global_scheduler_pool_init() != 0)
+    if (apth_global_scheduler_pool_init(initvals->workers) != 0)
     {
         apth_shield
         {

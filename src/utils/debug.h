@@ -35,6 +35,7 @@ void apth_todo_fn(const char *file, int line, const char *function, const char *
 // #define UNUSED
 // #define NO_RETURN __attribute__((noreturn))
 // #define NO_INLINE __attribute__((noinline))
+
 #define PANIC(...) apth_panic_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define TODO(...) apth_todo_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 
@@ -49,7 +50,7 @@ void apth_todo_fn(const char *file, int line, const char *function, const char *
     do                                                   \
     {                                                    \
         if (!(p))                                        \
-            PANIC("assert(" #p ") failed", __VA_ARGS__); \
+            PANIC("assert(" #p ") failed, " __VA_ARGS__); \
     } while (0)
 
 #endif // __LIBATH_UTILS_DEBUG_H

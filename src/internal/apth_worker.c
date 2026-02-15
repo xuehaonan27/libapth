@@ -36,7 +36,7 @@ APTH_INTERNAL apth_worker_t cur_worker(void)
 APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 {
     int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, worker);
-    assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
+    assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
 }
 
 APTH_INTERNAL apth_sched_t cur_sched(void)
@@ -48,7 +48,7 @@ APTH_INTERNAL apth_sched_t cur_sched(void)
 APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
 {
     int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, sched);
-    assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
+    assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
 }
 
 APTH_INTERNAL apth_t cur_apth(void)
@@ -130,7 +130,7 @@ static int apth_worker_drop(apth_worker_t worker)
 // be true. But for something like JVM, the initializing main thread will continue
 // the spawn of JVM in a separated new thread. In such case, since the caller Pthread
 // will exit soon, it should not be a worker thread.
-APTH_INTERNAL int apth_global_scheduler_pool_init(void)
+APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
 {
     if (WORKER_POOL_INITIALIZED)
     {
@@ -138,21 +138,22 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(void)
         return -1; // meaningless but make compiler happy
     }
 
-    long online_cores = cpu_cores();
+    // long online_cores = cpu_cores();
+    int wrkthrs_to_spwan = init_workers > 0 ? init_workers : (int)cpu_cores();
 
     // TODO: initialize the pool lock
     // TODO: acquire pool lock
 
     // TODO: handle possible OOM with apth_error
     struct apth_worker_st *workers_mem;
-    if ((workers_mem = malloc(online_cores * sizeof(struct apth_worker_st))) == NULL)
+    if ((workers_mem = malloc(wrkthrs_to_spwan * sizeof(struct apth_worker_st))) == NULL)
         return apth_error(-1, ENOMEM);
 
     GLOBAL_POOL.workers_mem_start = workers_mem;
     list_init(&GLOBAL_POOL.wrkpthrs_list);
 
     int worker_cnt;
-    for (worker_cnt = 0; worker_cnt < online_cores;
+    for (worker_cnt = 0; worker_cnt < wrkthrs_to_spwan;
          worker_cnt += 1, workers_mem += 1)
     {
         int init_result;
@@ -164,7 +165,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(void)
     // TODO: if this thread is a worker, then handle it.
     GLOBAL_POOL.init_worker_count = worker_cnt;
     // atomic_store(&GLOBAL_POOL.worker_count, online_cores);
-    GLOBAL_POOL.worker_count = online_cores;
+    GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
     // apth_debug("Spawned %ld workers", atomic_load(&GLOBAL_POOL.worker_count));
     apth_debug("Spawned %ld workers", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;

@@ -7,6 +7,7 @@
 // ============================== Worker ==============================
 
 APTH_INTERNAL void worker_key_t_init(void);
+void sched_key_t_init(void);
 APTH_INTERNAL apth_worker_t cur_worker(void);
 APTH_INTERNAL void set_cur_worker(apth_worker_t worker);
 APTH_INTERNAL apth_sched_t cur_sched(void);
@@ -15,7 +16,7 @@ APTH_INTERNAL apth_t cur_apth(void);
 APTH_INTERNAL void set_cur_apth(apth_t t);
 APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id);
 APTH_INTERNAL int worker_count(void);
-APTH_INTERNAL int apth_global_scheduler_pool_init(void);
+APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers);
 APTH_INTERNAL int apth_global_scheduler_pool_drop(void);
 APTH_INTERNAL int add_worker_thread(void);
 
@@ -162,7 +163,7 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
         if (func == NULL)                                                                            \
             return -1;                                                                               \
-        apth_debug("found syscall " stringify(name) " = %p", func);                                  \
+        fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);                             \
         apth_syscall_raw(name) = func;                                                               \
         assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
         return 0;                                                                                    \

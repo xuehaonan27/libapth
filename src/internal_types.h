@@ -10,7 +10,6 @@
 #include <sys/time.h>
 #include <ucontext.h>
 #include <pthread.h>
-// #include <stdatomic.h>
 
 #define _BIT(n) (1 << (n))
 
