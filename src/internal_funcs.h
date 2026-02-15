@@ -29,16 +29,21 @@ APTH_INTERNAL void dec_thrcnt(apth_sched_t sched);
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
 #define head_apth_of(name) head_apth_of_##name
+#define apth_is_in(name) apth_is_in_##name
+#define list_of(name) name##_list
 #define DECLARE_SCHED_LIST_OP(name)                                       \
     APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched); \
     APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched);         \
-    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched);
+    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched);          \
+    APTH_INTERNAL bool apth_is_in(name)(apth_t t, apth_sched_t sched);
 DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
 #undef DECLARE_SCHED_LIST_OP
+#undef list_of
+#undef apth_is_in
 #undef head_apth_of
 #undef pop_apth_from
 #undef push_apth_to
@@ -216,5 +221,7 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
                                        fd_set *ifds2, fd_set *ofds2,
                                        fd_set *ifds3, fd_set *ofds3);
 APTH_INTERNAL int apth_fdmode(int fd, int newmode);
+
+int apth_apth_exists(apth_t t);
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

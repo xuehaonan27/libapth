@@ -65,7 +65,7 @@ APTH_INTERNAL void dec_thrcnt(apth_sched_t sched)
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
 #define head_apth_of(name) head_apth_of_##name
-#define new_apth_to(name) new_apth_to_##name
+#define apth_is_in(name) apth_is_in_##name
 #define list_of(name) name##_list
 // TODO: acquire list lock, since the caller pthread may not be ourself
 // TODO: release list lock
@@ -99,6 +99,17 @@ APTH_INTERNAL void dec_thrcnt(apth_sched_t sched)
             th = apth_t_list_entry(e);                                   \
         }                                                                \
         return th;                                                       \
+    }                                                                    \
+    APTH_INTERNAL bool apth_is_in(name)(apth_t t, apth_sched_t sched)    \
+    {                                                                    \
+        bool found = false;                                              \
+        FOR_ELEMENT_IN_LIST_REF(&sched->list_of(name), e)                \
+        {                                                                \
+            apth_t th = apth_t_list_entry(e);                            \
+            if (t == th)                                                 \
+                found = true;                                            \
+        }                                                                \
+        return found;                                                    \
     }
 
 DEFINE_SCHED_LIST_OP(new)
@@ -109,7 +120,7 @@ DEFINE_SCHED_LIST_OP(terminated)
 
 #undef DEFINE_SCHED_LIST_OP
 #undef list_of
-#undef new_apth_to
+#undef apth_is_in
 #undef head_apth_of
 #undef pop_apth_from
 #undef push_apth_to
