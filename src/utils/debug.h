@@ -32,9 +32,9 @@ void apth_panic_fn(const char *file, int line, const char *function, const char 
 void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...);
 
 // GCC attributes
-#define UNUSED
-#define NO_RETURN __attribute__((noreturn))
-#define NO_INLINE __attribute__((noinline))
+// #define UNUSED
+// #define NO_RETURN __attribute__((noreturn))
+// #define NO_INLINE __attribute__((noinline))
 #define PANIC(...) apth_panic_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define TODO(...) apth_todo_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 

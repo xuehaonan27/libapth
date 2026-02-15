@@ -31,11 +31,11 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         }
 
 #if APTH_STACKGROWTH < 0
-        /* guard is at lowest address (alignment is guarrantied) */
-        t->stackguard = (long *)((long)t->stack); /* double cast to avoid alignment warning */
+        /* guard is at lowest address (alignment is guarranteed) */
+        t->stackguard = (uint32_t *)((long)t->stack); /* double cast to avoid alignment warning */
 #else
         /* guard is at highest address (be careful with alignment) */
-        t->stackguard = (long *)(t->stack + (((stacksize / sizeof(long)) - 1) * sizeof(long)));
+        t->stackguard = (uint32_t *)(t->stack + (((stacksize / sizeof(long)) - 1) * sizeof(long)));
 #endif
         *(uint32_t *)(t->stackguard) = APTH_MAGIC;
     }

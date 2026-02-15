@@ -18,6 +18,20 @@ static void apth_sched_eventmanager_sighandler(int sig, MAYBE_UNUSED siginfo_t *
     return;
 }
 
+static bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
+{
+    if (state == APTH_STATE_NEW && goal == APTH_GOAL_UNTIL_TID_NEW)
+        return true;
+    if (state == APTH_STATE_READY && goal == APTH_GOAL_UNTIL_TID_READY)
+        return true;
+    if (state == APTH_STATE_WAITING && goal == APTH_GOAL_UNTIL_TID_WAITING)
+        return true;
+    if (state == APTH_STATE_TERMINATED && goal == APTH_GOAL_UNTIL_TID_DEAD)
+        return true;
+
+    return false;
+}
+
 // Look whether some events already occurred (or failed) and move corresponding
 // apthes from waiting queue back to ready queue
 APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
@@ -175,7 +189,8 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                     case APTH_EVENT_TYPE_TID:
                         // Thread termination
                         if ((event->ev_args.TID.tid == NULL && !list_empty(&sched->terminated_list)) ||
-                            (event->ev_args.TID.tid != NULL && event->ev_args.TID.tid->state == event->ev_goal))
+                            (event->ev_args.TID.tid != NULL &&
+                             apth_state_matches_event_goal(event->ev_args.TID.tid->state, event->ev_goal)))
                             this_ev_occurred = true;
                         break;
                     case APTH_EVENT_TYPE_FUNC:
@@ -526,8 +541,10 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
     return;
 }
 
-static apth_event_t prepare_ev(unsigned long spec)
+static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
 {
+    // TODO: use spec
+
     apth_event_t ev;
     ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
     // TODO: profile average thread holding events and prepare a preallocated event structure pool
@@ -571,13 +588,13 @@ APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int *sig)
+APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, const sigset_t *sigs, int *sig)
 {
     // Signal set event
     apth_event_t ev = prepare_ev(spec);
     ev->ev_type = APTH_EVENT_TYPE_SIGS;
     ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    ev->ev_args.SIGS.sigs = sigs;
+    ev->ev_args.SIGS.sigs = (sigset_t *)sigs;
     ev->ev_args.SIGS.sig = sig;
     return ev;
 }
@@ -594,12 +611,16 @@ APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
 
 APTH_INTERNAL apth_event_t apth_event_mutex(unsigned long spec /* TODO */)
 {
+    apth_event_t ev = prepare_ev(spec);
     TODO("apth_event_mutex");
+    return ev;
 }
 
 APTH_INTERNAL apth_event_t apth_event_cond(unsigned long spec /* TODO */)
 {
+    apth_event_t ev = prepare_ev(spec);
     TODO("apth_event_cond");
+    return ev;
 }
 
 APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid)

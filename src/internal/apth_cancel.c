@@ -8,7 +8,7 @@ APTH_INTERNAL void apth_cancel_point(void)
 {
     apth_t cur = cur_apth();
 
-    if (cur->cancelreq == true && (cur->cancelhandling & CANCELSTATE_BITMASK == 0))
+    if (cur->cancelreq == true && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
     {
         // avoid looping if cleanup handlers contain cancellation points
         cur->cancelreq = false;

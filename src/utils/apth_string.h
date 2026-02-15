@@ -5,8 +5,8 @@
 
 #define NUL '\0'
 
-int apth_vsnprintf(char *str, size_t count, const char *fmt, va_list args);
-int apth_snprintf(char *str, size_t count, const char *fmt, ...);
+int apth_vsnprintf(char *str, ssize_t count, const char *fmt, va_list args);
+int apth_snprintf(char *str, ssize_t count, const char *fmt, ...);
 char *apth_vasprintf(const char *fmt, va_list ap);
 char *apth_asprintf(const char *fmt, ...);
 

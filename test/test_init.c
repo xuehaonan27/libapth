@@ -1,10 +1,12 @@
-#include <stdio.h>
+// Test initializing the LIBAPTH package
+
 #include "apth.h"
 
 int main(void)
 {
-    printf("Test: libapth basic initialization test\n");
-    printf("This is a placeholder test.\n");
-    printf("Test completed successfully!\n");
+    apth_init();
+    char a[] = "asdf";
+    write(2, a, sizeof(a));
+    apth_drop();
     return 0;
 }

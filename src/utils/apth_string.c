@@ -14,10 +14,10 @@
 #define LDOUBLE double
 #endif
 
-static void fmtstr(char *, size_t *, size_t, char *, int, int, int);
-static void fmtint(char *, size_t *, size_t, LLONG, int, int, int, int);
-static void fmtfp(char *, size_t *, size_t, LDOUBLE, int, int, int);
-static void dopr_outch(char *, size_t *, size_t, int);
+static void fmtstr(char *, ssize_t *, ssize_t, char *, int, int, int);
+static void fmtint(char *, ssize_t *, ssize_t, LLONG, int, int, int, int);
+static void fmtfp(char *, ssize_t *, ssize_t, LDOUBLE, int, int, int);
+static void dopr_outch(char *, ssize_t *, ssize_t, int);
 
 /* format read states */
 #define DP_S_DEFAULT 0
@@ -51,8 +51,8 @@ static void dopr_outch(char *, size_t *, size_t, int);
 
 static void dopr(
     char *buffer,
-    size_t maxlen,
-    size_t *retlen,
+    ssize_t maxlen,
+    ssize_t *retlen,
     const char *format,
     va_list args)
 {
@@ -65,7 +65,7 @@ static void dopr(
     int state;
     int flags;
     int cflags;
-    size_t currlen;
+    ssize_t currlen;
 
     state = DP_S_DEFAULT;
     flags = currlen = cflags = min = 0;
@@ -245,21 +245,31 @@ static void dopr(
                 fmtfp(buffer, &currlen, maxlen, fvalue, min, max, flags);
                 break;
             case 'E':
+// Make compiler happy
+#define __APTH_STRING_HANDLE_E          \
+    if (cflags == DP_C_LDOUBLE)         \
+        fvalue = va_arg(args, LDOUBLE); \
+    else                                \
+        fvalue = va_arg(args, double);  \
+    break;
                 flags |= DP_F_UP;
+                __APTH_STRING_HANDLE_E
             case 'e':
-                if (cflags == DP_C_LDOUBLE)
-                    fvalue = va_arg(args, LDOUBLE);
-                else
-                    fvalue = va_arg(args, double);
-                break;
+                __APTH_STRING_HANDLE_E
+#undef __APTH_STRING_HANDLE_E
             case 'G':
+// Make compiler happy
+#define __APTH_STRING_HANDLE_G          \
+    if (cflags == DP_C_LDOUBLE)         \
+        fvalue = va_arg(args, LDOUBLE); \
+    else                                \
+        fvalue = va_arg(args, double);  \
+    break;
                 flags |= DP_F_UP;
+                __APTH_STRING_HANDLE_G
             case 'g':
-                if (cflags == DP_C_LDOUBLE)
-                    fvalue = va_arg(args, LDOUBLE);
-                else
-                    fvalue = va_arg(args, double);
-                break;
+                __APTH_STRING_HANDLE_G
+#undef __APTH_STRING_HANDLE_G
             case 'c':
                 dopr_outch(buffer, &currlen, maxlen, va_arg(args, int));
                 break;
@@ -331,8 +341,8 @@ static void dopr(
 
 static void fmtstr(
     char *buffer,
-    size_t *currlen,
-    size_t maxlen,
+    ssize_t *currlen,
+    ssize_t maxlen,
     char *value,
     int flags,
     int min,
@@ -372,8 +382,8 @@ static void fmtstr(
 
 static void fmtint(
     char *buffer,
-    size_t *currlen,
-    size_t maxlen,
+    ssize_t *currlen,
+    ssize_t maxlen,
     LLONG value,
     int base,
     int min,
@@ -494,8 +504,8 @@ static long math_round(LDOUBLE value)
 
 static void fmtfp(
     char *buffer,
-    size_t *currlen,
-    size_t maxlen,
+    ssize_t *currlen,
+    ssize_t maxlen,
     LDOUBLE fvalue,
     int min,
     int max,
@@ -624,7 +634,7 @@ static void fmtfp(
     return;
 }
 
-static void dopr_outch(char *buffer, size_t *currlen, size_t maxlen, int c)
+static void dopr_outch(char *buffer, ssize_t *currlen, ssize_t maxlen, int c)
 {
     if (*currlen < maxlen)
     {
@@ -635,9 +645,9 @@ static void dopr_outch(char *buffer, size_t *currlen, size_t maxlen, int c)
     return;
 }
 
-int apth_vsnprintf(char *str, size_t count, const char *fmt, va_list args)
+int apth_vsnprintf(char *str, ssize_t count, const char *fmt, va_list args)
 {
-    size_t retlen;
+    ssize_t retlen;
 
     if (str != NULL)
         str[0] = NUL;
@@ -645,7 +655,7 @@ int apth_vsnprintf(char *str, size_t count, const char *fmt, va_list args)
     return retlen;
 }
 
-int apth_snprintf(char *str, size_t count, const char *fmt, ...)
+int apth_snprintf(char *str, ssize_t count, const char *fmt, ...)
 {
     va_list ap;
     int rv;

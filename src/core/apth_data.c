@@ -2,6 +2,7 @@
 #include "internal_funcs.h"
 #include "utils/archplattoold.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/apth_errno.h"
 #include <stdlib.h>
 
 static struct apth_keytab_st APTH_KEYS[APTH_KEYS_MAX];
@@ -24,12 +25,12 @@ int apth_key_create(apth_key_t *key, void (*destr)(void *))
             return 0;
         }
     }
+
+    return apth_error(EAGAIN, EAGAIN);
 }
 
 int apth_key_delete(apth_key_t key)
 {
-    int result = EINVAL;
-
     if (apth_likely(key < APTH_KEYS_MAX))
     {
         unsigned int seq = APTH_KEYS[key].seq;
@@ -37,11 +38,11 @@ int apth_key_delete(apth_key_t key)
             // Acquire key
             && !atomic_compare_and_exchange_bool_acq(&APTH_KEYS[key].seq, seq + 1, seq))
         {
-            result = 0;
+            return 0;
         }
     }
 
-    return result;
+    return apth_error(EINVAL, EINVAL);
 }
 
 void *apth_getspecific(apth_key_t key)

@@ -20,10 +20,10 @@ APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
 }
 
 // Restore the current machine context (at the location of the new context)
-APTH_INTERNAL void apth_ctx_restored(apth_cxt_t ctx)
-{
-    // TODO: pth_sc(sigprocmask)(SIG_SETMASK, &((mctx)->sigs), NULL)
-}
+// APTH_INTERNAL void apth_ctx_restored(apth_cxt_t ctx)
+// {
+//     // TODO: pth_sc(sigprocmask)(SIG_SETMASK, &((mctx)->sigs), NULL)
+// }
 
 #define APTH_SWITCH_DEBUG_LINE \
     "==== THREAD CONTEXT SWITCH ==========================================="

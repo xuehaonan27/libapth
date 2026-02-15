@@ -39,6 +39,8 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 
     // Mark the scheduler as opening
     atomic_store_release(&sched->opening, true);
+
+    return true;
 }
 
 APTH_INTERNAL void inc_thrcnt(apth_sched_t sched)

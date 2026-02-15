@@ -24,7 +24,8 @@ int apth_setcanceltype(int type, int *oldtype)
 
         if (atomic_compare_exchange_weak_acquire(&self->cancelhandling, &oldval, newval))
         {
-            if (apth_cancel_enabled_and_canceled_and_async(newval))
+            if (self->cancelreq && (newval & CANCELTYPE_BITMASK) != 0)
+            // if (apth_cancel_enabled_and_canceled_and_async(newval))
             {
                 self->join_arg = APTH_CANCELED;
                 apth_do_cancel(APTH_CANCELED);

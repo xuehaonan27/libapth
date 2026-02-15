@@ -48,7 +48,7 @@ static: $(STATIC_LIB)
 shared: $(SHARED_LIB)
 
 # Build all tests
-tests: $(TEST_BINS)
+tests: shared $(TEST_BINS)
 
 # ==================== Library Building ====================
 # Create static library
@@ -88,7 +88,7 @@ run-tests: tests
 	@for test in $(TEST_BINS); do \
 		if [ -f $$test ]; then \
 			echo "\n>>> Running: $$test"; \
-			$$test || echo "Test failed: $$test"; \
+			LD_PRELOAD=$(BUILD_DIR)/lib/libapth.so $$test || echo "Test failed: $$test"; \
 		fi; \
 	done
 	@echo "=========================================="

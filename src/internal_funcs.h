@@ -104,7 +104,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev);
 APTH_INTERNAL apth_event_t apth_event_fd(unsigned long spec, int fd);
 APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
                                              fd_set *rfds, fd_set *wfds, fd_set *efds);
-APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, sigset_t *sigs, int *sig);
+APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, const sigset_t *sigs, int *sig);
 APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv);
 APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid);
 APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func,
@@ -129,8 +129,8 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
 
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)            \
     APTH_DECLARE_FETCH_LIBCFUNC(rettype, name, __VA_ARGS__) \
-    rettype apth_syscall(name)(__VA_ARGS__);
-
+    APTH_INTERNAL rettype apth_syscall(name)(__VA_ARGS__);
+/*
 #define APTH_FETCH_LIBCFUNC(rettype, name, ...)                                                      \
     MAYBE_UNUSED APTH_INTERNAL apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;               \
     APTH_INTERNAL int apth_syscall_init(name)(void)                                                  \
@@ -147,7 +147,34 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
 
 #define APTH_DEFINE_SYSCALL(rettype, name, ...)     \
     APTH_FETCH_LIBCFUNC(rettype, name, __VA_ARGS__) \
-    rettype apth_syscall(name)(__VA_ARGS__)
+    APTH_API name(__VA_ARGS__)                      \
+    {                                               \
+        return apth_syscall(name)(__VA_ARGS__);     \
+    }                                               \
+    APTH_INTERNAL rettype apth_syscall(name)(__VA_ARGS__)
+*/
+
+#define APTH_FETCH_LIBCFUNC(name)                                                                    \
+    MAYBE_UNUSED APTH_INTERNAL apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;               \
+    APTH_INTERNAL int apth_syscall_init(name)(void)                                                  \
+    {                                                                                                \
+        assert_msg(apth_syscall_raw(name) == NULL, "sanity");                                        \
+        apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
+        if (func == NULL)                                                                            \
+            return -1;                                                                               \
+        apth_debug("found syscall " stringify(name) " = %p", func);                                  \
+        apth_syscall_raw(name) = func;                                                               \
+        assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
+        return 0;                                                                                    \
+    }
+
+#define APTH_DEFINE_SYSCALL(rettype, name, typedargs, argnames) \
+    APTH_FETCH_LIBCFUNC(name)                                   \
+    APTH_API rettype name typedargs                             \
+    {                                                           \
+        return apth_syscall(name) argnames;                     \
+    }                                                           \
+    APTH_INTERNAL rettype apth_syscall(name) typedargs
 
 /* These headers for syscall declarations. */
 #include <dlfcn.h>
@@ -157,6 +184,8 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
 #include <resolv.h>
 
 // ==================== For these functions, only fetch its LIBC impls ====================
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_create, pthread_t *restrict thread,
+                            const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
 APTH_DECLARE_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
@@ -167,6 +196,7 @@ APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
                             const void *__pointer)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
+APTH_DECLARE_FETCH_LIBCFUNC(void, exit, int status);
 
 // ==================== For these syscalls, hook them ====================
 APTH_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
@@ -200,11 +230,11 @@ APTH_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags
 APTH_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                      const void *option_value, socklen_t option_len)
-APTH_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
+// APTH_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
 APTH_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
 APTH_DECLARE_SYSCALL(int, unsetenv, const char *n)
 APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
-APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
+// APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 // ============================== Utility ==============================
 APTH_INTERNAL bool apth_util_fd_valid(int fd);

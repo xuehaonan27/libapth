@@ -5,18 +5,26 @@
 #include "utils/apth_errno.h"
 #include <sys/wait.h>
 #include <sys/stat.h>
-#include <sys/uio.h>
-#include <stdlib.h>
+#include <malloc.h> // for malloc
+// #include <sys/uio.h>
+#include <bits/uio_lim.h> // for __IOV_MAX
+#ifdef __IOV_MAX
+#define UIO_MAXIOV __IOV_MAX
+#else
+#undef UIO_MAXIOV
+#endif
 
-#define APTH_LIST_OF_PTHREADS \
-    X(pthread_sigmask)        \
-    X(pthread_self)           \
-    X(pthread_kill)           \
-    X(pthread_key_create)     \
-    X(pthread_getspecific)    \
-    X(pthread_setspecific)    \
-    X(pthread_attr_init)      \
-    X(pthread_join)
+#define APTH_LIST_OF_FETCH_ONLY \
+    X(pthread_create)           \
+    X(pthread_sigmask)          \
+    X(pthread_self)             \
+    X(pthread_kill)             \
+    X(pthread_key_create)       \
+    X(pthread_getspecific)      \
+    X(pthread_setspecific)      \
+    X(pthread_attr_init)        \
+    X(pthread_join)             \
+    X(exit)
 
 #define APTH_LIST_OF_SYSCALLS \
     X(nanosleep)              \
@@ -42,23 +50,35 @@
     X(recv)                   \
     X(poll)                   \
     X(setsockopt)             \
-    X(fcntl)                  \
     X(setenv)                 \
     X(unsetenv)               \
-    X(getenv)                 \
-    X(gethostbyname)
+    X(getenv)
 
 // Fetch POSIX pthread library functions
-APTH_FETCH_LIBCFUNC(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
-APTH_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
-APTH_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
-APTH_FETCH_LIBCFUNC(int, pthread_key_create, pthread_key_t *__key,
-                    void (*__destr_function)(void *))
-APTH_FETCH_LIBCFUNC(void *, pthread_getspecific, pthread_key_t __key)
-APTH_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
-                    const void *__pointer)
-APTH_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
-APTH_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
+// APTH_FETCH_LIBCFUNC(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
+// APTH_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
+// APTH_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
+// APTH_FETCH_LIBCFUNC(int, pthread_key_create, pthread_key_t *__key,
+//                     void (*__destr_function)(void *))
+// APTH_FETCH_LIBCFUNC(void *, pthread_getspecific, pthread_key_t __key)
+// APTH_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
+//                     const void *__pointer)
+// APTH_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
+// APTH_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
+
+#define X APTH_FETCH_LIBCFUNC
+APTH_LIST_OF_FETCH_ONLY
+#undef X
+
+// APTH_FETCH_LIBCFUNC(pthread_sigmask)
+// APTH_FETCH_LIBCFUNC(pthread_self)
+// APTH_FETCH_LIBCFUNC(pthread_kill)
+// APTH_FETCH_LIBCFUNC(pthread_key_create)
+// APTH_FETCH_LIBCFUNC(pthread_getspecific)
+// APTH_FETCH_LIBCFUNC(pthread_setspecific)
+// APTH_FETCH_LIBCFUNC(pthread_attr_init)
+// APTH_FETCH_LIBCFUNC(pthread_join)
+// APTH_FETCH_LIBCFUNC(pthread_join)
 
 APTH_INTERNAL int apth_syscall_system_init(void)
 {
@@ -70,7 +90,7 @@ APTH_INTERNAL int apth_syscall_system_init(void)
         return -1;                                                                                    \
     }
     APTH_LIST_OF_SYSCALLS
-    APTH_LIST_OF_PTHREADS
+    APTH_LIST_OF_FETCH_ONLY
 #undef X
     apth_debug("apth_syscall_system_init: leave");
     return 0;
@@ -83,14 +103,15 @@ APTH_INTERNAL int apth_syscall_system_drop(void)
 }
 
 // APTH variant of nanosleep(2)
-APTH_DEFINE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
+APTH_DEFINE_SYSCALL(
+    int, nanosleep,
+    (const struct timespec *rqtp, struct timespec *rmtp),
+    (rqtp, rmtp))
 {
     apth_time_t until;
     apth_time_t offset;
     apth_time_t now;
     apth_event_t ev;
-
-    static apth_key_t ev_key;
 
     // Consistency checks for POSIX conformance
     if (rqtp == NULL)
@@ -125,7 +146,7 @@ APTH_DEFINE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec
 }
 
 // APTH variant of usleep(3)
-APTH_DEFINE_SYSCALL(int, usleep, unsigned int usec)
+APTH_DEFINE_SYSCALL(int, usleep, (unsigned int usec), (usec))
 {
     apth_time_t until;
     apth_time_t offset;
@@ -148,7 +169,7 @@ APTH_DEFINE_SYSCALL(int, usleep, unsigned int usec)
     return 0;
 }
 
-APTH_DEFINE_SYSCALL(unsigned int, sleep, unsigned int sec)
+APTH_DEFINE_SYSCALL(unsigned int, sleep, (unsigned int sec), (sec))
 {
     apth_time_t until;
     apth_time_t offset;
@@ -172,7 +193,7 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, unsigned int sec)
 }
 
 // APTH variant of POSIX sigwait(3)
-APTH_DEFINE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
+APTH_DEFINE_SYSCALL(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
     apth_event_t ev;
     sigset_t pending;
@@ -203,7 +224,9 @@ APTH_DEFINE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
 }
 
 // APTH variant of waitpid(2)
-APTH_DEFINE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
+APTH_DEFINE_SYSCALL(pid_t, waitpid,
+                    (pid_t wpid, int *status, int options),
+                    (wpid, status, options))
 {
     apth_event_t ev;
     pid_t pid;
@@ -229,15 +252,13 @@ APTH_DEFINE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
     return pid;
 }
 
-APTH_DEFINE_SYSCALL(pid_t, fork, void)
+APTH_DEFINE_SYSCALL(pid_t, fork, (void), ())
 {
-    pid_t pid;
-
     TODO("fork");
 }
 
 // APTH variant of system(3)
-APTH_DEFINE_SYSCALL(int, system, const char *cmd)
+APTH_DEFINE_SYSCALL(int, system, (const char *cmd), (cmd))
 {
     struct sigaction sa_ign, sa_int, sa_quit;
     sigset_t ss_block, ss_old;
@@ -286,7 +307,7 @@ APTH_DEFINE_SYSCALL(int, system, const char *cmd)
         execl(APTH_PATH_BINSH, "sh", "-c", cmd, (char *)NULL);
 
         // POSIX compliant return in case execution failed
-        exit(127);
+        apth_syscall_raw(exit)(127);
         break;
     default: // Parent
         // Wait until child process terminates
@@ -304,8 +325,10 @@ APTH_DEFINE_SYSCALL(int, system, const char *cmd)
     return (pid == -1 ? -1 : pstat);
 }
 
-APTH_DEFINE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
-                    fd_set *efds, struct timeval *timeout)
+APTH_DEFINE_SYSCALL(
+    int, select,
+    (int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *timeout),
+    (nfd, rfds, wfds, efds, timeout))
 {
     apth_event_t ev;
     apth_t cur = cur_apth();
@@ -439,19 +462,26 @@ APTH_DEFINE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
     return rc;
 }
 
-APTH_DEFINE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
-                    fd_set *efds, const struct timespec *ts, const sigset_t *mask)
+APTH_DEFINE_SYSCALL(
+    int, pselect,
+    (int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, const struct timespec *ts, const sigset_t *mask),
+    (nfds, rfds, wfds, efds, ts, mask))
 {
     TODO("pselect");
 }
 
-APTH_DEFINE_SYSCALL(int, socket, int domain, int type, int protocol)
+APTH_DEFINE_SYSCALL(int, socket,
+                    (int domain, int type, int protocol),
+                    (domain, type, protocol))
 {
     apth_hook_debug(socket);
     TODO("unimplemented socket");
 }
 
-APTH_DEFINE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
+APTH_DEFINE_SYSCALL(
+    int, connect,
+    (int fd, const struct sockaddr *address, socklen_t address_len),
+    (fd, address, address_len))
 {
     apth_hook_debug(connect);
     apth_t cur = cur_apth();
@@ -463,7 +493,7 @@ APTH_DEFINE_SYSCALL(int, connect, int fd, const struct sockaddr *address, sockle
 
     // Force filedescriptor into non-blocking mode
     int fdmode;
-    if ((fdmode == apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
         return apth_error(-1, EBADF);
 
     // Try to connect
@@ -497,7 +527,9 @@ APTH_DEFINE_SYSCALL(int, connect, int fd, const struct sockaddr *address, sockle
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrlen)
+APTH_DEFINE_SYSCALL(int, accept,
+                    (int fd, struct sockaddr *addr, socklen_t *addrlen),
+                    (fd, addr, addrlen))
 {
     apth_hook_debug(accept);
     apth_t cur = cur_apth();
@@ -537,13 +569,14 @@ APTH_DEFINE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrl
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(int, close, int fd)
+APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
 {
     apth_hook_debug(close);
     TODO("unimplemented close");
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
+APTH_DEFINE_SYSCALL(ssize_t, read,
+                    (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
     apth_hook_debug(read);
 
@@ -602,7 +635,8 @@ APTH_DEFINE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
+APTH_DEFINE_SYSCALL(ssize_t, write,
+                    (int fd, const void *buf, size_t nbytes), (fd, buf, nbytes))
 {
     apth_hook_debug(write);
 
@@ -692,7 +726,9 @@ APTH_DEFINE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
+APTH_DEFINE_SYSCALL(ssize_t, readv,
+                    (int fd, const struct iovec *iov, int iovcnt),
+                    (fd, iov, iovcnt))
 {
     apth_t cur = cur_apth();
     apth_debug("apth_syscall_readv: enter from thread \"%s\"", cur->name);
@@ -795,7 +831,9 @@ static void apth_writev_iov_advance(const struct iovec *riov, int riovcnt, size_
     return;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
+APTH_DEFINE_SYSCALL(ssize_t, writev,
+                    (int fd, const struct iovec *iov, int iovcnt),
+                    (fd, iov, iovcnt))
 {
     apth_t cur = cur_apth();
     apth_debug("apth_syscall_writev: enter from thread \"%s\"", cur->name);
@@ -820,7 +858,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt
         struct iovec *tiov;
         int tiovcnt;
 
-        if (iovcnt > sizeof(tiov_stack))
+        if (iovcnt > (int)sizeof(tiov_stack))
         {
             tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
             if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
@@ -891,7 +929,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt
         }
 
         // Cleanup
-        if (iovcnt > sizeof(tiov_stack))
+        if (iovcnt > (int)sizeof(tiov_stack))
             free(tiov);
     }
     else
@@ -908,8 +946,11 @@ APTH_DEFINE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
-                    int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+APTH_DEFINE_SYSCALL(
+    ssize_t, recvfrom,
+    (int sockfd, void *buf, size_t nbytes, int flags,
+     struct sockaddr *src_addr, socklen_t *addrlen),
+    (sockfd, buf, nbytes, flags, src_addr, addrlen))
 {
     apth_hook_debug(recvfrom);
     apth_t cur = cur_apth();
@@ -964,15 +1005,18 @@ APTH_DEFINE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
     // the next recvfrom(2) call will not block. But keep in mind, that only 1 next
     // recvfrom(2) call is guaranteed to not block (except for the EINTR situation)
     ssize_t rv;
-    while ((rv = apth_syscall_raw(recvfrom)(socket, buf, nbytes, flags, src_addr, addrlen)) < 0 && errno == EINTR)
+    while ((rv = apth_syscall_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen)) < 0 && errno == EINTR)
         ;
 
     apth_debug("apth_syscall_recvfrom: leave to thread \"%s\"", cur->name);
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
-                    int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
+APTH_DEFINE_SYSCALL(
+    ssize_t, sendto,
+    (int sockfd, const void *buf, size_t nbytes, int flags,
+     const struct sockaddr *dest_addr, socklen_t dest_len),
+    (sockfd, buf, nbytes, flags, dest_addr, dest_len))
 {
     apth_hook_debug(sendto);
     apth_t cur = cur_apth();
@@ -1066,62 +1110,73 @@ APTH_DEFINE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
     return rv;
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
+APTH_DEFINE_SYSCALL(ssize_t, recv,
+                    (int sockfd, void *buf, size_t len, int flags),
+                    (sockfd, buf, len, flags))
 {
     apth_hook_debug(recv);
     // Here we use hooked syscall
     return apth_syscall(recvfrom)(sockfd, buf, len, flags, NULL, 0);
 }
 
-APTH_DEFINE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
+APTH_DEFINE_SYSCALL(ssize_t, send,
+                    (int sockfd, const void *buf, size_t len, int flags),
+                    (sockfd, buf, len, flags))
 {
     apth_hook_debug(send);
     // Here we use hooked syscall
     return apth_syscall(sendto)(sockfd, buf, len, flags, NULL, 0);
 }
 
-APTH_DEFINE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
+APTH_DEFINE_SYSCALL(int, poll,
+                    (struct pollfd * fds, nfds_t nfds, int timeout),
+                    (fds, nfds, timeout))
 {
     apth_hook_debug(poll);
     TODO("unimplemented poll");
 }
 
-APTH_DEFINE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
-                    const void *option_value, socklen_t option_len)
+APTH_DEFINE_SYSCALL(
+    int, setsockopt,
+    (int fd, int level, int option_name, const void *option_value, socklen_t option_len),
+    (fd, level, option_name, option_value, option_len))
 {
     apth_hook_debug(setsockopt);
     TODO("unimplemented setsockopt");
 }
 
-APTH_DEFINE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
-{
-    apth_hook_debug(fcntl);
-    TODO("unimplemented fcntl");
-}
+// APTH_DEFINE_SYSCALL(int, fcntl, (int fildes, int cmd, ...), (fildes, cmd, __VA_ARGS__))
+// {
+//     apth_hook_debug(fcntl);
+//     TODO("unimplemented fcntl");
+// }
 
-APTH_DEFINE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
+APTH_DEFINE_SYSCALL(int, setenv,
+                    (const char *n, const char *value, int overwrite),
+                    (n, value, overwrite))
 {
     apth_hook_debug(setenv);
     TODO("unimplemented setenv");
 }
 
-APTH_DEFINE_SYSCALL(int, unsetenv, const char *n)
+APTH_DEFINE_SYSCALL(int, unsetenv, (const char *n), (n))
 {
     apth_hook_debug(unsetenv);
     TODO("unimplemented unsetenv");
 }
 
-APTH_DEFINE_SYSCALL(char *, getenv, const char *n)
+APTH_DEFINE_SYSCALL(char *, getenv, (const char *n), (n))
 {
     apth_hook_debug(getenv);
     TODO("unimplemented getenv");
+    return NULL;
 }
 
-APTH_DEFINE_SYSCALL(struct hostent *, gethostbyname, const char *name)
-{
-    apth_hook_debug(gethostbyname);
-    TODO("unimplemented gethostbyname");
-}
+// APTH_DEFINE_SYSCALL(struct hostent *, gethostbyname, (const char *name), (name))
+// {
+//     apth_hook_debug(gethostbyname);
+//     TODO("unimplemented gethostbyname");
+// }
 
 // typedef struct tm *(*localtime_r_pfn_t)(const time_t *timep, struct tm *result);
 // typedef res_state (*__res_state_pfn_t)();

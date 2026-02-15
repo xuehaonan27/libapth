@@ -14,6 +14,19 @@
 #define MAYBE_UNUSED
 #endif
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+    #define NORETURN [[noreturn]]
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+    #include <stdnoreturn.h>
+    #define NORETURN noreturn
+#elif defined(__GNUC__) || defined(__clang__)
+    #define NORETURN __attribute__((noreturn))
+#elif defined(_MSC_VER)
+    #define NORETURN __declspec(noreturn)
+#else
+    #define NORETURN
+#endif
+
 #if defined(_WIN32) || defined(__CYGWIN__)
 #ifdef APTH_BUILDING_DLL
 #ifdef __GNUC__

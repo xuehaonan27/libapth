@@ -199,7 +199,6 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
 APTH_INTERNAL int add_worker_thread(void)
 {
     apth_worker_t new_worker;
-    struct apth_worker_t_list_elem *new_worker_elem;
     if ((new_worker = malloc(sizeof(struct apth_worker_st))) == NULL)
         return apth_error(-1, ENOMEM);
 

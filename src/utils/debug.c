@@ -29,13 +29,13 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
     return;
 }
 
-void apth_panic_fn(const char *file, int line, const char *function, const char *message, ...)
+NORETURN void apth_panic_fn(const char *file, int line, const char *function, const char *message, ...)
 {
     apth_debug_fn(file, line, function, "APTH PANICS: %s", message);
     abort();
 }
 
-void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...)
+NORETURN void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...)
 {
     apth_debug_fn(file, line, function, "APTH NOT IMPLEMENTED: %s", message);
     abort();

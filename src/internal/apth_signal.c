@@ -2,7 +2,7 @@
 #include "internal_funcs.h"
 #include "internal_types.h"
 
-static void apth_util_sigdelete_sighandler(int _sig) { /* nop */ return; }
+static void apth_util_sigdelete_sighandler(int sig MAYBE_UNUSED) { /* nop */ return; }
 
 // Delete the signal from this kernel thread
 APTH_INTERNAL int apth_util_sigdelete(int sig)

@@ -14,10 +14,10 @@ int apth_init(void)
     else
         LIBAPTH_INITIALIZED = true;
 
-    apth_debug("apth_init: enter");
-
     // Initialize syscall wrapping
     apth_syscall_system_init();
+
+    apth_debug("apth_init: enter");
 
     // Initialize the scheduler
     if (apth_global_scheduler_pool_init() != 0)
