@@ -4,11 +4,15 @@
 #include "utils/debug.h"
 #include "utils/list.h"
 #include "utils/apth_sysutils.h"
+#include "utils/atomic_wrapper.h"
 #include <string.h>
 #include <stdlib.h>
 
 static bool WORKER_POOL_INITIALIZED = false;
 static struct apth_global_scheduler_pool GLOBAL_POOL;
+
+// TODO: what about add worker ? how to sync that?
+_Atomic unsigned int WORKER_SPAWNED = 0x7FFFFFFF;
 
 static pthread_key_t __CUR_WORKER_KEY;
 static pthread_key_t __CUR_SCHED_KEY;
@@ -42,12 +46,16 @@ APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 APTH_INTERNAL apth_sched_t cur_sched(void)
 {
     // return cur_worker()->sched;
-    return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
+    apth_debug("cur_sched: pthread_getspecific = %p", apth_syscall_raw(pthread_getspecific));
+    // return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
+    apth_sched_t sched = (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
+    apth_debug("cur_sched: got sched = %p", sched);
+    return sched;
 }
 
 APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
 {
-    int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, sched);
+    int result = apth_syscall_raw(pthread_setspecific)(__CUR_SCHED_KEY, sched);
     assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
 }
 
@@ -66,7 +74,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
 {
     // Fast path: fortunately worker_id falls in initial worker threads
     // which is usually the situation
-    if (0 < worker_id && worker_id < GLOBAL_POOL.init_worker_count)
+    if (0 <= worker_id && worker_id < GLOBAL_POOL.init_worker_count)
     {
         struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
         return p;
@@ -140,6 +148,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
 
     // long online_cores = cpu_cores();
     int wrkthrs_to_spwan = init_workers > 0 ? init_workers : (int)cpu_cores();
+    atomic_store_release(&WORKER_SPAWNED, wrkthrs_to_spwan);
 
     // TODO: initialize the pool lock
     // TODO: acquire pool lock
@@ -159,6 +168,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
         int init_result;
         if ((init_result = apth_worker_init(workers_mem, worker_cnt)) != 0)
             return apth_error(init_result, errno);
+        apth_debug("spwaned worker %d at %p", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
     }
 

@@ -9,6 +9,7 @@
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...)
 {
     va_list ap;
+    // TODO: synchronize access to this str
     static char str[1024];
     size_t n;
 

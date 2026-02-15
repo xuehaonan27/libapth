@@ -20,6 +20,10 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers);
 APTH_INTERNAL int apth_global_scheduler_pool_drop(void);
 APTH_INTERNAL int add_worker_thread(void);
 
+APTH_INTERNAL int apth_create_internal(
+    apth_t *newthr, const apth_attr_t *attr,
+    void *(*start_routine)(void *), void *arg, apth_sched_t sched);
+
 // ============================== Scheduler ==============================
 
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
@@ -71,6 +75,7 @@ APTH_INTERNAL int apth_time_cmp(apth_time_t *t1, apth_time_t *t2);
 APTH_INTERNAL double apth_time_t2d(apth_time_t *t);
 
 // ============================== Context ==============================
+APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void);
 APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx);
 APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx);
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
@@ -163,7 +168,7 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
         if (func == NULL)                                                                            \
             return -1;                                                                               \
-        fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);                             \
+        fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);                           \
         apth_syscall_raw(name) = func;                                                               \
         assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
         return 0;                                                                                    \

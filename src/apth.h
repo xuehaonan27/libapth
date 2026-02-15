@@ -5,12 +5,15 @@
 // int apth_init(void) __attribute__((constructor));
 // int apth_drop(void) __attribute__((destructor));
 
-
-typedef struct {
+typedef struct
+{
     int workers;
+    void *(*main_apth)(void *);
+    void *main_args;
 } apth_init_t;
 
-int apth_initvals_init(apth_init_t *initvals, int workers);
+int apth_initvals_init(apth_init_t *initvals, int workers,
+                       void *(*main_apth)(void *), void *main_args);
 int apth_init(apth_init_t *initvals);
 int apth_drop(void);
 
@@ -53,11 +56,11 @@ enum
 
 // ==================== System calls ====================
 
-#include <bits/types/sigset_t.h> // for sigset_t
-#include <sys/types.h> // for pid_t
-#include <sys/select.h> // for fd_set
-#include <sys/socket.h> // for socklen_t
-#include <sys/poll.h> // for nfds_t
+#include <bits/types/sigset_t.h>     // for sigset_t
+#include <sys/types.h>               // for pid_t
+#include <sys/select.h>              // for fd_set
+#include <sys/socket.h>              // for socklen_t
+#include <sys/poll.h>                // for nfds_t
 #include <bits/types/struct_iovec.h> // for struct iovec
 
 #define APTH_EXPOSE_DECLARE_SYSCALL(rettype, name, ...) rettype name(__VA_ARGS__);
@@ -106,7 +109,7 @@ int apth_cancel(apth_t th);
 bool apth_cleanup_push(void (*func)(void *), void *arg);
 bool apth_cleanup_pop(int execute);
 int apth_create(apth_t *newthr, const apth_attr_t *attr,
-                void *(*start_routine)(void *), void *__arg);
+                void *(*start_routine)(void *), void *arg);
 int apth_key_create(apth_key_t *key, void (*destr)(void *));
 int apth_key_delete(apth_key_t key);
 void *apth_getspecific(apth_key_t key);

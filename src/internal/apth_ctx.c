@@ -2,6 +2,8 @@
 #include "utils/archplattoold.h"
 #include "utils/apth_errno.h"
 #include "utils/debug.h"
+#include <malloc.h>
+#include <string.h>
 
 // Save the current thread context into `ctx`.
 APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx)
@@ -35,6 +37,13 @@ APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
 #define _apth_mctx_switch_debug /* NOP */
 #endif
 
+APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
+{
+    apth_cxt_t ctx = (apth_cxt_t)malloc(sizeof(struct apth_cxt_st));
+    memset(ctx, '\0', sizeof(struct apth_cxt_st));
+    return ctx;
+}
+
 // Swap context from `old` to `new`.
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
@@ -42,26 +51,30 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
     swapcontext(&old->uc, &new->uc);
 }
 
-#define apth_skaddr_makecontext(skaddr, sksize) ((skaddr))
-#define apth_sksize_makecontext(skaddr, sksize) ((sksize))
+// #define apth_skaddr_makecontext(skaddr, sksize) ((skaddr))
+// #define apth_sksize_makecontext(skaddr, sksize) ((sksize))
 
 // Initialize a context into `ctx`.
 APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi)
 {
+    apth_debug("enter");
     // fetch current context
     if (getcontext(&ctx->uc) != 0)
         return false;
+
+    apth_debug("got context");
 
     // remove parent link
     ctx->uc.uc_link = NULL;
 
     // configure new stack
-    ctx->uc.uc_stack.ss_sp = apth_skaddr_makecontext(stack_addr_lo, stack_addr_hi - stack_addr_lo);
-    ctx->uc.uc_stack.ss_size = apth_sksize_makecontext(stack_addr_lo, stack_addr_hi - stack_addr_lo);
+    ctx->uc.uc_stack.ss_sp = stack_addr_hi;
+    ctx->uc.uc_stack.ss_size = stack_addr_hi - stack_addr_lo;
     ctx->uc.uc_stack.ss_flags = 0;
 
     // configure startup function (with no arguments)
     makecontext(&ctx->uc, func, 1);
 
+    apth_debug("leave");
     return true;
 }

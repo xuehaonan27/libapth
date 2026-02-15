@@ -37,9 +37,10 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->loadval = 1.0;
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
 
+    worker->sched = sched;
+
     // Mark the scheduler as opening
     atomic_store_release(&sched->opening, true);
-
     return true;
 }
 
@@ -80,14 +81,13 @@ APTH_INTERNAL void dec_thrcnt(apth_sched_t sched)
     }                                                                    \
     APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)         \
     {                                                                    \
-        apth_t th = NULL;                                                \
+        apth_t th = APTH_NULL;                                           \
         struct list_elem *e;                                             \
         assert(th->belongs_to_list == &sched->list_of(name));            \
-        if (!list_empty(&sched->list_of(name)))                          \
-        {                                                                \
-            e = list_pop_front(&sched->list_of(name));                   \
-            th = apth_t_list_entry(e);                                   \
-        }                                                                \
+        if (list_empty(&sched->list_of(name)))                           \
+            return APTH_NULL;                                            \
+        e = list_pop_front(&sched->list_of(name));                       \
+        th = apth_t_list_entry(e);                                       \
         th->belongs_to_list = NULL;                                      \
         return th;                                                       \
     }                                                                    \
@@ -256,15 +256,21 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     apth_time_set(&snapshot, APTH_TIME_NOW);
 
     // TODO: initialize other parts of the worker
+
+    // Here we atomically substract WORKER_SPAWNED by 1
+    atomic_fetch_sub(&WORKER_SPAWNED, 1);
+
     // TODO: go into a endless loop.
     while (apth_sched_is_opening(sched))
     {
+        apth_debug("new loop, sched = %p, sched new list = %p", sched, &sched->new_list);
         // TODO: acquire list lock (maybe stealing lock)
 
         // Move all new threads to ready list
         apth_t th;
         while ((th = pop_apth_from_new(sched)) != APTH_NULL)
         {
+            apth_debug("move from new to ready: %p (\"%s\")", th, th->name);
             th->state = APTH_STATE_READY;
             // TODO: insert into ready queue according to policy
             // TODO: here just append
@@ -276,12 +282,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Find the next thread in ready queue and set it to be run
         th = pop_apth_from_ready(sched);
+        apth_debug("popped th: %p (\"%s\")", th, th->name);
 
         if (th == APTH_NULL)
         {
             // there is no more thread to ready, panic
             PANIC("APTH SCHEDULER INTERNAL ERROR: no more threads available to schedule");
         }
+
+        apth_debug("decided next thread to run: %p (\"%s\")", th, th->name);
+
         // Set current thread and TCB to TCB, now using TCB is enough
         set_cur_apth(th);
 

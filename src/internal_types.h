@@ -13,6 +13,8 @@
 
 #define _BIT(n) (1 << (n))
 
+extern _Atomic unsigned int WORKER_SPAWNED;
+
 // Event status code
 typedef enum
 {

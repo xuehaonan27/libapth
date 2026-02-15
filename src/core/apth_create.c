@@ -19,17 +19,26 @@ static void apth_create_trampoline(void)
     PANIC("Should not reach here");
 }
 
-int apth_create(apth_t *newthr, const apth_attr_t *attr,
-                void *(*start_routine)(void *), void *__arg)
+APTH_INTERNAL int apth_create_internal(
+    apth_t *newthr, const apth_attr_t *attr,
+    void *(*start_routine)(void *), void *arg, apth_sched_t sched)
 {
     apth_t t;
     unsigned int stacksize;
     void *stackaddr;
     apth_time_t ts;
-    apth_sched_t sched = cur_sched();
-    apth_t cur = sched->cur;
+    apth_t cur;
+    if (sched == NULL)
+    {
+        sched = cur_sched();
+        cur = sched->cur;
+    }
+    else
+    {
+        cur = APTH_NULL;
+    }
 
-    apth_debug("apth_create: enter");
+    apth_debug("enter");
 
     // Consistency
     if (start_routine == NULL)
@@ -63,33 +72,41 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
     }
 
     // Initialize the time points and ranges
+    apth_debug("initializing times");
     apth_time_set(&ts, APTH_TIME_NOW);
     apth_time_set(&t->spawned, &ts);
     apth_time_set(&t->lastran, &ts);
     apth_time_set(&t->running, APTH_TIME_ZERO);
 
     // Initialize events
+    apth_debug("initializing events");
     list_empty(&t->event_list);
 
     // Clear raised signals
+    apth_debug("initializing signals");
     sigemptyset(&t->sigpending);
     t->sigpendcnt = 0;
 
     // Remember the start routine and arguments
+    apth_debug("initializing start routine and arguments");
     t->start_func = start_routine;
-    t->start_arg = __arg;
+    t->start_arg = arg;
 
     // Initialize join argument
+    apth_debug("initializing join");
     t->join_arg = NULL;
     // t->joinable = false;
-    t->joinid = attr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL;
+    // TODO: here we used a check to check whether attr is NULL.
+    // TODO: but we could give `iattr` a default when `attr` is NULL and use iattr anyway.
+    t->joinid = attr == NULL ? NULL : (attr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL);
 
     // Initialize thread specific storage
+    apth_debug("initializing TLS");
     t->specific_used = false;
-    memset(t->specific, 0, sizeof(t->specific));
-    memset(t->specific_1stblock, 0, sizeof(t->specific_1stblock));
+    t->specific[0] = t->specific_1stblock;
 
     // Initialize cancellation stuff
+    apth_debug("initializing cancellation stuff");
     t->cancelhandling = 0; // TODO: is this right? we should only clear enable bit
     t->cleanups = NULL;
 
@@ -101,7 +118,9 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // TODO: exception stuff
 
     // Initialize the machine context of this new thread
+    apth_debug("initializing the context of this new thread");
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
+    
     if (!apth_ctx_set(t->ctx, apth_create_trampoline,
                       t->stack, (char *)(t->stack + t->stacksize)))
     {
@@ -114,13 +133,21 @@ int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
+    apth_debug("sched = %p", sched);
     t->state = APTH_STATE_NEW;
-    push_apth_to_new(t, cur_sched()); // TODO: is sched initialized by here
+    // TODO: synchronize access to apth list
+    push_apth_to_new(t, sched); // TODO: is sched initialized by here
 
     // Increment scheduler thread count
     inc_thrcnt(sched);
 
     *newthr = t;
-    apth_debug("apth_create: leave");
+    apth_debug("leave");
     return 0;
+}
+
+int apth_create(apth_t *newthr, const apth_attr_t *attr,
+                void *(*start_routine)(void *), void *arg)
+{
+    return apth_create_internal(newthr, attr, start_routine, arg, NULL);
 }
