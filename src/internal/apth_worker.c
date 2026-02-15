@@ -4,7 +4,6 @@
 #include "utils/debug.h"
 #include "utils/list.h"
 #include "utils/apth_sysutils.h"
-#include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -19,36 +18,36 @@ static void sched_key_t_destr_fn(void *) { /* nop */ }
 
 void worker_key_t_init(void)
 {
-    int result = pthread_key_create(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
+    int result = apth_syscall_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
     assert_msg(result == 0, "fail pthread_key_create");
 }
 
 void sched_key_t_init(void)
 {
-    int result = pthread_key_create(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
+    int result = apth_syscall_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
     assert_msg(result == 0, "fail pthread_key_create");
 }
 
 APTH_INTERNAL apth_worker_t cur_worker(void)
 {
-    return (apth_worker_t)pthread_getspecific(__CUR_WORKER_KEY);
+    return (apth_worker_t)apth_syscall_raw(pthread_getspecific)(__CUR_WORKER_KEY);
 }
 
 APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 {
-    int result = pthread_setspecific(__CUR_WORKER_KEY, worker);
+    int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, worker);
     assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
 APTH_INTERNAL apth_sched_t cur_sched(void)
 {
     // return cur_worker()->sched;
-    return (apth_sched_t)pthread_getspecific(__CUR_SCHED_KEY);
+    return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
 }
 
 APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
 {
-    int result = pthread_setspecific(__CUR_WORKER_KEY, sched);
+    int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, sched);
     assert_msg(result == 0, "fail pthread_setspecific result = %d", result);
 }
 
@@ -104,14 +103,14 @@ APTH_INTERNAL int worker_count(void)
 static int apth_worker_init(apth_worker_t worker, int worker_id)
 {
     worker->worker_id = worker_id;
-    pthread_attr_init(&worker->attr);
+    apth_syscall_raw(pthread_attr_init)(&worker->attr);
     apth_worker_arg_t arg;
     if ((arg = (apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))) == NULL)
         return apth_error(-1, ENOMEM);
     arg->self = worker;
     // TODO: initialize the worker argument, like core affinity
     // TODO: should this pthread be detached or something?
-    int result = pthread_create(&worker->tid, &worker->attr, scheduler_routine, arg);
+    int result = apth_syscall_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
     return result;
 }
 
@@ -121,7 +120,7 @@ static int apth_worker_drop(apth_worker_t worker)
     apth_scheduler_kill(worker->sched);
 
     void *pthr_rslt;
-    pthread_join(worker->tid, &pthr_rslt);
+    apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);
     assert(pthr_rslt == NULL);
     return 0;
 }

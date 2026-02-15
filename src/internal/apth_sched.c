@@ -280,7 +280,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             {
                 if (sigismember(&th->sigpending, sig) && !sigismember(&sched->apth_sigpending, sig))
                 {
-                    pthread_kill(pthread_self(), sig);
+                    apth_syscall_raw(pthread_kill)(apth_syscall_raw(pthread_self)(), sig);
                 }
             }
         }
@@ -368,7 +368,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // to handle the situation
                 th->join_arg = (void *)APTH_MAGIC;
                 th->state = APTH_STATE_TERMINATED;
-                pthread_kill(pthread_self(), SIGSEGV);
+                apth_syscall_raw(pthread_kill)(apth_syscall_raw(pthread_self)(), SIGSEGV);
             }
         }
 

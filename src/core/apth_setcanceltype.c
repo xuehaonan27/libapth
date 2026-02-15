@@ -26,8 +26,8 @@ int apth_setcanceltype(int type, int *oldtype)
         {
             if (apth_cancel_enabled_and_canceled_and_async(newval))
             {
-                self->join_arg = PTHREAD_CANCELED;
-                apth_do_cancel(PTHREAD_CANCELED);
+                self->join_arg = APTH_CANCELED;
+                apth_do_cancel(APTH_CANCELED);
             }
             break;
         }

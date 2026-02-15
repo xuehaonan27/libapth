@@ -3,17 +3,25 @@
 #include "internal_funcs.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
-#include <pthread.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <stdlib.h>
 
+#define APTH_LIST_OF_PTHREADS \
+    X(pthread_sigmask)        \
+    X(pthread_self)           \
+    X(pthread_kill)           \
+    X(pthread_key_create)     \
+    X(pthread_getspecific)    \
+    X(pthread_setspecific)    \
+    X(pthread_attr_init)      \
+    X(pthread_join)
+
 #define APTH_LIST_OF_SYSCALLS \
     X(nanosleep)              \
     X(usleep)                 \
     X(sleep)                  \
-    X(pthread_sigmask)        \
     X(sigwait)                \
     X(waitpid)                \
     X(fork)                   \
@@ -40,6 +48,18 @@
     X(getenv)                 \
     X(gethostbyname)
 
+// Fetch POSIX pthread library functions
+APTH_FETCH_LIBCFUNC(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
+APTH_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
+APTH_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
+APTH_FETCH_LIBCFUNC(int, pthread_key_create, pthread_key_t *__key,
+                    void (*__destr_function)(void *))
+APTH_FETCH_LIBCFUNC(void *, pthread_getspecific, pthread_key_t __key)
+APTH_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
+                    const void *__pointer)
+APTH_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
+APTH_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
+
 APTH_INTERNAL int apth_syscall_system_init(void)
 {
     apth_debug("apth_syscall_system_init: enter");
@@ -50,6 +70,7 @@ APTH_INTERNAL int apth_syscall_system_init(void)
         return -1;                                                                                    \
     }
     APTH_LIST_OF_SYSCALLS
+    APTH_LIST_OF_PTHREADS
 #undef X
     apth_debug("apth_syscall_system_init: leave");
     return 0;
@@ -148,15 +169,6 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, unsigned int sec)
     apth_wait_event(ev);
 
     return 0;
-}
-
-// APTH variant of POSIX pthread_sigmask(3)
-APTH_DEFINE_SYSCALL(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
-{
-    int rv;
-
-    // Change the explicitly remembered signal mask copy for the scheduler
-    TODO("pthread_sigmask");
 }
 
 // APTH variant of POSIX sigwait(3)
@@ -1112,8 +1124,6 @@ APTH_DEFINE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 }
 
 // typedef struct tm *(*localtime_r_pfn_t)(const time_t *timep, struct tm *result);
-// typedef void *(*pthread_getspecific_pfn_t)(pthread_key_t key);
-// typedef int (*pthread_setspecific_pfn_t)(pthread_key_t key, const void *value);
 // typedef res_state (*__res_state_pfn_t)();
 // typedef int (*gethostbyname_r_pfn_t)(const char *__restrict name,
 //                                      struct hostent *__restrict __result_buf,
