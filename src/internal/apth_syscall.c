@@ -78,7 +78,7 @@ APTH_INTERNAL int apth_syscall_system_init(void)
 
 APTH_INTERNAL int apth_syscall_system_drop(void)
 {
-    TODO("apth_syscall_system_drop");
+    // TODO("apth_syscall_system_drop");
     return 0;
 }
 
