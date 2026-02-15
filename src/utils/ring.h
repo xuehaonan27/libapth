@@ -1,7 +1,9 @@
 #ifndef __LIBAPTH_UTILS_RING_H
 #define __LIBAPTH_UTILS_RING_H
 
-#include "common.h"
+#include "archplattoold.h"
+#include <stdbool.h>
+#include <stddef.h>
 
 struct ring_elem
 {
@@ -22,15 +24,15 @@ struct ring
 #define ring_entry(RING_ELEM, STRUCT, MEMBER) \
     ((STRUCT *)((uint8_t *)&(RING_ELEM)->next - offsetof(STRUCT, MEMBER.next)))
 
-void ring_init(struct ring *);
-void ring_remove(struct ring *, struct ring_elem *);
-void ring_push_back(struct ring *, struct ring_elem *);
-void ring_push_front(struct ring *, struct ring_elem *);
-struct ring_elem *ring_pop_back(struct ring *);
-struct ring_elem *ring_pop_front(struct ring *);
-bool ring_favorite(struct ring *, struct ring_elem *);
-bool ring_contains(struct ring *, struct ring_elem *);
-size_t ring_size(struct ring *);
-bool ring_empty(struct ring *);
+APTH_INTERNAL void ring_init(struct ring *);
+APTH_INTERNAL void ring_remove(struct ring *, struct ring_elem *);
+APTH_INTERNAL void ring_push_back(struct ring *, struct ring_elem *);
+APTH_INTERNAL void ring_push_front(struct ring *, struct ring_elem *);
+APTH_INTERNAL struct ring_elem *ring_pop_back(struct ring *);
+APTH_INTERNAL struct ring_elem *ring_pop_front(struct ring *);
+APTH_INTERNAL bool ring_favorite(struct ring *, struct ring_elem *);
+APTH_INTERNAL bool ring_contains(struct ring *, struct ring_elem *);
+APTH_INTERNAL size_t ring_size(struct ring *);
+APTH_INTERNAL bool ring_empty(struct ring *);
 
 #endif // __LIBAPTH_UTILS_RING_H

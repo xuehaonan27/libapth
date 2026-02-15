@@ -1,5 +1,6 @@
 #include "internal_types.h"
 #include "utils/archplattoold.h"
+#include "utils/apth_errno.h"
 #include "utils/debug.h"
 
 // Save the current thread context into `ctx`.

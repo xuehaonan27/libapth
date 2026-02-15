@@ -2,6 +2,7 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/apth_sysutils.h"
+#include <string.h>
 
 int apth_attr_init(apth_attr_t *attr)
 {

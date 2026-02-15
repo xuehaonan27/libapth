@@ -85,6 +85,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "archplattoold.h"
 
 /** List element. */
 struct list_elem
@@ -138,45 +139,45 @@ struct list
     }                          \
   }
 
-void list_init(struct list *);
+APTH_INTERNAL void list_init(struct list *);
 
 /** List traversal. */
-struct list_elem *list_begin(struct list *);
-struct list_elem *list_next(struct list_elem *);
-struct list_elem *list_end(struct list *);
+APTH_INTERNAL struct list_elem *list_begin(struct list *);
+APTH_INTERNAL struct list_elem *list_next(struct list_elem *);
+APTH_INTERNAL struct list_elem *list_end(struct list *);
 
-struct list_elem *list_rbegin(struct list *);
-struct list_elem *list_prev(struct list_elem *);
-struct list_elem *list_rend(struct list *);
+APTH_INTERNAL struct list_elem *list_rbegin(struct list *);
+APTH_INTERNAL struct list_elem *list_prev(struct list_elem *);
+APTH_INTERNAL struct list_elem *list_rend(struct list *);
 
-struct list_elem *list_head(struct list *);
-struct list_elem *list_tail(struct list *);
+APTH_INTERNAL struct list_elem *list_head(struct list *);
+APTH_INTERNAL struct list_elem *list_tail(struct list *);
 
 /** List insertion. */
-void list_insert(struct list_elem *, struct list_elem *);
-void list_splice(
+APTH_INTERNAL void list_insert(struct list_elem *, struct list_elem *);
+APTH_INTERNAL void list_splice(
     struct list_elem *before,
     struct list_elem *first,
     struct list_elem *last);
-void list_push_front(struct list *, struct list_elem *);
-void list_push_back(struct list *, struct list_elem *);
-void list_append(struct list *, struct list *);
+APTH_INTERNAL void list_push_front(struct list *, struct list_elem *);
+APTH_INTERNAL void list_push_back(struct list *, struct list_elem *);
+APTH_INTERNAL void list_append(struct list *, struct list *);
 
 /** List removal. */
-struct list_elem *list_remove(struct list_elem *);
-struct list_elem *list_pop_front(struct list *);
-struct list_elem *list_pop_back(struct list *);
+APTH_INTERNAL struct list_elem *list_remove(struct list_elem *);
+APTH_INTERNAL struct list_elem *list_pop_front(struct list *);
+APTH_INTERNAL struct list_elem *list_pop_back(struct list *);
 
 /** List elements. */
-struct list_elem *list_front(struct list *);
-struct list_elem *list_back(struct list *);
+APTH_INTERNAL struct list_elem *list_front(struct list *);
+APTH_INTERNAL struct list_elem *list_back(struct list *);
 
 /** List properties. */
-size_t list_size(struct list *);
-bool list_empty(struct list *);
+APTH_INTERNAL size_t list_size(struct list *);
+APTH_INTERNAL bool list_empty(struct list *);
 
 /** Miscellaneous. */
-void list_reverse(struct list *);
+APTH_INTERNAL void list_reverse(struct list *);
 
 /** Compares the value of two list elements A and B, given
    auxiliary data AUX.  Returns true if A is less than B, or
@@ -185,20 +186,20 @@ typedef bool
 list_less_func(const struct list_elem *a, const struct list_elem *b, void *aux);
 
 /** Operations on lists with ordered elements. */
-void list_sort(struct list *, list_less_func *, void *aux);
-void list_insert_ordered(
+APTH_INTERNAL void list_sort(struct list *, list_less_func *, void *aux);
+APTH_INTERNAL void list_insert_ordered(
     struct list *,
     struct list_elem *,
     list_less_func *,
     void *aux);
-void list_unique(
+APTH_INTERNAL void list_unique(
     struct list *,
     struct list *duplicates,
     list_less_func *,
     void *aux);
 
 /** Max and min. */
-struct list_elem *list_max(struct list *, list_less_func *, void *aux);
-struct list_elem *list_min(struct list *, list_less_func *, void *aux);
+APTH_INTERNAL struct list_elem *list_max(struct list *, list_less_func *, void *aux);
+APTH_INTERNAL struct list_elem *list_min(struct list *, list_less_func *, void *aux);
 
 #endif // _LIBAPTH_UTILS_LIST_H

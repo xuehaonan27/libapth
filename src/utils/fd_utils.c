@@ -1,5 +1,6 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
+#include "utils/apth_errno.h"
 #include <fcntl.h>
 
 APTH_INTERNAL bool apth_util_fd_valid(int fd)

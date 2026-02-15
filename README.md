@@ -10,3 +10,4 @@
 7. Unify format of debug messages
 8. For any passed in apth_t, check its validity first.
 9. Make all internal functions private (static)
+10. Using APTH_INTERNAL and APTH_API to control visibility.
