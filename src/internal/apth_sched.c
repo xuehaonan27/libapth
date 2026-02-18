@@ -119,11 +119,13 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
     {                                                                             \
         assert(th != NULL);                                                       \
         assert(th->belongs_to_list == NULL);                                      \
+        assert(th->belongs_to_list_lock == NULL);                                 \
         lll_lock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));    \
         list_push_back(&sched->list_of(name), &th->elem);                         \
         lll_unlock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));  \
         th->worker = sched->worker;                                               \
         th->belongs_to_list = &sched->list_of(name);                              \
+        th->belongs_to_list_lock = &sched->list_lock_of(name);                    \
     }                                                                             \
     APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)                  \
     {                                                                             \
@@ -135,7 +137,9 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
             e = list_pop_front(&sched->list_of(name));                            \
             th = apth_t_list_entry(e);                                            \
             assert(th->belongs_to_list == &sched->list_of(name));                 \
+            assert(th->belongs_to_list_lock == &sched->list_lock_of(name));       \
             th->belongs_to_list = NULL;                                           \
+            th->belongs_to_list_lock = NULL;                                      \
         }                                                                         \
         lll_unlock(&sched->list_lock_of(name), "pop_apth_from_" stringify(name)); \
         return th;                                                                \
@@ -166,6 +170,13 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
         lll_unlock(&sched->list_lock_of(name), "apth_is_in_" stringify(name));    \
         return found;                                                             \
     }
+
+APTH_INTERNAL apth_t remove_apth(apth_t th)
+{
+    lll_lock(th->belongs_to_list_lock, "remove_apth");
+    list_remove(&th->elem);
+    lll_unlock(th->belongs_to_list_lock, "remove_apth");
+}
 
 DEFINE_SCHED_LIST_OP(new)
 DEFINE_SCHED_LIST_OP(ready)
@@ -245,15 +256,19 @@ APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
     switch (th->state)
     {
     case APTH_STATE_NEW:
+    apth_debug("NEW LIST");
         sl = &sched->new_list;
         break;
     case APTH_STATE_READY:
+    apth_debug("READY LIST");
         sl = &sched->ready_list;
         break;
     case APTH_STATE_WAITING:
+    apth_debug("WAITING LIST");
         sl = &sched->waiting_list;
         break;
     case APTH_STATE_TERMINATED:
+        apth_debug("TERMINATED LIST");
         sl = &sched->terminated_list;
         break;
     default:
@@ -264,6 +279,9 @@ APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
 
     assert(l == sl && l != NULL);
 
+    lll_t *lll = th->belongs_to_list_lock;
+    lll_lock(lll, "apth_is_not_null_and_valid");
+
     // List contains
     bool found = false;
     FOR_ELEMENT_IN_LIST_REF(l, e)
@@ -272,6 +290,8 @@ APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
         if (t == th)
             found = true;
     }
+
+    lll_unlock(lll, "apth_is_not_null_and_valid");
     return found;
 }
 
@@ -396,7 +416,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Switch the thread
         th->dispatches += 1;
-        apth_debug("GOING TO SWITCH");
+        // apth_debug("GOING TO SWITCH");
         apth_ctx_switch(sched->sched_ctx, th->ctx);
 
         // Update scheduler times

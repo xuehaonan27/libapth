@@ -50,6 +50,7 @@ DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
+APTH_INTERNAL apth_t remove_apth(apth_t th);
 #undef DECLARE_SCHED_LIST_OP
 #undef list_of
 #undef apth_is_in

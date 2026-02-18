@@ -27,6 +27,7 @@ APTH_INTERNAL int apth_create_internal(
     void *(*start_routine)(void *), void *arg, apth_sched_t sched)
 {
     apth_t t;
+    apth_attr_t iattr = NULL;
     unsigned int stacksize;
     void *stackaddr;
     apth_time_t ts;
@@ -46,13 +47,19 @@ APTH_INTERNAL int apth_create_internal(
     // Consistency
     if (start_routine == NULL)
         return apth_error(EINVAL, EINVAL);
+    if (attr != NULL)
+    {
+        iattr = *attr;
+        if (iattr == NULL)
+            return apth_error(EINVAL, EINVAL);
+    }
 
     // Support the special case of main()
     // TODO: check what is this
 
     // Allocate a new thread control block
-    stacksize = (attr == NULL ? APTH_STACK_SIZE_DEFAULT : attr->stacksize);
-    stackaddr = (attr == NULL ? NULL : attr->stackaddr);
+    stacksize = (iattr == NULL ? APTH_STACK_SIZE_DEFAULT : iattr->stacksize);
+    stackaddr = (iattr == NULL ? NULL : iattr->stackaddr);
 
     if ((t = apth_tcb_alloc(stacksize, stackaddr)) == NULL)
         return apth_error(errno, errno);
@@ -60,9 +67,11 @@ APTH_INTERNAL int apth_create_internal(
     // Configure remainning attributes
     // TODO: here check whether the parent fields will be inherited partially
     // even when the attr is set (in pthread)
-    if (attr != NULL)
+    if (iattr != NULL)
     {
         // TODO
+        memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
+        t->name[APTH_TCB_NAMELEN] = '\0';
     }
     else if (cur != APTH_NULL)
     {
@@ -101,7 +110,7 @@ APTH_INTERNAL int apth_create_internal(
     // t->joinable = false;
     // TODO: here we used a check to check whether attr is NULL.
     // TODO: but we could give `iattr` a default when `attr` is NULL and use iattr anyway.
-    t->joinid = attr == NULL ? NULL : (attr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL);
+    t->joinid = iattr == NULL ? NULL : (iattr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL);
 
     // Initialize thread specific storage
     // apth_debug("initializing TLS");
@@ -114,6 +123,7 @@ APTH_INTERNAL int apth_create_internal(
     t->cleanups = NULL;
 
     t->belongs_to_list = NULL;
+    t->belongs_to_list_lock = NULL;
 
     // Initialize sync stuff
     // TODO:
@@ -144,6 +154,8 @@ APTH_INTERNAL int apth_create_internal(
     // Increment scheduler thread count
     inc_thrcnt(sched);
     inc_alive_thrcnt();
+
+    apth_debug("Now alive thread count = %u", get_apth_alive_nthreads());
 
     t->worker = sched->worker;
     *newthr = t;

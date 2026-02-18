@@ -99,7 +99,8 @@ run-tests: tests
 # Run individual test (usage: make test-test_init)
 test-%: $(BIN_DIR)/%
 	@echo "Running test: $<"
-	@$<
+	@ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(BUILD_DIR)/lib \
+		LD_PRELOAD=$(BUILD_DIR)/lib/libapth.so $<
 
 # ==================== Directory Creation ====================
 $(OBJ_DIR):

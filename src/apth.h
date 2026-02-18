@@ -34,7 +34,7 @@ typedef enum
 // ==================== Thread Attributes ====================
 
 struct apth_attr_st;
-typedef struct apth_attr_st apth_attr_t;
+typedef struct apth_attr_st *apth_attr_t;
 
 typedef unsigned int apth_key_t;
 
@@ -124,6 +124,10 @@ int apth_setname_np(apth_t th, const char *name);
 int apth_yield(void);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
+
+int apth_attr_init(apth_attr_t *attr);
+int apth_attr_getname_np(apth_attr_t *attr, char *buf, size_t len);
+int apth_attr_setname_np(apth_attr_t *attr, const char *name);
 
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>

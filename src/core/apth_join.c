@@ -23,7 +23,7 @@ int apth_join(apth_t tid, void **value)
 {
     apth_event_t ev;
 
-    apth_debug("apth_join: joining thread \"%s\"", tid == NULL ? "-ANY-" : tid->name);
+    apth_debug("apth_join: joining thread %p (\"%s\")", tid, tid == NULL ? "-ANY-" : tid->name);
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
 
@@ -59,7 +59,8 @@ int apth_join(apth_t tid, void **value)
         *value = tid->join_arg;
     // Remove the thread from scheduler
     // TODO: lock up the list
-    list_remove(&tid->elem);
+    // list_remove(&tid->elem);
+    remove_apth(tid);
     // Free the TCB
     apth_tcb_free(tid);
 

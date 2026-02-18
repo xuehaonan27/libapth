@@ -78,6 +78,7 @@ int apth_init(apth_init_t *initvals)
     // apth_debug("spawning main thread at scheduler: %p", sched);
     apth_t main_th;
     apth_create_internal(&main_th, NULL, initvals->main_apth, initvals->main_args, sched);
+    apth_setname_np(main_th, "main apth");
     atomic_store_release(&MAIN_APTH, main_th);
     // apth_debug("spawned main thread: %p (\"%s\")", main_th, main_th->name);
     // apth_debug("apth_init: leave");

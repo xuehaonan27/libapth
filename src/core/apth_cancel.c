@@ -32,7 +32,8 @@ int apth_cancel(apth_t th)
     {
         // Remove thread from its queue
         // TODO: lock the thread list
-        list_remove(&th->elem);
+        // list_remove(&th->elem);
+        remove_apth(th);
 
         // Execute cleanups
         apth_thread_clenaup(th);

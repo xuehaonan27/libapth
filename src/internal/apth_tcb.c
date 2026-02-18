@@ -17,7 +17,7 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
     if (stacksize > 0 && stacksize < APTH_STACK_SIZE_DEFAULT)
         stacksize = APTH_STACK_SIZE_DEFAULT;
     if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
-        return (apth_t)NULL;
+        return APTH_NULL;
 
     assert_msg(IS_VALID_APTH_T(t), "t not aligned to 4 bytes: %p", t);
 

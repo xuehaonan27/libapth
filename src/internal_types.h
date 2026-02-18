@@ -1,7 +1,7 @@
 #ifndef __LIBAPTH_INTERNAL_TYPES_H
 #define __LIBAPTH_INTERNAL_TYPES_H
 
-#define APTH_TCB_NAMELEN 16
+#define APTH_TCB_NAMELEN 31
 #define _GNU_SOURCE // for pthread_attr_setaffinity_np
 #include "apth.h"
 
@@ -172,7 +172,7 @@ struct ALIGNED(8) apth_st
 {
     /* standard thread control block ingredients */
     int prio;                    /* base priority of thread             */
-    char name[APTH_TCB_NAMELEN]; /* name of thread                      */
+    char name[APTH_TCB_NAMELEN + 1]; /* name of thread                      */
     int dispatches;              /* total number of thread dispatches   */
     apth_state_t state;          /* current state indicator for thread  */
 
@@ -256,6 +256,7 @@ struct ALIGNED(8) apth_st
     list_entry(LIST_ELEM, struct apth_st, elem)
     apth_worker_t worker; // TODO: when performing work stealing, modify this
     struct list *belongs_to_list;
+    lll_t *belongs_to_list_lock;
 };
 #define APTH_NULL (apth_t) NULL
 #define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | 0x1))
@@ -394,6 +395,7 @@ struct apth_attr_st
     // Stack handling
     void *stackaddr;
     size_t stacksize;
+    char name[APTH_TCB_NAMELEN + 1];
 
     /* These are extensions. Modified according to APTH needs */
     // Affinity map
