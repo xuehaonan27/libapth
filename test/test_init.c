@@ -1,25 +1,26 @@
 // Test initializing the LIBAPTH package
 
 #include "apth.h"
+#include <stdio.h>
 
 #define NULL ((void *)0)
 
 static char a[] = "asdf\n";
 
-void *child_thread(void *arg)
+void *apth_main(void *arg)
 {
-    write(2, a, sizeof(a));
+    char *s = (char *)arg;
+    write(2, s, sizeof(a));
+    return NULL;
 }
 
 int main(void)
 {
     apth_init_t initvals;
-    apth_initvals_init(&initvals, 1, child_thread, NULL);
+    apth_initvals_init(&initvals, 1, apth_main, (void *)a);
     apth_init(&initvals);
 
-    // apth_t th1;
-    // apth_create(&th1, NULL, child_thread, NULL);
-
-    apth_drop();
+    // `apth_init` should have called `pthread_exit` and end itself
+    perror("Should not reach here");
     return 0;
 }

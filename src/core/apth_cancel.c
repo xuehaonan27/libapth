@@ -22,6 +22,7 @@ int apth_cancel(apth_t th)
         return apth_error(EPERM, EPERM);
 
     // Now mark the thread as cancelled
+    // TODO: atomicity
     th->cancelreq = true;
 
     unsigned int cc_h = atomic_load_acquire(&th->cancelhandling);
@@ -46,10 +47,12 @@ int apth_cancel(apth_t th)
         else
         {
             // Someone is waiting for `th`
+            // TODO: here we must yield to scheduler
             apth_debug("apth_cancel: moving cancelled thread \"%s\" to dead queue", th->name);
             th->join_arg = APTH_CANCELED;
             th->state = APTH_STATE_TERMINATED;
-            push_apth_to_terminated(th, sched);
+            // push_apth_to_terminated(th, sched);
+            apth_yield();
         }
     }
 

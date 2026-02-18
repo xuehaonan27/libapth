@@ -29,6 +29,6 @@ APTH_INTERNAL void apth_thread_clenaup(apth_t th)
     apth_key_destroydata(th);
 
     // Release still acquired synchronizing primitives
-    TODO("release sync primitives");
+    // TODO("release sync primitives");
     return;
 }

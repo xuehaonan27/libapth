@@ -15,7 +15,10 @@ static void apth_create_trampoline(void)
     data = (*cur->start_func)(cur->start_arg);
 
     // Do an implicit exit of the apth with the result value
-    apth_exit(data);
+    // apth_exit(data);
+    // Note: we cannot call `apth_exit` here, since that should be called optionally
+    // and explicitly by program, marking the process not to exit with the main apth.
+    apth_do_cancel(data);
     PANIC("Should not reach here");
 }
 
@@ -38,7 +41,7 @@ APTH_INTERNAL int apth_create_internal(
         cur = APTH_NULL;
     }
 
-    apth_debug("enter");
+    // apth_debug("enter");
 
     // Consistency
     if (start_routine == NULL)
@@ -72,28 +75,28 @@ APTH_INTERNAL int apth_create_internal(
     }
 
     // Initialize the time points and ranges
-    apth_debug("initializing times");
+    // apth_debug("initializing times");
     apth_time_set(&ts, APTH_TIME_NOW);
     apth_time_set(&t->spawned, &ts);
     apth_time_set(&t->lastran, &ts);
     apth_time_set(&t->running, APTH_TIME_ZERO);
 
     // Initialize events
-    apth_debug("initializing events");
+    // apth_debug("initializing events");
     list_empty(&t->event_list);
 
     // Clear raised signals
-    apth_debug("initializing signals");
+    // apth_debug("initializing signals");
     sigemptyset(&t->sigpending);
     t->sigpendcnt = 0;
 
     // Remember the start routine and arguments
-    apth_debug("initializing start routine and arguments");
+    // apth_debug("initializing start routine and arguments");
     t->start_func = start_routine;
     t->start_arg = arg;
 
     // Initialize join argument
-    apth_debug("initializing join");
+    // apth_debug("initializing join");
     t->join_arg = NULL;
     // t->joinable = false;
     // TODO: here we used a check to check whether attr is NULL.
@@ -101,12 +104,12 @@ APTH_INTERNAL int apth_create_internal(
     t->joinid = attr == NULL ? NULL : (attr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL);
 
     // Initialize thread specific storage
-    apth_debug("initializing TLS");
+    // apth_debug("initializing TLS");
     t->specific_used = false;
     t->specific[0] = t->specific_1stblock;
 
     // Initialize cancellation stuff
-    apth_debug("initializing cancellation stuff");
+    // apth_debug("initializing cancellation stuff");
     t->cancelhandling = 0; // TODO: is this right? we should only clear enable bit
     t->cleanups = NULL;
 
@@ -118,11 +121,11 @@ APTH_INTERNAL int apth_create_internal(
     // TODO: exception stuff
 
     // Initialize the machine context of this new thread
-    apth_debug("initializing the context of this new thread");
+    // apth_debug("initializing the context of this new thread");
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
-    
+
     if (!apth_ctx_set(t->ctx, apth_create_trampoline,
-                      t->stack, (char *)(t->stack + t->stacksize)))
+                      t->stack, (char *)((char *)t->stack + t->stacksize)))
     {
         apth_shield
         {
@@ -133,21 +136,28 @@ APTH_INTERNAL int apth_create_internal(
 
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
-    apth_debug("sched = %p", sched);
+    // apth_debug("sched = %p", sched);
     t->state = APTH_STATE_NEW;
-    // TODO: synchronize access to apth list
-    push_apth_to_new(t, sched); // TODO: is sched initialized by here
 
+    push_apth_to_new(t, sched); // TODO: is sched initialized by here
+    // apth_debug("pushed apth to new");
     // Increment scheduler thread count
     inc_thrcnt(sched);
+    inc_alive_thrcnt();
 
+    t->worker = sched->worker;
     *newthr = t;
-    apth_debug("leave");
+
+    // apth_debug("spawned new thread t=%p", t);
+    // apth_debug("leave");
+    // while(atomic_load_acquire(&SIMPLE_BARRIER) == 0);
+    // apth_debug("allow to proceed");
     return 0;
 }
 
 int apth_create(apth_t *newthr, const apth_attr_t *attr,
                 void *(*start_routine)(void *), void *arg)
 {
+    // TODO: determine which sched to spawn this apth to
     return apth_create_internal(newthr, attr, start_routine, arg, NULL);
 }

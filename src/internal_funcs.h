@@ -30,6 +30,10 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched);
 APTH_INTERNAL void inc_thrcnt(apth_sched_t sched);
 APTH_INTERNAL void dec_thrcnt(apth_sched_t sched);
+APTH_INTERNAL unsigned int get_apth_nthreads(void);
+APTH_INTERNAL void inc_alive_thrcnt(void);
+APTH_INTERNAL void dec_alive_thrcnt(void);
+APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);
 
 #define push_apth_to(name) push_apth_to_##name
 #define pop_apth_from(name) pop_apth_from_##name
@@ -202,7 +206,12 @@ APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
                             const void *__pointer)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
-APTH_DECLARE_FETCH_LIBCFUNC(void, exit, int status);
+APTH_DECLARE_FETCH_LIBCFUNC(void, pthread_exit, void *retval)
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setdetachstate, pthread_attr_t *attr, int detachstate)
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setaffinity_np, pthread_attr_t *attr,
+                            size_t cpusetsize, const cpu_set_t *cpuset)
+APTH_DECLARE_FETCH_LIBCFUNC(void, exit, int status)
+APTH_DECLARE_FETCH_LIBCFUNC(int, pipe, int pipefd[2])
 
 // ==================== For these syscalls, hook them ====================
 APTH_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)

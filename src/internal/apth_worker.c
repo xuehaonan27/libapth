@@ -13,6 +13,7 @@ static struct apth_global_scheduler_pool GLOBAL_POOL;
 
 // TODO: what about add worker ? how to sync that?
 _Atomic unsigned int WORKER_SPAWNED = 0x7FFFFFFF;
+_Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
 static pthread_key_t __CUR_WORKER_KEY;
 static pthread_key_t __CUR_SCHED_KEY;
@@ -46,10 +47,10 @@ APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 APTH_INTERNAL apth_sched_t cur_sched(void)
 {
     // return cur_worker()->sched;
-    apth_debug("cur_sched: pthread_getspecific = %p", apth_syscall_raw(pthread_getspecific));
+    // apth_debug("cur_sched: pthread_getspecific = %p", apth_syscall_raw(pthread_getspecific));
     // return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
     apth_sched_t sched = (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
-    apth_debug("cur_sched: got sched = %p", sched);
+    // apth_debug("cur_sched: got sched = %p", sched);
     return sched;
 }
 
@@ -66,6 +67,7 @@ APTH_INTERNAL apth_t cur_apth(void)
 
 APTH_INTERNAL void set_cur_apth(apth_t t)
 {
+    assert(t != APTH_NULL);
     cur_sched()->cur = t;
 }
 
@@ -110,15 +112,41 @@ APTH_INTERNAL int worker_count(void)
 
 static int apth_worker_init(apth_worker_t worker, int worker_id)
 {
+    int result;
     worker->worker_id = worker_id;
-    apth_syscall_raw(pthread_attr_init)(&worker->attr);
+
+    // Set detached and CPU affinity
+    if ((result = apth_syscall_raw(pthread_attr_init)(&worker->attr)) != 0)
+    {
+        // apth_debug("fail pthread_attr_init");
+        fprintf(stderr, "fail pthread_attr_init\n");
+        return apth_error(-1, EINVAL);
+    }
+    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, PTHREAD_CREATE_DETACHED)) != 0)
+    {
+        // apth_debug("fail pthread_attr_setdetachstate");
+        fprintf(stderr, "fail pthread_attr_setdetachstate\n");
+        return apth_error(-1, EINVAL);
+    }
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    assert(0 <= worker_id && worker_id < cpu_cores());
+    CPU_SET(worker_id, &cpuset);
+    if ((result = apth_syscall_raw(pthread_attr_setaffinity_np)(&worker->attr, sizeof(cpu_set_t), &cpuset)) != 0)
+    {
+        // apth_debug("fail pthread_attr_setaffinity_np");
+        fprintf(stderr, "fail pthread_attr_setaffinity_np\n");
+        return apth_error(-1, EINVAL);
+    }
+
+    // Prepare worker arguments
     apth_worker_arg_t arg;
     if ((arg = (apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))) == NULL)
         return apth_error(-1, ENOMEM);
     arg->self = worker;
-    // TODO: initialize the worker argument, like core affinity
-    // TODO: should this pthread be detached or something?
-    int result = apth_syscall_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
+
+    // Spawn the worker
+    result = apth_syscall_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
     return result;
 }
 
@@ -147,7 +175,9 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     }
 
     // long online_cores = cpu_cores();
-    int wrkthrs_to_spwan = init_workers > 0 ? init_workers : (int)cpu_cores();
+    int wrkthrs_to_spwan = 0 < init_workers && init_workers <= (int)cpu_cores()
+                               ? init_workers
+                               : (int)cpu_cores();
     atomic_store_release(&WORKER_SPAWNED, wrkthrs_to_spwan);
 
     // TODO: initialize the pool lock
@@ -168,7 +198,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
         int init_result;
         if ((init_result = apth_worker_init(workers_mem, worker_cnt)) != 0)
             return apth_error(init_result, errno);
-        apth_debug("spwaned worker %d at %p", worker_cnt, workers_mem);
+        fprintf(stderr, "spwaned worker %d at %p\n", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
     }
 
@@ -177,7 +207,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     // atomic_store(&GLOBAL_POOL.worker_count, online_cores);
     GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
     // apth_debug("Spawned %ld workers", atomic_load(&GLOBAL_POOL.worker_count));
-    apth_debug("Spawned %ld workers", GLOBAL_POOL.worker_count);
+    fprintf(stderr, "Spawned %d workers\n", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
 
     return 0;

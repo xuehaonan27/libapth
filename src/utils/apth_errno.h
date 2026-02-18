@@ -2,6 +2,7 @@
 #define __LIBAPTH_UTILS_APTH_ERRNO_H
 
 #include <errno.h>
+#include <string.h>
 #include "debug.h"
 
 #define apth_shield                                           \

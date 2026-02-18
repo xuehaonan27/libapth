@@ -13,7 +13,8 @@ APTH_INTERNAL void apth_cancel_point(void)
         // avoid looping if cleanup handlers contain cancellation points
         cur->cancelreq = false;
         apth_debug("apth_cancel_point: terminating cancelled thread \"%s\"", cur->name);
-        apth_exit(APTH_CANCELED);
+        // apth_exit(APTH_CANCELED);
+        apth_do_cancel(APTH_CANCELED);
     }
     return;
 }
@@ -38,7 +39,8 @@ APTH_INTERNAL void apth_do_cancel(void *result)
         self->join_arg = result;
         self->state = APTH_STATE_TERMINATED;
         apth_debug("apth_do_cancel: switching from thread \"%s\" to scheduler", self->name);
-        apth_ctx_switch(self->ctx, sched->sched_ctx);
+        // apth_ctx_switch(self->ctx, sched->sched_ctx);
+        apth_yield();
     }
 
     PANIC("Should not reach here");

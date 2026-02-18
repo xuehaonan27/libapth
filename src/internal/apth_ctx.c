@@ -32,7 +32,8 @@ APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
     "==== THREAD CONTEXT SWITCH ==========================================="
 
 #ifdef APTH_DEBUG
-#define _apth_mctx_switch_debug apth_debug(NULL, 0, 1, APTH_SWITCH_DEBUG_LINE);
+#define _apth_mctx_switch_debug apth_debug(APTH_SWITCH_DEBUG_LINE);
+// #define _apth_mctx_switch_debug fprintf(stderr, APTH_SWITCH_DEBUG_LINE);
 #else
 #define _apth_mctx_switch_debug /* NOP */
 #endif
@@ -48,6 +49,7 @@ APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
     _apth_mctx_switch_debug;
+    apth_debug("old=%p, new=%p", old, new);
     swapcontext(&old->uc, &new->uc);
 }
 
@@ -62,18 +64,19 @@ APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_
     if (getcontext(&ctx->uc) != 0)
         return false;
 
-    apth_debug("got context");
-
     // remove parent link
     ctx->uc.uc_link = NULL;
 
     // configure new stack
-    ctx->uc.uc_stack.ss_sp = stack_addr_hi;
+    // note: according to manual of ucontext, it's not for the program to consider
+    // the growth direction of the stack.
+    ctx->uc.uc_stack.ss_sp = stack_addr_lo;
+    apth_debug("STACK address = %p", stack_addr_lo);
     ctx->uc.uc_stack.ss_size = stack_addr_hi - stack_addr_lo;
     ctx->uc.uc_stack.ss_flags = 0;
 
     // configure startup function (with no arguments)
-    makecontext(&ctx->uc, func, 1);
+    makecontext(&ctx->uc, func, 0);
 
     apth_debug("leave");
     return true;

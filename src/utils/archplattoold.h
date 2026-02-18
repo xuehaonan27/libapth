@@ -15,16 +15,16 @@
 #endif
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
-    #define NORETURN [[noreturn]]
+#define NORETURN [[noreturn]]
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-    #include <stdnoreturn.h>
-    #define NORETURN noreturn
+#include <stdnoreturn.h>
+#define NORETURN noreturn
 #elif defined(__GNUC__) || defined(__clang__)
-    #define NORETURN __attribute__((noreturn))
+#define NORETURN __attribute__((noreturn))
 #elif defined(_MSC_VER)
-    #define NORETURN __declspec(noreturn)
+#define NORETURN __declspec(noreturn)
 #else
-    #define NORETURN
+#define NORETURN
 #endif
 
 #if defined(_WIN32) || defined(__CYGWIN__)
@@ -50,6 +50,17 @@
 #define APTH_API
 #define APTH_INTERNAL
 #endif
+#endif
+
+// #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+// #include <stdalign.h>
+// #define ALIGNED(n) alignas(n)
+#if defined(__GNUC__) || defined(__clang__)
+#define ALIGNED(n) __attribute__((aligned(n)))
+#elif defined(_MSC_VER)
+#define ALIGNED(n) __declspec(align(n))
+#else
+#define ALIGNED(n)
 #endif
 
 #endif // __LIBAPTH_UTILS_ARCHPLATTOOLD_H

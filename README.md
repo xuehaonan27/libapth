@@ -1,5 +1,10 @@
 # Libapth: userspace thread library for modern multi-CPU environment
 
+## Conditional Compilation
+0. APTH_DEBUG: Control whether debug is enabled
+1. APTH_DEBUG_LLL
+2. APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+
 ## TODO
 1. Hybrid scheduling
 2. Check return values

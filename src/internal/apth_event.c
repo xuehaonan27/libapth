@@ -14,6 +14,7 @@ static void apth_sched_eventmanager_sighandler(int sig, MAYBE_UNUSED siginfo_t *
 
     // Write signal to signal pipe in order to awake the select()
     c = (int)sig;
+    apth_debug("GOING TO WRITE TO PIPE");
     apth_syscall_raw(write)(sched->apth_sigpipe[1], &c, sizeof(char));
     return;
 }
@@ -40,6 +41,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
     for (;;)
     {
+        apth_debug("loop");
         bool loop_repeat = false;
 
         // Initialize fd sets, for `select`
@@ -68,9 +70,13 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         // For all apths in the waiting queue
         bool any_occurred = false;
+
+        apth_debug("waiting list is empty? %s", list_empty(&sched->waiting_list) ? "true" : "false");
+
         FOR_ELEMENT_IN_LIST(sched->waiting_list, e)
         {
             apth_t th = apth_t_list_entry(e);
+            apth_debug("checking in waiting list th=%p", th);
 
             // Determine signals we block
             // If there's any apth that do not block `sig`, then the worker pthread should
@@ -228,6 +234,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             }
         }
 
+        apth_debug("any_occurred = %s", any_occurred ? "true" : "false");
         // If any event occurred, then we should do poll mode for select
         if (any_occurred)
             dopoll = true;
@@ -261,26 +268,33 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         }
 
         // Clear pipe and let select() wait for read-part of the pipe.
+        apth_debug("going to select wait for read-part of the pipe");
         char minibuf[128];
-        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
-            ;
+        // int tmp_mode = fcntl(sched->apth_sigpipe[0], F_GETFL, NULL);
+        // apth_debug("sched->apth_sigpipe[0] is nonblocking?: %s", tmp_mode & APTH_O_NONBLOCKING ? "true" : "false");
+        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0);
         FD_SET(sched->apth_sigpipe[0], &rfds);
-        if (fdmax < sched->apth_sigpipe[0])
+        if (fdmax < sched->apth_sigpipe[0]) {
+            apth_debug("before fdmax=%d, now should be %d", fdmax, sched->apth_sigpipe[0]);
             fdmax = sched->apth_sigpipe[0];
+        }
 
         // Replace signal actions for signals we have to catch for events
         struct sigaction sa;
         struct sigaction osa[1 + APTH_NSIG];
+        apth_debug("replace signal actions for signals");
         for (int sig = 1; sig < APTH_NSIG; sig++)
         {
             if (sigismember(&sched->apth_sigcatch, sig))
             {
+                apth_debug("register sig=%d with apth_sched_eventmanager_sighandler", sig);
                 sa.sa_sigaction = apth_sched_eventmanager_sighandler;
                 sigfillset(&sa.sa_mask);
                 sa.sa_flags = SA_SIGINFO;
                 sigaction(sig, &sa, &osa[sig]);
             }
         }
+        apth_debug("replaced");
 
         // Allow some signals to be delivered: either to our catching handler or directly
         // to the configured handler for signals not catched by events
@@ -289,15 +303,23 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         // Now do the polling for filedescriptor I/O and timers.
         // When the scheduler sleeps at all, then here.
+        apth_debug("Now do the polling for fd I/O and timers");
+        apth_debug("dopoll=%s, fdmax=%d", dopoll ? "true" : "false", fdmax);
+        apth_debug("pdelay=%p", pdelay);
+        // int tmp_mode = fcntl(sched->apth_sigpipe[0], F_GETFL, NULL);
+        // apth_debug("sched->apth_sigpipe[0] is nonblocking?: %s", tmp_mode & APTH_O_NONBLOCKING ? "true" : "false");
         int rc = -1;
         if (!(dopoll && fdmax == -1))
             // !dopoll: then there's some events occured.
             // !fdmax == -1, then there's some fd to wait for.
             while (
                 (rc = apth_syscall_raw(select)(fdmax + 1, &rfds, &wfds, &efds, pdelay)) < 0 && errno == EINTR)
-                ;
+                {
+                    apth_debug("rc=%d, errno=%d", rc, errno);
+                }
 
         // Restore signal mask and actions and handle signals
+        apth_debug("Restore signal mask and actions and handle signals");
         apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &oss, NULL);
         for (int sig = 1; sig < APTH_NSIG; sig++)
         {
@@ -312,6 +334,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             {
                 // It was an implicit timer event for a function event.
                 // So repeat the event handling for rechecking the function
+                apth_debug("loop_repeat");
                 loop_repeat = true;
             }
             else
@@ -528,12 +551,13 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         if (loop_repeat)
         {
+            apth_debug("continue");
             apth_time_set(now, APTH_TIME_NOW);
             continue;
         }
         else
         {
-            apth_debug("apth_sched_eventmanager: leaving");
+            apth_debug("leave");
             break;
         }
     }
@@ -630,14 +654,13 @@ APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
     int goal;
     ev->ev_type = APTH_EVENT_TYPE_TID;
     if (spec & APTH_GOAL_UNTIL_TID_NEW)
-        goal = APTH_STATE_NEW;
+        goal = APTH_GOAL_UNTIL_TID_NEW;
     else if (spec & APTH_GOAL_UNTIL_TID_READY)
-        goal = APTH_STATE_READY;
+        goal = APTH_GOAL_UNTIL_TID_READY;
     else if (spec & APTH_GOAL_UNTIL_TID_DEAD)
-        goal = APTH_STATE_TERMINATED;
+        goal = APTH_GOAL_UNTIL_TID_DEAD;
     else
-        goal = APTH_STATE_READY;
-
+        goal = APTH_GOAL_UNTIL_TID_READY; // TODO:check: is this right?
     ev->ev_goal = goal;
     ev->ev_args.TID.tid = tid;
 
@@ -743,6 +766,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     apth_cancel_point();
 
     // Unlink event from current thread
+    // TODO: atomicity
     list_remove(&ev->elem);
     assert_msg(list_empty(&self->event_list), "insane");
 

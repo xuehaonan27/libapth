@@ -14,17 +14,21 @@
 #undef UIO_MAXIOV
 #endif
 
-#define APTH_LIST_OF_FETCH_ONLY \
-    X(pthread_create)           \
-    X(pthread_sigmask)          \
-    X(pthread_self)             \
-    X(pthread_kill)             \
-    X(pthread_key_create)       \
-    X(pthread_getspecific)      \
-    X(pthread_setspecific)      \
-    X(pthread_attr_init)        \
-    X(pthread_join)             \
-    X(exit)
+#define APTH_LIST_OF_FETCH_ONLY    \
+    X(pthread_create)              \
+    X(pthread_sigmask)             \
+    X(pthread_self)                \
+    X(pthread_kill)                \
+    X(pthread_key_create)          \
+    X(pthread_getspecific)         \
+    X(pthread_setspecific)         \
+    X(pthread_attr_init)           \
+    X(pthread_join)                \
+    X(pthread_exit)                \
+    X(pthread_attr_setdetachstate) \
+    X(pthread_attr_setaffinity_np) \
+    X(exit) \
+    X(pipe)
 
 #define APTH_LIST_OF_SYSCALLS \
     X(nanosleep)              \
@@ -94,7 +98,7 @@ APTH_INTERNAL int apth_syscall_system_init(void)
     APTH_LIST_OF_SYSCALLS
     APTH_LIST_OF_FETCH_ONLY
 #undef X
-    apth_debug("apth_syscall_system_init: leave");
+    fprintf(stderr, "apth_syscall_system_init: leave\n");
     return 0;
 }
 

@@ -6,15 +6,19 @@
 #include "internal_funcs.h"
 #include <stdlib.h>
 
+static char str[1024];
+static lll_t buf_lock;
+
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...)
 {
     va_list ap;
-    // TODO: synchronize access to this str
-    static char str[1024];
     size_t n;
 
     apth_shield
     {
+        char lll_str[256];
+        apth_snprintf(lll_str, sizeof(lll_str), "%d:%s:%04d:%s: debug enter", (int)getpid(), file, line, function);
+        lll_lock(&buf_lock, lll_str);
         va_start(ap, message);
         if (file != NULL)
             apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
@@ -27,6 +31,9 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
+        // lll_unlock(&buf_lock, "debug leave");
+        apth_snprintf(lll_str, sizeof(lll_str), "%d:%s:%04d:%s: debug leave", (int)getpid(), file, line, function);
+        lll_unlock(&buf_lock, lll_str);
     }
     return;
 }
@@ -34,11 +41,11 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 static void apth_vdebug_fn(const char *file, int line, const char *function,
                            const char *msg1, const char *msg2, va_list args)
 {
-    static char str[1024];
     size_t n;
 
     apth_shield
     {
+        lll_lock(&buf_lock, "vdebug enter");
         if (file != NULL)
             apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
         else
@@ -51,6 +58,7 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
+        lll_unlock(&buf_lock, "vdebug leave");
     }
     return;
 }

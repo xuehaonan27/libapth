@@ -2,11 +2,12 @@
 #define __LIBAPTH_INTERNAL_TYPES_H
 
 #define APTH_TCB_NAMELEN 16
-
+#define _GNU_SOURCE // for pthread_attr_setaffinity_np
 #include "apth.h"
 
 #include "utils/list.h"
 #include "utils/ring.h"
+#include "utils/lll.h"
 #include <sys/time.h>
 #include <ucontext.h>
 #include <pthread.h>
@@ -14,6 +15,13 @@
 #define _BIT(n) (1 << (n))
 
 extern _Atomic unsigned int WORKER_SPAWNED;
+extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
+
+extern _Atomic apth_t MAIN_APTH;
+// extern _Atomic int MAIN_APTH_EXIT_BY_CALLING_APTH_EXIT;
+
+// TODO: this is for debug only, remove it later
+// extern _Atomic unsigned int SIMPLE_BARRIER;
 
 // Event status code
 typedef enum
@@ -102,9 +110,14 @@ struct apth_perpthr_scheduler
     struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
     struct list suspended_list;  // suspended threads [elem: struct apth_st]
     struct list terminated_list; // terminated threads [elem: struct apth_st]
+    lll_t new_list_lock;         // synchronize access to new list
+    lll_t ready_list_lock;       // synchronize access to ready list
+    lll_t waiting_list_lock;     // synchronize access to waiting list
+    lll_t suspended_list_lock;   // synchronize access to suspended list
+    lll_t terminated_list_lock;  // synchronize access to terminated list
     apth_worker_t worker;        // pthread worker carrying this scheduler
     unsigned int switches;       // context switch times
-    unsigned int thrcnt;         // APTH threads now running on this scheduler
+    _Atomic unsigned int thrcnt; // APTH threads now running on this scheduler
     apth_time_t running;         // time the scheduler runs
     apth_t cur;                  // current APTH
     _Atomic bool opening;        // scheduler is opening
@@ -155,7 +168,7 @@ struct apth_global_scheduler_pool
 // ============================== APTH TCB ==============================
 
 // Thread control block.
-struct apth_st
+struct ALIGNED(8) apth_st 
 {
     /* standard thread control block ingredients */
     int prio;                    /* base priority of thread             */
@@ -241,9 +254,12 @@ struct apth_st
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
+    apth_worker_t worker; // TODO: when performing work stealing, modify this
     struct list *belongs_to_list;
 };
 #define APTH_NULL (apth_t) NULL
+#define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | 0x1))
+#define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & 0x1) != 0)
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 8192

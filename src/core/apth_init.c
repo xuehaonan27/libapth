@@ -31,7 +31,7 @@ int apth_init(apth_init_t *initvals)
     // Initialize syscall wrapping
     apth_syscall_system_init();
 
-    apth_debug("apth_init: enter");
+    fprintf(stderr, "apth_init: enter\n");
 
     worker_key_t_init();
     sched_key_t_init();
@@ -58,39 +58,71 @@ int apth_init(apth_init_t *initvals)
         sched_yield();
     }
 
+    fprintf(stderr, "All spawned\n");
+
     // Spawn the main thread
     apth_worker_t worker0 = get_worker_by_id(0);
-    apth_debug("worker0 = %p", worker0);
     apth_sched_t sched = worker0->sched;
 
-    apth_debug("spawning main thread at scheduler: %p", sched);
+    set_cur_worker(worker0);
+    set_cur_sched(sched);
+    set_cur_apth(APTH_FAKE_SCHED(sched));
+
+    // apth_debug("worker0 = %p", worker0);
+    fprintf(stderr, "worker0 = %p\n", worker0);
+    fprintf(stderr, "sched = %p\n", sched);
+
+    // // Here we determine that libapth is initialized
+    // atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
+
+    // apth_debug("spawning main thread at scheduler: %p", sched);
     apth_t main_th;
     apth_create_internal(&main_th, NULL, initvals->main_apth, initvals->main_args, sched);
+    atomic_store_release(&MAIN_APTH, main_th);
+    // apth_debug("spawned main thread: %p (\"%s\")", main_th, main_th->name);
+    // apth_debug("apth_init: leave");
 
-    apth_debug("spawned main thread: %p (\"%s\")", main_th, main_th->name);
+     // Here we determine that libapth is initialized
+    atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
 
-    apth_debug("apth_init: leave");
+
+    // NOTE: debug here, remove this
+    // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
+#if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
+    for (;;);
+#endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+
+    set_cur_sched(NULL);
+    set_cur_worker(NULL);
+
+    // Call `pthread_exit`, the initializer pthread should exit but others
+    // should continue to run
+    fprintf(stderr, "LIBAPTH INITIALIZER PTHREAD EXITING...\n");
+    apth_syscall_raw(pthread_exit)(NULL);
     return 0;
 }
 
 // Drop the libapth package.
 int apth_drop(void)
 {
+    fprintf(stderr, "apth_drop: enter\n");
     if (!LIBAPTH_INITIALIZED)
         return apth_error(EINVAL, EINVAL);
-    apth_debug("apth_drop: enter");
+    // apth_debug("apth_drop: enter");
 
     if (apth_global_scheduler_pool_drop() != 0)
     {
-        apth_debug("apth_drop: fail to drop global scheduler pool");
+        // apth_debug("apth_drop: fail to drop global scheduler pool");
+        fprintf(stderr, "apth_drop: fail to drop global scheduler pool");
     }
 
     if (apth_syscall_system_drop() != 0)
     {
-        apth_debug("apth_drop: fail to drop LIBAPTH syscall system");
+        // apth_debug("apth_drop: fail to drop LIBAPTH syscall system");
+        fprintf(stderr, "apth_drop: fail to drop LIBAPTH syscall system");
     }
 
     LIBAPTH_INITIALIZED = false;
-    apth_debug("apth_drop: leave");
+    // apth_debug("apth_drop: leave");
     return 0;
 }

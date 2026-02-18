@@ -2,8 +2,12 @@
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
+#include "utils/debug.h"
 #include <stdlib.h>
 #include <string.h>
+
+// The most lower 2 bits should be 0, meaning TCB should be at least 4 bytes aligned.
+#define IS_VALID_APTH_T(t) (((uintptr_t)(t) & 0x3) == 0)
 
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
 {
@@ -14,6 +18,8 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         stacksize = APTH_STACK_SIZE_DEFAULT;
     if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
         return (apth_t)NULL;
+
+    assert_msg(IS_VALID_APTH_T(t), "t not aligned to 4 bytes: %p", t);
 
     memset(t, '\0', sizeof(struct apth_st));
 
@@ -37,7 +43,7 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         }
 
 #if APTH_STACKGROWTH < 0
-        /* guard is at lowest address (alignment is guarranteed) */
+        /* guard is at lowest address (alignment is guaranteed) */
         t->stackguard = (uint32_t *)(t->stack); /* double cast to avoid alignment warning */
 #else
         /* guard is at highest address (be careful with alignment) */
