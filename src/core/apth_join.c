@@ -50,11 +50,6 @@ int apth_join(apth_t tid, void **value)
     }
 
     // We mark the `tid` as terminated and as joined
-    // if (tid->state != APTH_STATE_TERMINATED)
-    // {
-    //     apth_debug("apth_join: tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
-    //     return apth_error(EINVAL, EINVAL);
-    // }
     assert_msg(tid->state == APTH_STATE_TERMINATED,
                "tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
 

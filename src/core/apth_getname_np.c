@@ -3,18 +3,18 @@
 #include "utils/apth_errno.h"
 #include <string.h>
 
-int apth_setname_np(apth_t th, const char *name)
+int apth_getname_np(apth_t th, char name[], size_t size)
 {
     if (!apth_is_not_null_and_valid(th))
         return apth_error(ESRCH, ESRCH);
     if (name == NULL)
         return apth_error(EINVAL, EINVAL);
 
-    size_t name_len = strlen(name);
-    if (name_len > APTH_TCB_NAMELEN)
+    size_t name_len = strlen(th->name);
+    if (size <= name_len)
         return apth_error(ERANGE, ERANGE);
 
-    memcpy(th->name, name, name_len);
-    th->name[name_len + 1] = '\0';
+    memcpy(name, th->name, name_len);
+    name[name_len + 1] = '\0';
     return 0;
 }

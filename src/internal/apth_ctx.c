@@ -71,9 +71,6 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
     }
 }
 
-// #define apth_skaddr_makecontext(skaddr, sksize) ((skaddr))
-// #define apth_sksize_makecontext(skaddr, sksize) ((sksize))
-
 // Initialize a context into `ctx`.
 APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi)
 {

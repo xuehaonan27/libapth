@@ -66,20 +66,21 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
 APTH_INTERNAL void apth_tcb_free(apth_t t)
 {
     assert(t != NULL);
+    apth_sched_t sched = cur_sched();
+
     if (t->stack != NULL && !t->stackloan)
         free(t->stack);
 
     // apth_thread_cleanup(t);
 
-    // TODO: Ensure that cleanups are all executed
+    assert_msg(t->cleanups == NULL, "apth %p try to TCB free without executing cleanups", t);
 
-    // Clear other fields
-    // TODO("Clear other fields");
+    // TODO: Clear other fields
+
     free(t->ctx);
     free(t);
 
     // Decrement
-    apth_sched_t sched = cur_sched();
     dec_thrcnt(sched);
 
     return;

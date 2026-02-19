@@ -7,6 +7,8 @@
 int apth_detach(apth_t th)
 {
     // TODO: make sure the th is valid.
+    if (!apth_is_not_null_and_valid(th))
+        return apth_error(ESRCH, ESRCH);
 
     // Mark te thread as detached
     if (atomic_compare_and_exchange_bool_acq(&th->joinid, th, NULL))

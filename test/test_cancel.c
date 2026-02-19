@@ -14,10 +14,10 @@
 
 #include "apth.h"
 #include <errno.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #define NULL ((void *)0)
-#define EXIT_SUCCESS (0)
-#define EXIT_FAILURE (1)
 
 #define handle_error_en(en, msg) \
     do                           \
@@ -32,6 +32,8 @@
 static void *
 thread_func(void *ignored_argument)
 {
+    (void)ignored_argument; // make compiler happy
+
     int s;
 
     s = apth_setcancelstate(APTH_CANCEL_DISABLE, NULL);

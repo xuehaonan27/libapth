@@ -13,10 +13,6 @@ _Atomic unsigned int apth_nthreads = 0;
 _Atomic unsigned int apth_alive_nthreads = 0;
 
 _Atomic apth_t MAIN_APTH = APTH_NULL;
-// _Atomic int MAIN_APTH_EXIT_BY_CALLING_APTH_EXIT = 0;
-
-// TODO: this is for debug only, remove it later
-// _Atomic unsigned int SIMPLE_BARRIER = 0;
 
 // Initialize a scheduler onto `worker` and put the new scheduler in `sched`.
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
@@ -251,9 +247,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 #undef CLEAR_T_LIST
     return;
 
-    // Mark the scheduler as closed
-    // atomic_store_release(&sched->opening, false);
-
     // TODO: report scheduler statistics if in debugging mode
 
     // Signal mask restore, allow all signals
@@ -279,6 +272,9 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 
 APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
 {
+    if (th == APTH_NULL)
+        return false;
+
     // Assert sanity
     apth_sched_t sched = cur_sched();
     struct list *sl = NULL;
@@ -351,7 +347,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     set_cur_sched(sched);
     set_cur_apth(APTH_FAKE_SCHED(sched));
 
-    // apth_debug("apth_scheduler: bootstrapping");
     sigset_t sigs;
     apth_time_t snapshot;
     apth_time_t running;
@@ -370,23 +365,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // Here we atomically substract WORKER_SPAWNED by 1
     atomic_fetch_sub(&WORKER_SPAWNED, 1);
 
-    // Wait before we can continue
-    // while (atomic_load_acquire(&SYNC_BEFORE_MAIN_APTH_SPAWN) == 0)
-    //     ;
+    // Wait for the main apth to be spawned, before we can continue
     while (atomic_load_acquire(&MAIN_APTH) == APTH_NULL)
         ;
 
-    // TODO: go into a endless loop.
-    // fprintf(stderr, "(%d) before enter loop\n", sched->id);
-    // if (sched->id != 0) for (;;);
-
     while (apth_sched_is_opening(sched))
     {
-        // fprintf(stderr, "HI?\n");
         apth_debug("(%d) new loop, sched = %p, sched new list = %p", sched->id, sched, &sched->new_list);
-        // fprintf(stderr, "(%d) new loop, sched = %p, sched new list = %p\n", sched->id, sched, &sched->new_list);
-        // TODO: acquire list lock (maybe stealing lock)
-
         // Move all new threads to ready list
         apth_t th;
         while ((th = pop_apth_from_new(sched)) != APTH_NULL)
@@ -399,11 +384,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         }
 
         // Update statistics
-        // apth_debug("calculating statistics");
         apth_sched_calc_load(sched, &snapshot);
-        // apth_debug("calculated statistics");
-
-        // atomic_store_release(&SIMPLE_BARRIER, 1);
 
         // Find the next thread in ready queue and set it to be run
         th = pop_apth_from_ready(sched);
@@ -416,10 +397,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
             // Check alive nthreads
             if (get_apth_alive_nthreads() == 0)
-            {
-                // Now we should exit
-                break;
-            }
+                break; // Now we should exit
+
             apth_debug("(%d) IDLE...", sched->id);
             sched_yield();
             continue;
@@ -552,19 +531,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // For other apths to join `th`
                 push_apth_to_terminated(th, sched);
 
-            // apth_t main_th = atomic_load_acquire(&MAIN_APTH);
-            // if (th == main_th) {
-            //     // If main apth decides to exit
-            //     if (atomic_load_acquire(&MAIN_APTH_EXIT_BY_CALLING_APTH_EXIT) != 0) {
-            //         // main apth exits by calling `apth exit`
-            //         /* nop */
-            //     } else {
-            //         // main apth exits, then we should terminate the whole process
-            //         apth_debug("TERMINATING WHOLE PROCESS");
-            //         break;
-            //     }
-            // }
-
             set_cur_apth(APTH_FAKE_SCHED(sched));
             th = APTH_NULL;
         }
@@ -584,13 +550,10 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             push_apth_to_ready(th, sched);
 
         if (get_apth_alive_nthreads() == 0)
-        {
-            // for(;;); // TODO: remove this
             break;
-        }
 
         // Manage events in the waiting queue
-        // #ifdef _DEBUG_EVENTMANAGER
+
         if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
         {
             apth_debug("(%d) no NEW or READY threads, have to wait for new work", sched->id);
@@ -601,7 +564,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             apth_debug("(%d) already NEW or READY threads exists, so just poll for even more work", sched->id);
             apth_sched_eventmanager(sched, &snapshot, true /* dopoll */);
         }
-        // #endif
     }
 
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);

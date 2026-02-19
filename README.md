@@ -23,3 +23,5 @@
 13. Event manager should use `poll` or `epoll` instead of old and slow `select`.
 14. Check all passed in arguments to API functions (e.g. `th`) is valid.
 15. Hook STDIO (e.g. printf, fprintf...)
+16. Better handling of cancelling (e.g. now we have way too many fields for cancellation)
+17. The use of `apth_error` should be regular.

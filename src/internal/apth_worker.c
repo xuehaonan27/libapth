@@ -202,11 +202,8 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
     }
 
-    // TODO: if this thread is a worker, then handle it.
     GLOBAL_POOL.init_worker_count = worker_cnt;
-    // atomic_store(&GLOBAL_POOL.worker_count, online_cores);
     GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
-    // apth_debug("Spawned %ld workers", atomic_load(&GLOBAL_POOL.worker_count));
     fprintf(stderr, "Spawned %d workers\n", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
 

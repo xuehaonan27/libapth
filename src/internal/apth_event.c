@@ -71,8 +71,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // For all apths in the waiting queue
         bool any_occurred = false;
 
-        // apth_debug("waiting list is empty? %s", list_empty(&sched->waiting_list) ? "true" : "false");
-
         FOR_ELEMENT_IN_LIST(sched->waiting_list, e)
         {
             apth_t th = apth_t_list_entry(e);
@@ -270,8 +268,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // Clear pipe and let select() wait for read-part of the pipe.
         // apth_debug("going to select wait for read-part of the pipe");
         char minibuf[128];
-        // int tmp_mode = fcntl(sched->apth_sigpipe[0], F_GETFL, NULL);
-        // apth_debug("sched->apth_sigpipe[0] is nonblocking?: %s", tmp_mode & APTH_O_NONBLOCKING ? "true" : "false");
         while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
             ;
         FD_SET(sched->apth_sigpipe[0], &rfds);
@@ -284,19 +280,16 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // Replace signal actions for signals we have to catch for events
         struct sigaction sa;
         struct sigaction osa[1 + APTH_NSIG];
-        // apth_debug("replace signal actions for signals");
         for (int sig = 1; sig < APTH_NSIG; sig++)
         {
             if (sigismember(&sched->apth_sigcatch, sig))
             {
-                // apth_debug("register sig=%d with apth_sched_eventmanager_sighandler", sig);
                 sa.sa_sigaction = apth_sched_eventmanager_sighandler;
                 sigfillset(&sa.sa_mask);
                 sa.sa_flags = SA_SIGINFO;
                 sigaction(sig, &sa, &osa[sig]);
             }
         }
-        // apth_debug("replaced");
 
         // Allow some signals to be delivered: either to our catching handler or directly
         // to the configured handler for signals not catched by events
@@ -305,11 +298,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         // Now do the polling for filedescriptor I/O and timers.
         // When the scheduler sleeps at all, then here.
-        // apth_debug("Now do the polling for fd I/O and timers");
-        // apth_debug("dopoll=%s, fdmax=%d", dopoll ? "true" : "false", fdmax);
-        // apth_debug("pdelay=%p", pdelay);
-        // int tmp_mode = fcntl(sched->apth_sigpipe[0], F_GETFL, NULL);
-        // apth_debug("sched->apth_sigpipe[0] is nonblocking?: %s", tmp_mode & APTH_O_NONBLOCKING ? "true" : "false");
         int rc = -1;
         if (!(dopoll && fdmax == -1))
             // !dopoll: then there's some events occured.
@@ -336,7 +324,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             {
                 // It was an implicit timer event for a function event.
                 // So repeat the event handling for rechecking the function
-                // apth_debug("loop_repeat");
                 loop_repeat = true;
             }
             else
@@ -551,6 +538,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             }
         }
 
+        // If the last th is also someone with occurred event, move it to ready queue as well
         if (th_last != APTH_NULL)
         {
             remove_apth(th_last);

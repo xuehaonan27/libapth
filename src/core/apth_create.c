@@ -14,8 +14,6 @@ static void apth_create_trampoline(void)
 
     data = (*cur->start_func)(cur->start_arg);
 
-    // Do an implicit exit of the apth with the result value
-    // apth_exit(data);
     // Note: we cannot call `apth_exit` here, since that should be called optionally
     // and explicitly by program, marking the process not to exit with the main apth.
     apth_do_cancel(data);
