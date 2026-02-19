@@ -152,8 +152,8 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 
 static int apth_worker_drop(apth_worker_t worker)
 {
-    // Drop the scheduler
-    apth_scheduler_kill(worker->sched);
+    // Tell the scheduler to end
+    atomic_store_release(&worker->sched->opening, false);
 
     void *pthr_rslt;
     apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);

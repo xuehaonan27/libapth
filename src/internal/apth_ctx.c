@@ -1,5 +1,6 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
+#include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
 #include "utils/apth_errno.h"
 #include "utils/debug.h"
@@ -54,6 +55,20 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
     // fprintf(stderr, APTH_SWITCH_DEBUG_LINE "\n");
     // fprintf(stderr, "(%d) old=%p, new=%p\n", cur_sched()->id, old, new);
     swapcontext(&old->uc, &new->uc);
+
+    // After the context has been switched
+    apth_t cur = cur_apth();
+    if (!APTH_IS_FAKE_SCHED(cur))
+    {
+        unsigned int cc_h = atomic_load_acquire(&cur->cancelhandling);
+        // When cancellation is enabled in async mode we cancel the thread immediately
+        if (cur->cancelreq                       /* Have request */
+            && (cc_h & CANCELSTATE_BITMASK) == 0 /* Cancel enabled */
+            && (cc_h & CANCELTYPE_BITMASK) != 0 /* Asynchronous */)
+        {
+            apth_cancel_point();
+        }
+    }
 }
 
 // #define apth_skaddr_makecontext(skaddr, sksize) ((skaddr))

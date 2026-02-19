@@ -104,7 +104,7 @@ typedef struct apth_worker_st *apth_worker_t;
 struct apth_perpthr_scheduler
 {
     sched_id id;                 // scheduler ID
-    volatile apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
+    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
     struct list new_list;        // new threads
     struct list ready_list;      // threads ready to run [elem: struct apth_st]
     struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
@@ -220,7 +220,6 @@ struct ALIGNED(8) apth_st
 // #define TERMINATED_BITMASK _BIT(5)
 //     // Bit set if thread is supposed to change XID
 // #define SETXID_BITMASK _BIT(6)
-#define APTH_CANCELED ((void *)-1)
     apth_cleanup_t cleanups; /* stack of thread cleanup handlers       */
 
     /* mutex ring */

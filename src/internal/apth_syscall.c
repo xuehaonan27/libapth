@@ -307,7 +307,7 @@ APTH_DEFINE_SYSCALL(int, system, (const char *cmd), (cmd))
         apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &ss_old, NULL);
 
         // Stop the APTH scheduling
-        apth_scheduler_kill(cur_sched());
+        apth_scheduler_kill();
 
         // Execute the command through Bourne Shell
         execl(APTH_PATH_BINSH, "sh", "-c", cmd, (char *)NULL);

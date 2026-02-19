@@ -37,7 +37,11 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
         {
             if ((t->stack = (char *)malloc(stacksize)) == NULL)
             {
-                apth_shield { free(t); }
+                apth_shield
+                {
+                    free(t->ctx);
+                    free(t);
+                }
                 return APTH_NULL;
             }
         }
@@ -61,12 +65,13 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
 
 APTH_INTERNAL void apth_tcb_free(apth_t t)
 {
-    if (t == NULL)
-        return;
+    assert(t != NULL);
     if (t->stack != NULL && !t->stackloan)
         free(t->stack);
 
-    apth_thread_clenaup(t);
+    // apth_thread_cleanup(t);
+
+    // TODO: Ensure that cleanups are all executed
 
     // Clear other fields
     // TODO("Clear other fields");

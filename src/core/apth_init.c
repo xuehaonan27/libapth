@@ -20,6 +20,36 @@ int apth_initvals_init(apth_init_t *initvals, int workers,
     return 0;
 }
 
+/*
+ * apth_config_defaults - apply built-in default values to *cfg.
+ *
+ * This is the single source of truth for default init parameters.
+ * When new fields are added to apth_init_t, add their defaults here so
+ * that both the weak apth_configure and any user APTH_CONFIG override
+ * automatically inherit sensible values for fields they don't mention.
+ *
+ * NOTE: main_apth / main_args are intentionally left at NULL here;
+ *       they are wired up by APTH_MAIN_BEGIN, never by the user.
+ */
+void apth_config_defaults(apth_init_t *cfg)
+{
+    cfg->workers   = 1;
+    cfg->main_apth = NULL;
+    cfg->main_args = NULL;
+}
+
+/*
+ * apth_configure - weak default library configuration hook.
+ *
+ * Users can override this symbol (or use the APTH_CONFIG macro) to
+ * customise initialisation parameters without touching main_apth/main_args.
+ * The linker will prefer any strong definition provided by user code.
+ */
+__attribute__((weak)) void apth_configure(apth_init_t *cfg)
+{
+    apth_config_defaults(cfg);
+}
+
 // Initialize the libapth package.
 int apth_init(apth_init_t *initvals)
 {

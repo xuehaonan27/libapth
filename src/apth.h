@@ -31,6 +31,8 @@ typedef enum
     APTH_STATE_TERMINATED,    /* terminated, waiting to be joined        */
 } apth_state_t;
 
+#define APTH_CANCELED ((void *)-1)
+
 // ==================== Thread Attributes ====================
 
 struct apth_attr_st;
@@ -104,10 +106,11 @@ APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
 // ==================== Functions ====================
 
 #include <stdbool.h>
+#include <stdlib.h>  /* malloc, free — needed by APTH_MAIN_BEGIN */
 
 int apth_cancel(apth_t th);
-bool apth_cleanup_push(void (*func)(void *), void *arg);
-bool apth_cleanup_pop(int execute);
+void apth_cleanup_push(void (*func)(void *), void *arg);
+void apth_cleanup_pop(int execute);
 int apth_create(apth_t *newthr, const apth_attr_t *attr,
                 void *(*start_routine)(void *), void *arg);
 int apth_key_create(apth_key_t *key, void (*destr)(void *));
@@ -132,5 +135,117 @@ int apth_attr_setname_np(apth_attr_t *attr, const char *name);
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>
 typedef struct timeval apth_time_t;
+
+// ==================== Application Entry Point ====================
+
+/*
+ * Internal struct used to pass argc/argv from the real `main` into the
+ * user's apth main thread.  Users never touch this directly.
+ */
+struct __apth_main_args
+{
+    int argc;
+    char **argv;
+};
+
+/*
+ * apth_config_defaults - fill *cfg with the built-in default values.
+ *
+ * Called automatically by the default apth_configure() implementation.
+ * When future fields are added to apth_init_t, their defaults live here.
+ * Users typically do not call this directly, but APTH_CONFIG implementations
+ * should call it first so that unmentioned fields always get a sane value.
+ */
+void apth_config_defaults(apth_init_t *cfg);
+
+/*
+ * apth_configure - library configuration hook.
+ *
+ * The library provides a weak default implementation (1 worker).
+ * Override it either by writing your own function, or — more conveniently —
+ * by using the APTH_CONFIG(...) macro at file scope.
+ *
+ * NOTE: main_apth and main_args are set by APTH_MAIN_BEGIN internally;
+ *       do NOT set them inside apth_configure.
+ */
+void apth_configure(apth_init_t *cfg);
+
+/*
+ * APTH_CONFIG(stmts) — override library initialisation parameters.
+ *
+ * Place this macro at file scope, before APTH_MAIN_BEGIN.
+ * `stmts` is a sequence of C statements that assign to fields of
+ * `apth_init_t *cfg` (the defaults have already been applied via
+ * apth_config_defaults before your statements run).
+ *
+ * Example — use 4 worker threads:
+ *
+ *   APTH_CONFIG(
+ *       cfg->workers = 4;
+ *   )
+ *
+ * As more fields are added to apth_init_t in future releases you can
+ * simply add more assignment statements here without touching anything else.
+ */
+#define APTH_CONFIG(CFG, ...)                                                        \
+    void apth_configure(apth_init_t *CFG)                                      \
+    {                                                                          \
+        apth_config_defaults(CFG);                                             \
+        __VA_ARGS__                                                            \
+    }
+
+/*
+ * APTH_MAIN_BEGIN(argc_name, argv_name) / APTH_MAIN_END
+ *
+ * Define the application's logical entry point, replacing the need to write
+ * a hand-crafted `int main()` + `void *apth_main(void *)` pair.
+ *
+ * - argc_name / argv_name: names for the command-line argument variables
+ *   that will be in scope inside the body (just like in a normal main).
+ * - The body may freely use commas (e.g. `int x, y;`) without any
+ *   preprocessor quoting tricks.
+ * - Use exit() or apth_exit() to return from the body; a plain `return`
+ *   is also accepted (the value is treated as a thread exit value).
+ *
+ * Example:
+ *
+ *   APTH_CONFIG(cfg->workers = 2;)   // optional
+ *
+ *   APTH_MAIN_BEGIN(argc, argv)
+ *       int x, y;
+ *       apth_t thr;
+ *       apth_create(&thr, NULL, worker, NULL);
+ *       apth_join(thr, NULL);
+ *       exit(0);
+ *   APTH_MAIN_END
+ */
+#define APTH_MAIN_BEGIN(argc_name, argv_name)                                           \
+    static void *__apth_main_impl__(void *__apth_args__);                               \
+    int main(int __apth_argc__, char *__apth_argv__[])                                  \
+    {                                                                                   \
+        struct __apth_main_args *__margs__ =                                            \
+            (struct __apth_main_args *)malloc(sizeof(struct __apth_main_args));         \
+        __margs__->argc = __apth_argc__;                                                \
+        __margs__->argv = __apth_argv__;                                                \
+        apth_init_t __initvals__;                                                       \
+        apth_configure(&__initvals__);                                                  \
+        __initvals__.main_apth = __apth_main_impl__;                                    \
+        __initvals__.main_args = (void *)__margs__;                                     \
+        apth_init(&__initvals__);                                                       \
+        perror("Should not reach here");                                                \
+        return 0;                                                                       \
+    }                                                                                   \
+    static void *__apth_main_impl__(void *__apth_args__)                                \
+    {                                                                                   \
+        int argc_name =                                                                 \
+            ((struct __apth_main_args *)__apth_args__)->argc;                           \
+        char **argv_name =                                                              \
+            ((struct __apth_main_args *)__apth_args__)->argv;                           \
+        free(__apth_args__);
+
+/* Closes the function body opened by APTH_MAIN_BEGIN. */
+#define APTH_MAIN_END                                                                   \
+        return (void *)0;                                                               \
+    }
 
 #endif /* __LIBAPTH_H */

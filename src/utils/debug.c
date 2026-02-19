@@ -8,10 +8,10 @@
 #include <stdlib.h>
 
 static char str[1024];
-static lll_t buf_lock;
+// static lll_t buf_lock;
 
 _Atomic int dbg_spinl = 0;
-static _dbg_spin_lock(void) {
+static void _dbg_spin_lock(void) {
     int expected = 0;
     while (!atomic_compare_exchange_weak_acquire(&dbg_spinl, &expected, 1)) {
         expected = 0;

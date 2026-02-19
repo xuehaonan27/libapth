@@ -27,7 +27,7 @@ int apth_join(apth_t tid, void **value)
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
 
-    if (tid == APTH_NULL || apth_is_not_null_and_valid(tid))
+    if (tid == APTH_NULL || !apth_is_not_null_and_valid(tid))
         return apth_error(ESRCH, ESRCH);
     // Is the apth joinable?
     if (tid != NULL && IS_DETACHED(tid))
@@ -37,6 +37,7 @@ int apth_join(apth_t tid, void **value)
     if (tid == self || /* joining myself */
         (self->joinid == tid) /* `tid` is joining me! */)
         return apth_error(EDEADLK, EDEADLK);
+    // TODO: should the atomicity semantic be weak or strong?
     else if (apth_unlikely(atomic_compare_exchange_weak_acquire(&tid->joinid, &self, NULL)))
         // There is already somebody waiting for `tid`
         return apth_error(EINVAL, EINVAL);
@@ -49,18 +50,24 @@ int apth_join(apth_t tid, void **value)
     }
 
     // We mark the `tid` as terminated and as joined
-    if (tid->state != APTH_STATE_TERMINATED)
-    {
-        apth_debug("apth_join: tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
-        return apth_error(EINVAL, EINVAL);
-    }
+    // if (tid->state != APTH_STATE_TERMINATED)
+    // {
+    //     apth_debug("apth_join: tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
+    //     return apth_error(EINVAL, EINVAL);
+    // }
+    assert_msg(tid->state == APTH_STATE_TERMINATED,
+               "tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
+
     // Store the return value if the caller is interested
     if (value != NULL)
         *value = tid->join_arg;
-    // Remove the thread from scheduler
-    // TODO: lock up the list
-    // list_remove(&tid->elem);
+
+    // Remove the thread from scheduler. This is sane because scheduler itself
+    // would do nothing about threads in the terminated list. All of them are
+    // free for other threads to join to.
     remove_apth(tid);
+    // Note: since the thread is already terminated, then all cleanups should
+    // have been executed.
     // Free the TCB
     apth_tcb_free(tid);
 

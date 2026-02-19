@@ -222,13 +222,22 @@ APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
 }
 
 // Kill the schduler ingredients
-APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched)
+APTH_INTERNAL void apth_scheduler_kill(void)
 {
+    apth_sched_t sched = cur_sched();
+
 // Drop all apths
+// TODO: do not know whether should apth_thread_cleanup(t);
 #define CLEAR_T_LIST(name)                           \
     FOR_ELEMENT_IN_LIST(sched->name##_list, e##name) \
     {                                                \
         apth_t t = apth_t_list_entry(e##name);       \
+        t->state = APTH_STATE_TERMINATED;            \
+        if (t->join_arg == NULL)                     \
+        {                                            \
+            t->join_arg = APTH_CANCELED;             \
+        }                                            \
+        apth_thread_cleanup(t);                      \
         apth_tcb_free(t);                            \
     }                                                \
     list_init(&sched->name##_list);
@@ -242,12 +251,29 @@ APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched)
 #undef CLEAR_T_LIST
     return;
 
+    // Mark the scheduler as closed
+    // atomic_store_release(&sched->opening, false);
+
+    // TODO: report scheduler statistics if in debugging mode
+
+    // Signal mask restore, allow all signals
+    sigset_t sigs;
+    sigemptyset(&sigs);
+    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
+
     // Remove the internal signal pipe
+    // TODO: should `close` be wrapped by `apth_syscall_raw`?
     close(sched->apth_sigpipe[0]);
     close(sched->apth_sigpipe[1]);
 
-    // Mark the scheduler as closed
-    atomic_store_release(&sched->opening, false);
+    // Cancel TLS
+    set_cur_apth(APTH_NULL);
+    set_cur_sched(NULL);
+    set_cur_worker(NULL);
+
+    // Free sched
+    free((void *)sched->sched_ctx);
+    free((void *)sched);
     return;
 }
 
@@ -518,9 +544,12 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // decrement alive nthreads
             dec_alive_thrcnt();
 
+            // NOTE: since `th` is marked as terminated, then all cleanups should
+            // have been executed.
             if (IS_DETACHED(th))
                 apth_tcb_free(th);
             else
+                // For other apths to join `th`
                 push_apth_to_terminated(th, sched);
 
             // apth_t main_th = atomic_load_acquire(&MAIN_APTH);
@@ -576,6 +605,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     }
 
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);
+
+    // Do cleaning
+    apth_scheduler_kill();
 
     // Not reached
     return NULL;

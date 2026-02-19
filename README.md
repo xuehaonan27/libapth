@@ -18,3 +18,7 @@
 9. Make all internal functions private (static)
 10. Using APTH_INTERNAL and APTH_API for controlling visibility.
 11. A macro for directly writing main apth.
+12. Current event manager goes over each event of every waiting apth, which is of low efficiency.
+13. Event manager should use `poll` or `epoll` instead of old and slow `select`.
+14. Check all passed in arguments to API functions (e.g. `th`) is valid.
+15. Hook STDIO (e.g. printf, fprintf...)

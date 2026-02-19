@@ -27,7 +27,7 @@ APTH_INTERNAL int apth_create_internal(
 // ============================== Scheduler ==============================
 
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
-APTH_INTERNAL void apth_scheduler_kill(apth_sched_t sched);
+APTH_INTERNAL void apth_scheduler_kill(void);
 APTH_INTERNAL void inc_thrcnt(apth_sched_t sched);
 APTH_INTERNAL void dec_thrcnt(apth_sched_t sched);
 APTH_INTERNAL unsigned int get_apth_nthreads(void);
@@ -88,8 +88,8 @@ APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
                                 char *stack_addr_lo, char *stack_addr_hi);
 
 // ============================== Cleanup ==============================
-APTH_INTERNAL void apth_cleanup_popall(apth_t, bool);
-APTH_INTERNAL void apth_thread_clenaup(apth_t th);
+// APTH_INTERNAL void apth_cleanup_popall(apth_t, bool);
+APTH_INTERNAL void apth_thread_cleanup(apth_t th);
 
 // ============================== Cancel ==============================
 APTH_INTERNAL void apth_do_cancel(void *result);

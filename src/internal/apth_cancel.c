@@ -7,6 +7,7 @@
 APTH_INTERNAL void apth_cancel_point(void)
 {
     apth_t cur = cur_apth();
+    assert(!APTH_IS_FAKE_SCHED(cur));
 
     if (cur->cancelreq == true && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
     {
@@ -31,7 +32,7 @@ APTH_INTERNAL void apth_do_cancel(void *result)
     // TODO: specially treat main thread
 
     // Execute cleanups
-    apth_thread_clenaup(self);
+    apth_thread_cleanup(self);
 
     // Now mark the current thread as dead, explicitly switch into the scheduler
     // and let it reap the current apth. We cannot free it here.

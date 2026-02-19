@@ -4,32 +4,36 @@
 #include "utils/apth_errno.h"
 #include <stdlib.h>
 
-bool apth_cleanup_push(void (*func)(void *), void *arg)
+// TODO: POSIX `pthread_cleanup_push` `pthread_cleanup_pop` would not
+// produce errors though.
+
+void apth_cleanup_push(void (*func)(void *), void *arg)
 {
+    apth_t cur = cur_apth();
+
     apth_cleanup_t cleanup;
     if (func == NULL)
-        return apth_error(false, EINVAL);
+        // return apth_error(void, EINVAL);
+        errno = EINVAL;
     if ((cleanup = (apth_cleanup_t)malloc(sizeof(struct apth_cleanup_st))) == NULL)
-        return apth_error(false, ENOMEM);
+        // return apth_error(false, ENOMEM);
+        errno = ENOMEM;
     cleanup->func = func;
     cleanup->arg = arg;
-    cleanup->next = cur_apth()->cleanups;
-    cur_apth()->cleanups = cleanup;
-    return true;
+    cleanup->next = cur->cleanups;
+    cur->cleanups = cleanup;
 }
 
-bool apth_cleanup_pop(int execute)
+void apth_cleanup_pop(int execute)
 {
     apth_cleanup_t cleanup;
-    int retval = false;
+    apth_t cur = cur_apth();
 
-    if ((cleanup = cur_apth()->cleanups) != NULL)
+    if ((cleanup = cur->cleanups) != NULL)
     {
-        cur_apth()->cleanups = cleanup->next;
-        if (execute)
+        cur->cleanups = cleanup->next;
+        if (execute != 0)
             cleanup->func(cleanup->arg);
         free(cleanup);
-        retval = true;
     }
-    return retval;
 }
