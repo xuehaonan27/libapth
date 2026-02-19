@@ -104,7 +104,7 @@ typedef struct apth_worker_st *apth_worker_t;
 struct apth_perpthr_scheduler
 {
     sched_id id;                 // scheduler ID
-    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
+    volatile apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
     struct list new_list;        // new threads
     struct list ready_list;      // threads ready to run [elem: struct apth_st]
     struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
@@ -259,8 +259,6 @@ struct ALIGNED(8) apth_st
     lll_t *belongs_to_list_lock;
 };
 #define APTH_NULL (apth_t) NULL
-#define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | 0x1))
-#define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & 0x1) != 0)
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 8192
@@ -270,6 +268,7 @@ struct ALIGNED(8) apth_st
 // high (> 0). On most systems this should usually be the former.
 #define APTH_STACKGROWTH (-1)
 #define APTH_MAGIC 0xCAFEBABE
+#define APTH_TH_MAGIC_IS_GOOD(th) (*(uint32_t *)(th->stackguard) == APTH_MAGIC)
 
 // ============================== Thread Events ==============================
 

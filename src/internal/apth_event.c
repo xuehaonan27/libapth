@@ -272,9 +272,11 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         char minibuf[128];
         // int tmp_mode = fcntl(sched->apth_sigpipe[0], F_GETFL, NULL);
         // apth_debug("sched->apth_sigpipe[0] is nonblocking?: %s", tmp_mode & APTH_O_NONBLOCKING ? "true" : "false");
-        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0);
+        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
+            ;
         FD_SET(sched->apth_sigpipe[0], &rfds);
-        if (fdmax < sched->apth_sigpipe[0]) {
+        if (fdmax < sched->apth_sigpipe[0])
+        {
             apth_debug("before fdmax=%d, now should be %d", fdmax, sched->apth_sigpipe[0]);
             fdmax = sched->apth_sigpipe[0];
         }
@@ -314,9 +316,9 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // !fdmax == -1, then there's some fd to wait for.
             while (
                 (rc = apth_syscall_raw(select)(fdmax + 1, &rfds, &wfds, &efds, pdelay)) < 0 && errno == EINTR)
-                {
-                    apth_debug("rc=%d, errno=%d", rc, errno);
-                }
+            {
+                apth_debug("rc=%d, errno=%d", rc, errno);
+            }
 
         // Restore signal mask and actions and handle signals
         // apth_debug("Restore signal mask and actions and handle signals");
@@ -372,8 +374,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // Insert it with a slightly increased queue priority.
             if (th_last != APTH_NULL)
             {
-                // TODO: lock the list
-                // list_remove(&th_last->elem);
                 remove_apth(th_last);
                 th_last->state = APTH_STATE_READY;
                 // TODO: give th_last a higher prio
@@ -549,6 +549,16 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             {
                 th_last = th;
             }
+        }
+
+        if (th_last != APTH_NULL)
+        {
+            remove_apth(th_last);
+            th_last->state = APTH_STATE_READY;
+            // TODO: give th_last a higher prio
+            push_apth_to_ready(th_last, sched);
+            apth_debug("apth_sched_eventmanager: apth \"%s\" moved from waiting to ready queue", th_last->name);
+            th_last = APTH_NULL;
         }
 
         if (loop_repeat)

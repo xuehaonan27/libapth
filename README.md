@@ -2,8 +2,9 @@
 
 ## Conditional Compilation
 0. APTH_DEBUG: Control whether debug is enabled
-1. APTH_DEBUG_LLL
-2. APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+1. APTH_DEBUG_LLL: low level lock debug
+2. APTH_DEBUG_HOLD_INITIALIZER_PTHREAD: hold initializer pthread by a dead loop
+3. APTH_DEBUG_SYSCALL_INIT_DBG: initializing syscall hook debug
 
 ## TODO
 1. Hybrid scheduling
@@ -16,3 +17,4 @@
 8. For any passed in apth_t, check its validity first.
 9. Make all internal functions private (static)
 10. Using APTH_INTERNAL and APTH_API for controlling visibility.
+11. A macro for directly writing main apth.

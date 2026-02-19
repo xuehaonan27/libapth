@@ -32,6 +32,19 @@ typedef struct lowlevellock
 
 #define LLL_NOT_ACQUIRED (0) // LLL is not acquired
 
+#define APTH_FAKE_SCHED_MARK_IN_PLACE (0x1)
+
+// The lll is robbed, meaning the original owner is an apth, but its scheduler
+// robbed the lock for itself. The pointer is still the apth, and the robber
+// is easy to get via `owner->worker`.
+#define APTH_LLL_ROBBED_MARK_IN_PLACE (0x2)
+#define APTH_LLL_POINTER_MASK_IN_PLACE (~(APTH_FAKE_SCHED_MARK_IN_PLACE | APTH_LLL_ROBBED_MARK_IN_PLACE))
+
+#define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | APTH_FAKE_SCHED_MARK_IN_PLACE))
+#define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & APTH_FAKE_SCHED_MARK_IN_PLACE) != 0)
+#define APTH_DECODE_FAKE_SCHED(val) ((uintptr_t)(val) & APTH_LLL_POINTER_MASK_IN_PLACE)
+#define APTH_LLL_IS_ROBBED(val) (((uintptr_t)(val) & APTH_LLL_ROBBED_MARK_IN_PLACE) != 0)
+
 APTH_INTERNAL void lll_init(lll_t *lock);
 // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 APTH_INTERNAL void lll_lock(lll_t *lock, const char *from);

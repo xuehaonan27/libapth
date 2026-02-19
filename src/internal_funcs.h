@@ -50,7 +50,7 @@ DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
-APTH_INTERNAL apth_t remove_apth(apth_t th);
+APTH_INTERNAL void remove_apth(apth_t th);
 #undef DECLARE_SCHED_LIST_OP
 #undef list_of
 #undef apth_is_in
@@ -141,29 +141,13 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
 #define APTH_DECLARE_SYSCALL(rettype, name, ...)            \
     APTH_DECLARE_FETCH_LIBCFUNC(rettype, name, __VA_ARGS__) \
     APTH_INTERNAL rettype apth_syscall(name)(__VA_ARGS__);
-/*
-#define APTH_FETCH_LIBCFUNC(rettype, name, ...)                                                      \
-    MAYBE_UNUSED APTH_INTERNAL apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;               \
-    APTH_INTERNAL int apth_syscall_init(name)(void)                                                  \
-    {                                                                                                \
-        assert_msg(apth_syscall_raw(name) == NULL, "sanity");                                        \
-        apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
-        if (func == NULL)                                                                            \
-            return -1;                                                                               \
-        apth_debug("found syscall " stringify(name) " = %p", func);                                  \
-        apth_syscall_raw(name) = func;                                                               \
-        assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
-        return 0;                                                                                    \
-    }
 
-#define APTH_DEFINE_SYSCALL(rettype, name, ...)     \
-    APTH_FETCH_LIBCFUNC(rettype, name, __VA_ARGS__) \
-    APTH_API name(__VA_ARGS__)                      \
-    {                                               \
-        return apth_syscall(name)(__VA_ARGS__);     \
-    }                                               \
-    APTH_INTERNAL rettype apth_syscall(name)(__VA_ARGS__)
-*/
+#ifdef APTH_DEBUG_SYSCALL_INIT_DBG
+#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG \
+    fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);
+#else
+#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG
+#endif
 
 #define APTH_FETCH_LIBCFUNC(name)                                                                    \
     MAYBE_UNUSED APTH_INTERNAL apth_syscall_pfn_t(name) apth_syscall_raw(name) = NULL;               \
@@ -173,7 +157,7 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
         if (func == NULL)                                                                            \
             return -1;                                                                               \
-        fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);                           \
+        APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG                                                     \
         apth_syscall_raw(name) = func;                                                               \
         assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
         return 0;                                                                                    \

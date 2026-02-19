@@ -1,4 +1,5 @@
 #include "internal_types.h"
+#include "internal_funcs.h"
 #include "utils/archplattoold.h"
 #include "utils/apth_errno.h"
 #include "utils/debug.h"
@@ -49,7 +50,9 @@ APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
     _apth_mctx_switch_debug;
-    apth_debug("old=%p, new=%p", old, new);
+    apth_debug("(%d) old=%p, new=%p", cur_sched()->id, old, new);
+    // fprintf(stderr, APTH_SWITCH_DEBUG_LINE "\n");
+    // fprintf(stderr, "(%d) old=%p, new=%p\n", cur_sched()->id, old, new);
     swapcontext(&old->uc, &new->uc);
 }
 

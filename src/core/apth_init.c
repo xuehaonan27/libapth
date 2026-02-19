@@ -72,9 +72,6 @@ int apth_init(apth_init_t *initvals)
     fprintf(stderr, "worker0 = %p\n", worker0);
     fprintf(stderr, "sched = %p\n", sched);
 
-    // // Here we determine that libapth is initialized
-    // atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
-
     // apth_debug("spawning main thread at scheduler: %p", sched);
     apth_t main_th;
     apth_create_internal(&main_th, NULL, initvals->main_apth, initvals->main_args, sched);
@@ -83,14 +80,14 @@ int apth_init(apth_init_t *initvals)
     // apth_debug("spawned main thread: %p (\"%s\")", main_th, main_th->name);
     // apth_debug("apth_init: leave");
 
-     // Here we determine that libapth is initialized
-    atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
-
+    // Here we determine that libapth is initialized
+    // atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
 
     // NOTE: debug here, remove this
     // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
-    for (;;);
+    for (;;)
+        ;
 #endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
 
     set_cur_sched(NULL);

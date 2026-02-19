@@ -677,6 +677,7 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
         FD_SET(fd, &fds);
         delay.tv_sec = 0;
         delay.tv_usec = 0;
+        // apth_debug("write in block mode");
         while ((n = apth_syscall_raw(select)(fd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
             ;
         if (n < 0 && (errno == EINVAL || errno == EBADF))
@@ -720,6 +721,7 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
     }
     else
     {
+        //  apth_debug("write in non block mode");
         // In non-blocking mode, just perform the actual write operation
         while ((rv = apth_syscall_raw(write)(fd, buf, nbytes)) < 0 && errno == EINTR)
             ;

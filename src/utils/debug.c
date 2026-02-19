@@ -3,11 +3,24 @@
 #include "common.h"
 #include "apth_errno.h"
 #include "apth_string.h"
+#include "atomic_wrapper.h"
 #include "internal_funcs.h"
 #include <stdlib.h>
 
 static char str[1024];
 static lll_t buf_lock;
+
+_Atomic int dbg_spinl = 0;
+static _dbg_spin_lock(void) {
+    int expected = 0;
+    while (!atomic_compare_exchange_weak_acquire(&dbg_spinl, &expected, 1)) {
+        expected = 0;
+    }
+}
+
+static void _dbg_spin_unlock(void) {
+    atomic_store_release(&dbg_spinl, 0);
+}
 
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...)
 {
@@ -16,12 +29,20 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 
     apth_shield
     {
-        char lll_str[256];
-        apth_snprintf(lll_str, sizeof(lll_str), "%d:%s:%04d:%s: debug enter", (int)getpid(), file, line, function);
-        lll_lock(&buf_lock, lll_str);
+        pthread_t tid = apth_syscall_raw(pthread_self)();
+// #ifdef APTH_DEBUG_LLL
+//         char lll_str[256];
+//         apth_snprintf(lll_str, sizeof(lll_str), "%p:%s:%04d:%s: debug enter", tid, file, line, function);
+//         lll_lock(&buf_lock, lll_str);
+// #else  // APTH_DEBUG_LLL
+//         lll_lock(&buf_lock, "dummy");
+// #endif // APTH_DEBUG_LLL
+
+        _dbg_spin_lock();
+
         va_start(ap, message);
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
+            apth_snprintf(str, sizeof(str), "%p:%s:%04d:%s: ", tid, file, line, function);
         else
             str[0] = NUL;
         n = strlen(str);
@@ -31,9 +52,15 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
-        // lll_unlock(&buf_lock, "debug leave");
-        apth_snprintf(lll_str, sizeof(lll_str), "%d:%s:%04d:%s: debug leave", (int)getpid(), file, line, function);
-        lll_unlock(&buf_lock, lll_str);
+// #ifdef APTH_DEBUG_LLL
+//         apth_snprintf(lll_str, sizeof(lll_str), "%p:%s:%04d:%s: debug leave", tid, file, line, function);
+//         lll_unlock(&buf_lock, lll_str);
+// #else  // APTH_DEBUG_LLL
+//         lll_unlock(&buf_lock, "dummy");
+// #endif // APTH_DEBUG_LLL
+
+        _dbg_spin_unlock();
+
     }
     return;
 }
@@ -45,9 +72,11 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
 
     apth_shield
     {
-        lll_lock(&buf_lock, "vdebug enter");
+        pthread_t tid = apth_syscall_raw(pthread_self)();
+        // lll_lock(&buf_lock, "vdebug enter");
+        _dbg_spin_lock();
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%d:%s:%04d:%s: ", (int)getpid(), file, line, function);
+            apth_snprintf(str, sizeof(str), "%p:%s:%04d:%s: ", tid, file, line, function);
         else
             str[0] = '\0';
         n = strlen(str);
@@ -58,7 +87,8 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
-        lll_unlock(&buf_lock, "vdebug leave");
+        // lll_unlock(&buf_lock, "vdebug leave");
+        _dbg_spin_unlock();
     }
     return;
 }
