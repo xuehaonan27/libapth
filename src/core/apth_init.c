@@ -33,7 +33,7 @@ int apth_initvals_init(apth_init_t *initvals, int workers,
  */
 void apth_config_defaults(apth_init_t *cfg)
 {
-    cfg->workers   = 1;
+    cfg->workers = 1;
     cfg->main_apth = NULL;
     cfg->main_args = NULL;
 }
@@ -91,6 +91,9 @@ int apth_init(apth_init_t *initvals)
     fprintf(stderr, "All spawned\n");
 
     // Spawn the main thread
+
+    // NOTE: `get_worker_by_id` requires lll, which means TLS should be initialized.
+    // Getting worker 0 should go through fast path, without acquiring the lll.
     apth_worker_t worker0 = get_worker_by_id(0);
     apth_sched_t sched = worker0->sched;
 

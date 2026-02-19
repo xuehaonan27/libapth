@@ -9,7 +9,7 @@
 #include <stdlib.h>
 
 static bool WORKER_POOL_INITIALIZED = false;
-static struct apth_global_scheduler_pool GLOBAL_POOL;
+struct apth_global_scheduler_pool GLOBAL_POOL;
 
 // TODO: what about add worker ? how to sync that?
 _Atomic unsigned int WORKER_SPAWNED = 0x7FFFFFFF;
@@ -78,14 +78,16 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
     // which is usually the situation
     if (0 <= worker_id && worker_id < GLOBAL_POOL.init_worker_count)
     {
-        struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
+        // struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
+        apth_worker_t p = GLOBAL_POOL.worker_ptr_mem_start[worker_id];
+        fprintf(stderr, "got p = %p\n", p);
         return p;
     }
 
     // Slow path: accessing a worker that's added later.
     apth_worker_t result = NULL;
 
-    // TODO: lock the GLOBAL_POOL wrkpthrs list lock
+    lll_lock(&GLOBAL_POOL.pool_lock, "get_worker_by_id");
     FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
         apth_worker_t worker = apth_worker_t_list_entry(e);
@@ -95,7 +97,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
             break;
         }
     }
-    // TODO: unlock the lock
+    lll_unlock(&GLOBAL_POOL.pool_lock, "get_worker_by_id");
     return result;
 }
 
@@ -122,7 +124,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
         fprintf(stderr, "fail pthread_attr_init\n");
         return apth_error(-1, EINVAL);
     }
-    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, PTHREAD_CREATE_DETACHED)) != 0)
+    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, PTHREAD_CREATE_JOINABLE)) != 0)
     {
         // apth_debug("fail pthread_attr_setdetachstate");
         fprintf(stderr, "fail pthread_attr_setdetachstate\n");
@@ -156,8 +158,12 @@ static int apth_worker_drop(apth_worker_t worker)
     atomic_store_release(&worker->sched->opening, false);
 
     void *pthr_rslt;
+    // TODO: since we spawned all workers as DETACHED, joining here is meaningless.
     apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);
     assert(pthr_rslt == NULL);
+
+    free(worker);
+
     return 0;
 }
 
@@ -184,26 +190,39 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     // TODO: acquire pool lock
 
     // TODO: handle possible OOM with apth_error
-    struct apth_worker_st *workers_mem;
-    if ((workers_mem = malloc(wrkthrs_to_spwan * sizeof(struct apth_worker_st))) == NULL)
+    // struct apth_worker_st *workers_mem;
+    // if ((workers_mem = malloc(wrkthrs_to_spwan * sizeof(struct apth_worker_st))) == NULL)
+    //     return apth_error(-1, ENOMEM);
+
+    apth_worker_t *worker_ptr_mem;
+    if ((worker_ptr_mem = (apth_worker_t *)malloc(wrkthrs_to_spwan * sizeof(apth_worker_t))) == NULL)
         return apth_error(-1, ENOMEM);
 
-    GLOBAL_POOL.workers_mem_start = workers_mem;
     list_init(&GLOBAL_POOL.wrkpthrs_list);
 
     int worker_cnt;
-    for (worker_cnt = 0; worker_cnt < wrkthrs_to_spwan;
-         worker_cnt += 1, workers_mem += 1)
+    for (worker_cnt = 0; worker_cnt < wrkthrs_to_spwan; worker_cnt += 1)
     {
         int init_result;
+        struct apth_worker_st *workers_mem = malloc(sizeof(struct apth_worker_st));
+        if (workers_mem == NULL)
+        {
+            // TODO: free all previous malloc memory
+            return apth_error(-1, ENOMEM);
+        }
+
         if ((init_result = apth_worker_init(workers_mem, worker_cnt)) != 0)
             return apth_error(init_result, errno);
         fprintf(stderr, "spwaned worker %d at %p\n", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
+        // *worker_ptr_mem = workers_mem;
+        worker_ptr_mem[worker_cnt] = workers_mem;
     }
 
+    lll_init(&GLOBAL_POOL.pool_lock);
     GLOBAL_POOL.init_worker_count = worker_cnt;
     GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
+    GLOBAL_POOL.worker_ptr_mem_start = worker_ptr_mem;
     fprintf(stderr, "Spawned %d workers\n", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
 
@@ -218,8 +237,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
         return -1;
     }
 
-    // TODO: acquire pool lock
-
+    lll_lock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
     FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
         apth_worker_t worker = apth_worker_t_list_entry(e);
@@ -227,8 +245,9 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
         if ((drop_result = apth_worker_drop(worker)) != 0)
             return apth_error(drop_result, errno);
     }
+    lll_unlock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
 
-    free(GLOBAL_POOL.workers_mem_start);
+    free(GLOBAL_POOL.worker_ptr_mem_start);
     WORKER_POOL_INITIALIZED = false;
 
     return 0;
@@ -240,13 +259,13 @@ APTH_INTERNAL int add_worker_thread(void)
     if ((new_worker = malloc(sizeof(struct apth_worker_st))) == NULL)
         return apth_error(-1, ENOMEM);
 
-    // TODO: acquire GLOBAL_POOL worker list lock
+    lll_lock(&GLOBAL_POOL.pool_lock, "add_worker_thread");
     int id = GLOBAL_POOL.worker_count;
     GLOBAL_POOL.worker_count += 1;
     int init_result;
     if ((init_result = apth_worker_init(new_worker, id)) != 0)
         return apth_error(-1, errno);
     list_push_back(&GLOBAL_POOL.wrkpthrs_list, &new_worker->elem);
-    // TODO: release lock
+    lll_unlock(&GLOBAL_POOL.pool_lock, "add_worker_thread");
     return 0;
 }

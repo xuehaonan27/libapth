@@ -21,7 +21,7 @@ APTH_INTERNAL void apth_cancel_point(void)
 }
 
 // Called when a thread reacts on a cancellation request.
-APTH_INTERNAL NORETURN void apth_do_cancel(void *result)
+APTH_INTERNAL void apth_do_cancel(void *result)
 {
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;

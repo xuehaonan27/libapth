@@ -92,7 +92,7 @@ APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
 APTH_INTERNAL void apth_thread_cleanup(apth_t th);
 
 // ============================== Cancel ==============================
-APTH_INTERNAL NORETURN void apth_do_cancel(void *result);
+APTH_INTERNAL void apth_do_cancel(void *result);
 APTH_INTERNAL void apth_cancel_point(void);
 
 // static inline bool apth_cancel_enabled(int value);

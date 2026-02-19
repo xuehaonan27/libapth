@@ -13,6 +13,10 @@ _Atomic unsigned int apth_nthreads = 0;
 _Atomic unsigned int apth_alive_nthreads = 0;
 
 _Atomic apth_t MAIN_APTH = APTH_NULL;
+_Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
+
+// Whichever worker wants to drop the whole pool should acquire this permit first
+_Atomic unsigned int DROP_POOL_PERMIT = 1;
 
 // Initialize a scheduler onto `worker` and put the new scheduler in `sched`.
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
@@ -369,6 +373,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     while (atomic_load_acquire(&MAIN_APTH) == APTH_NULL)
         ;
 
+    bool end_the_process = false;
     while (apth_sched_is_opening(sched))
     {
         apth_debug("(%d) new loop, sched = %p, sched new list = %p", sched->id, sched, &sched->new_list);
@@ -398,6 +403,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Check alive nthreads
             if (get_apth_alive_nthreads() == 0)
                 break; // Now we should exit
+            // TODO: steal work
 
             apth_debug("(%d) IDLE...", sched->id);
             sched_yield();
@@ -531,6 +537,27 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // For other apths to join `th`
                 push_apth_to_terminated(th, sched);
 
+            // Special check for MAIN APTH.
+            if (me->worker_id == 0)
+            {
+                if (th == atomic_load_acquire(&MAIN_APTH))
+                {
+                    if (atomic_load_acquire(&MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT) != 0)
+                    {
+                        // Main apth exited by calling `apth_exit`, that means
+                        // we should not end the process here
+                        /* NOP */
+                    }
+                    else
+                    {
+                        // Main apth exited without calling `apth_exit`, that means
+                        // we should end the process here.
+                        end_the_process = true;
+                        break;
+                    }
+                }
+            }
+
             set_cur_apth(APTH_FAKE_SCHED(sched));
             th = APTH_NULL;
         }
@@ -568,9 +595,30 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);
 
+    if (end_the_process)
+    {
+        apth_debug("WORKER %d ENDING THE PROCESS...", me->worker_id, me->tid);
+        unsigned int expected = 1;
+        unsigned int desired = 0;
+        // If current value == `expected`, then update it to `desired` and return true;
+        // Else update `expected` as actual value that `mem` holds, and return false.
+        if (atomic_compare_exchange_strong(&DROP_POOL_PERMIT, &expected, desired))
+        {
+            // We acquired the permit to drop the pool
+
+            // First we should isolate ourself from the pool
+            lll_lock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
+            list_remove(&me->elem);
+            lll_unlock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
+            apth_global_scheduler_pool_drop();
+        }
+    }
+
     // Do cleaning
     apth_scheduler_kill();
+    free(me);
 
+    // Now we should be an ordinary pthread.
     // Not reached
     return NULL;
 }

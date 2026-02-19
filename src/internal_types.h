@@ -14,11 +14,13 @@
 
 #define _BIT(n) (1 << (n))
 
+extern struct apth_global_scheduler_pool GLOBAL_POOL;
+
 extern _Atomic unsigned int WORKER_SPAWNED;
 extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
 
 extern _Atomic apth_t MAIN_APTH;
-// extern _Atomic int MAIN_APTH_EXIT_BY_CALLING_APTH_EXIT;
+extern _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
 // TODO: this is for debug only, remove it later
 // extern _Atomic unsigned int SIMPLE_BARRIER;
@@ -156,12 +158,15 @@ struct apth_global_scheduler_pool
     // TODO: there should be a lock protecting access to this pool.
     // TODO: this lock should be RW-lock since there's a lot of reads and a few writes.
     // TODO: and at Pthread level.
+
+    lll_t pool_lock;
     int worker_count;          // total worker pthreads count
     struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
 
     /* Immutable fields */
     int init_worker_count;                    // initially spawned workers
-    struct apth_worker_st *workers_mem_start; // start memory address of init workers
+    apth_worker_t *worker_ptr_mem_start; // start memory address of pointers to init workers
+    // struct apth_worker_st *workers_mem_start; // start memory address of init workers
     // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
 };
 
