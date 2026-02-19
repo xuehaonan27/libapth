@@ -12,7 +12,7 @@ int apth_cancel(apth_t th)
 {
     if (th == APTH_NULL || !apth_is_not_null_and_valid(th))
         return apth_error(ESRCH, ESRCH);
-    apth_sched_t sched = cur_sched();
+    // apth_sched_t sched = cur_sched();
 
     // The current thread cannot be cancelled
     // if (th == sched->cur)

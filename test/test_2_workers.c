@@ -5,18 +5,11 @@
 
 static const char msg[] = "Hello from child\n";
 
-void *apth_main(void *arg) {
-    char *s = (char *)arg;
-    write(2, s, sizeof(msg));
-    return NULL;
-}
+APTH_CONFIG(cfg,
+            cfg->workers = 2;)
 
-int main(void) {
-    apth_init_t initvals;
-    apth_initvals_init(&initvals, 2, apth_main, (void *)msg);
-    apth_init(&initvals);
-
-    // `apth_init` should have called `pthread_exit` and end itself
-    perror("Should not reach here");
-    return 0;
+APTH_MAIN_BEGIN(argc, argv)
+{
+    write(2, msg, sizeof(msg));
 }
+APTH_MAIN_END

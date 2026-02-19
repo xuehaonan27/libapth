@@ -42,7 +42,7 @@ typedef struct lowlevellock
 
 #define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | APTH_FAKE_SCHED_MARK_IN_PLACE))
 #define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & APTH_FAKE_SCHED_MARK_IN_PLACE) != 0)
-#define APTH_DECODE_FAKE_SCHED(val) ((uintptr_t)(val) & APTH_LLL_POINTER_MASK_IN_PLACE)
+#define APTH_DECODE_FAKE_SCHED(val) ((void *)((uintptr_t)(val) & APTH_LLL_POINTER_MASK_IN_PLACE))
 #define APTH_LLL_IS_ROBBED(val) (((uintptr_t)(val) & APTH_LLL_ROBBED_MARK_IN_PLACE) != 0)
 
 APTH_INTERNAL void lll_init(lll_t *lock);

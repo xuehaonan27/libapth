@@ -3,6 +3,7 @@
 ## Conditional Compilation
 0. APTH_DEBUG: Control whether debug is enabled
 1. APTH_DEBUG_LLL: low level lock debug
+    1.1: APTH_DEBUG_LLL_USING_FPRINTF
 2. APTH_DEBUG_HOLD_INITIALIZER_PTHREAD: hold initializer pthread by a dead loop
 3. APTH_DEBUG_SYSCALL_INIT_DBG: initializing syscall hook debug
 

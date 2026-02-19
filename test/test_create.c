@@ -14,10 +14,11 @@ void *child_apth(void *arg)
     return (void *)child_result;
 }
 
-void *apth_main(void *arg)
+APTH_CONFIG(cfg, cfg->workers = 1;)
+
+APTH_MAIN_BEGIN(argc, argv)
 {
-    char *s = (char *)arg;
-    write(2, s, sizeof(main_hi));
+    write(2, main_hi, sizeof(main_hi));
 
     apth_t child_th;
     apth_attr_t child_attr;
@@ -28,17 +29,5 @@ void *apth_main(void *arg)
     void *cdata;
     apth_join(child_th, &cdata);
     write(2, cdata, sizeof(child_result));
-
-    return NULL;
 }
-
-int main(void)
-{
-    apth_init_t initvals;
-    apth_initvals_init(&initvals, 1, apth_main, (void *)main_hi);
-    apth_init(&initvals);
-
-    // `apth_init` should have called `pthread_exit` and end itself
-    perror("Should not reach here");
-    return 0;
-}
+APTH_MAIN_END

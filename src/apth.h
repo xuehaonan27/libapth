@@ -106,7 +106,7 @@ APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
 // ==================== Functions ====================
 
 #include <stdbool.h>
-#include <stdlib.h>  /* malloc, free — needed by APTH_MAIN_BEGIN */
+#include <stdlib.h> /* malloc, free — needed by APTH_MAIN_BEGIN */
 
 int apth_cancel(apth_t th);
 void apth_cleanup_push(void (*func)(void *), void *arg);
@@ -187,11 +187,11 @@ void apth_configure(apth_init_t *cfg);
  * As more fields are added to apth_init_t in future releases you can
  * simply add more assignment statements here without touching anything else.
  */
-#define APTH_CONFIG(CFG, ...)                                                        \
-    void apth_configure(apth_init_t *CFG)                                      \
-    {                                                                          \
-        apth_config_defaults(CFG);                                             \
-        __VA_ARGS__                                                            \
+#define APTH_CONFIG(CFG, ...)             \
+    void apth_configure(apth_init_t *CFG) \
+    {                                     \
+        apth_config_defaults(CFG);        \
+        __VA_ARGS__                       \
     }
 
 /*
@@ -219,33 +219,35 @@ void apth_configure(apth_init_t *cfg);
  *       exit(0);
  *   APTH_MAIN_END
  */
-#define APTH_MAIN_BEGIN(argc_name, argv_name)                                           \
-    static void *__apth_main_impl__(void *__apth_args__);                               \
-    int main(int __apth_argc__, char *__apth_argv__[])                                  \
-    {                                                                                   \
-        struct __apth_main_args *__margs__ =                                            \
-            (struct __apth_main_args *)malloc(sizeof(struct __apth_main_args));         \
-        __margs__->argc = __apth_argc__;                                                \
-        __margs__->argv = __apth_argv__;                                                \
-        apth_init_t __initvals__;                                                       \
-        apth_configure(&__initvals__);                                                  \
-        __initvals__.main_apth = __apth_main_impl__;                                    \
-        __initvals__.main_args = (void *)__margs__;                                     \
-        apth_init(&__initvals__);                                                       \
-        perror("Should not reach here");                                                \
-        return 0;                                                                       \
-    }                                                                                   \
-    static void *__apth_main_impl__(void *__apth_args__)                                \
-    {                                                                                   \
-        int argc_name =                                                                 \
-            ((struct __apth_main_args *)__apth_args__)->argc;                           \
-        char **argv_name =                                                              \
-            ((struct __apth_main_args *)__apth_args__)->argv;                           \
-        free(__apth_args__);
+#define APTH_MAIN_BEGIN(argc_name, argv_name)                                   \
+    static void *__apth_main_impl__(void *__apth_args__);                       \
+    int main(int __apth_argc__, char *__apth_argv__[])                          \
+    {                                                                           \
+        struct __apth_main_args *__margs__ =                                    \
+            (struct __apth_main_args *)malloc(sizeof(struct __apth_main_args)); \
+        __margs__->argc = __apth_argc__;                                        \
+        __margs__->argv = __apth_argv__;                                        \
+        apth_init_t __initvals__;                                               \
+        apth_configure(&__initvals__);                                          \
+        __initvals__.main_apth = __apth_main_impl__;                            \
+        __initvals__.main_args = (void *)__margs__;                             \
+        apth_init(&__initvals__);                                               \
+        perror("Should not reach here");                                        \
+        return 0;                                                               \
+    }                                                                           \
+    static void *__apth_main_impl__(void *__apth_args__)                        \
+    {                                                                           \
+        int argc_name =                                                         \
+            ((struct __apth_main_args *)__apth_args__)->argc;                   \
+        char **argv_name =                                                      \
+            ((struct __apth_main_args *)__apth_args__)->argv;                   \
+        free(__apth_args__);                                                    \
+        (void)argc_name;                                                        \
+        (void)argv_name;
 
 /* Closes the function body opened by APTH_MAIN_BEGIN. */
-#define APTH_MAIN_END                                                                   \
-        return (void *)0;                                                               \
+#define APTH_MAIN_END \
+    return (void *)0; \
     }
 
 #endif /* __LIBAPTH_H */

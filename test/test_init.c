@@ -7,20 +7,11 @@
 
 static char a[] = "Hello\n";
 
-void *apth_main(void *arg)
-{
-    char *s = (char *)arg;
-    write(2, s, sizeof(a));
-    return NULL;
-}
+APTH_CONFIG(cfg,
+            cfg->workers = 1;)
 
-int main(void)
+APTH_MAIN_BEGIN(argc, argv)
 {
-    apth_init_t initvals;
-    apth_initvals_init(&initvals, 1, apth_main, (void *)a);
-    apth_init(&initvals);
-
-    // `apth_init` should have called `pthread_exit` and end itself
-    perror("Should not reach here");
-    return 0;
+    write(2, a, sizeof(a));
 }
+APTH_MAIN_END
