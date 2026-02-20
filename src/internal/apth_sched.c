@@ -12,11 +12,26 @@
 _Atomic unsigned int apth_nthreads = 0;
 _Atomic unsigned int apth_alive_nthreads = 0;
 
-_Atomic apth_t MAIN_APTH = APTH_NULL;
+static _Atomic apth_t MAIN_APTH = APTH_NULL;
 _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
 
 // Whichever worker wants to drop the whole pool should acquire this permit first
 _Atomic unsigned int DROP_POOL_PERMIT = 1;
+
+APTH_INTERNAL apth_t get_MAIN_APTH(void)
+{
+    return atomic_load_acquire(&MAIN_APTH);
+}
+
+APTH_INTERNAL apth_t *get_addr_of_MAIN_APTH(void)
+{
+    return (apth_t *)(&MAIN_APTH);
+}
+
+APTH_INTERNAL void set_MAIN_APTH(apth_t main_th)
+{
+    atomic_store_release(&MAIN_APTH, main_th);
+}
 
 // Initialize a scheduler onto `worker` and put the new scheduler in `sched`.
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
@@ -370,7 +385,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     atomic_fetch_sub(&WORKER_SPAWNED, 1);
 
     // Wait for the main apth to be spawned, before we can continue
-    while (atomic_load_acquire(&MAIN_APTH) == APTH_NULL)
+    while (get_MAIN_APTH() == APTH_NULL)
         ;
 
     bool end_the_process = false;
@@ -540,7 +555,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Special check for MAIN APTH.
             if (me->worker_id == 0)
             {
-                if (th == atomic_load_acquire(&MAIN_APTH))
+                if (th == get_MAIN_APTH())
                 {
                     if (atomic_load_acquire(&MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT) != 0)
                     {

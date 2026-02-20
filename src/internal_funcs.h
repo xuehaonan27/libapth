@@ -20,11 +20,11 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers);
 APTH_INTERNAL int apth_global_scheduler_pool_drop(void);
 APTH_INTERNAL int add_worker_thread(void);
 
-APTH_INTERNAL int apth_create_internal(
-    apth_t *newthr, const apth_attr_t *attr,
-    void *(*start_routine)(void *), void *arg, apth_sched_t sched);
-
 // ============================== Scheduler ==============================
+
+APTH_INTERNAL apth_t get_MAIN_APTH(void);
+APTH_INTERNAL apth_t *get_addr_of_MAIN_APTH(void);
+APTH_INTERNAL void set_MAIN_APTH(apth_t main_th);
 
 APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker);
 APTH_INTERNAL void apth_scheduler_kill(void);

@@ -31,7 +31,6 @@ APTH_CONFIG(cfg,
 APTH_MAIN_BEGIN(argc, argv)
 {
     apth_t thr;
-    void *res;
     int s;
 
     s = apth_create(&thr, NULL, &thread_func, NULL);

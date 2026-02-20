@@ -1,9 +1,14 @@
+
+#define _GNU_SOURCE
+#include <sched.h>
+
 #include "common.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
+#include "utils/apth_sysutils.h"
 #include "utils/lll.h"
 
 static void apth_create_trampoline(void)
@@ -20,116 +25,134 @@ static void apth_create_trampoline(void)
     PANIC("Should not reach here");
 }
 
-APTH_INTERNAL int apth_create_internal(
-    apth_t *newthr, const apth_attr_t *attr,
-    void *(*start_routine)(void *), void *arg, apth_sched_t sched)
+APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
+                         void *(*start_routine)(void *), void *arg)
 {
     apth_t t;
     apth_attr_t iattr = NULL;
-    unsigned int stacksize;
-    void *stackaddr;
     apth_time_t ts;
     apth_t cur;
-    if (sched == NULL)
-    {
-        sched = cur_sched();
-        cur = sched->cur;
-    }
-    else
-    {
-        cur = APTH_NULL;
-    }
-
-    // apth_debug("enter");
+    apth_sched_t sched = NULL;
+    apth_worker_t worker = NULL;
 
     // Consistency
     if (start_routine == NULL)
         return apth_error(EINVAL, EINVAL);
+
     if (attr != NULL)
     {
         iattr = *attr;
         if (iattr == NULL)
             return apth_error(EINVAL, EINVAL);
     }
+    else
+        apth_attr_init(&iattr);
+    assert(iattr != NULL);
 
-    // Support the special case of main()
-    // TODO: check what is this
-
-    // Allocate a new thread control block
-    stacksize = (iattr == NULL ? APTH_STACK_SIZE_DEFAULT : iattr->stacksize);
-    stackaddr = (iattr == NULL ? NULL : iattr->stackaddr);
-
-    if ((t = apth_tcb_alloc(stacksize, stackaddr)) == NULL)
-        return apth_error(errno, errno);
-
-    // Configure remainning attributes
-    // TODO: here check whether the parent fields will be inherited partially
-    // even when the attr is set (in pthread)
-    if (iattr != NULL)
+    if (newthr == get_addr_of_MAIN_APTH())
     {
-        // TODO
-        memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
-        t->name[APTH_TCB_NAMELEN] = '\0';
-    }
-    else if (cur != APTH_NULL)
-    {
-        // `cur` is the caller thread of `apth_create`, so inherit some fields
-        // from the parent thread
+        // We are spawning main thread. `apth_init` should have prepared proper
+        // worker TLS for us.
+        worker = cur_worker();
+        sched = cur_sched();
+        assert(sched != NULL);
+        assert(sched == worker->sched);
+        assert(worker == sched->worker);
+        cur = sched->cur;
+        assert(APTH_IS_FAKE_SCHED(cur));
     }
     else
     {
-        // Defaults
+        // We are spawning other threads. TLS should have been set. The scheduler
+        // to spawn to new apth to, should be determined first from CPU affinity.
+        // If no affinity is specified, then spawn in current scheduler.
+        int cpu_favored = -1;
+        if (iattr->cpuset != NULL)
+        {
+            // From CPU affinity
+            size_t check_cpu_cnt =
+                iattr->cpusetsize < (size_t)GLOBAL_POOL.worker_count ? iattr->cpusetsize : (size_t)GLOBAL_POOL.worker_count;
+
+            for (size_t cnt = 0; cnt < check_cpu_cnt; cnt++)
+            {
+                if (CPU_ISSET(cnt, iattr->cpuset))
+                {
+                    // pick this cpu
+                    cpu_favored = cnt;
+                    break;
+                }
+            }
+        }
+
+        // Determine the sched
+        if (cpu_favored != -1)
+        {
+            worker = get_worker_by_id(cpu_favored);
+            sched = worker->sched;
+            cur = sched->cur;
+        }
+        else
+        {
+            // Spawn in current scheduler
+            worker = cur_worker();
+            sched = cur_sched();
+            cur = sched->cur;
+        }
     }
 
-    // Initialize the time points and ranges
-    // apth_debug("initializing times");
+    assert(sched != NULL);
+
+    // Allocate a new thread control block, do all the allocations
+    if ((t = apth_tcb_alloc(iattr->stacksize, iattr->stackaddr)) == NULL)
+        return apth_error(errno, errno);
+
+    // Standard TCB ingredients
+    t->prio = iattr->schedparam.sched_priority;
+    memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
+    t->name[APTH_TCB_NAMELEN] = '\0';
+    t->dispatches = 0;
+    t->state = APTH_STATE_NEW;
+
+    // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);
     apth_time_set(&t->spawned, &ts);
     apth_time_set(&t->lastran, &ts);
     apth_time_set(&t->running, APTH_TIME_ZERO);
 
-    // Initialize events
-    // apth_debug("initializing events");
+    // Events
     list_empty(&t->event_list);
 
-    // Clear raised signals
-    // apth_debug("initializing signals");
+    // Signals
     sigemptyset(&t->sigpending);
     t->sigpendcnt = 0;
 
     // Remember the start routine and arguments
-    // apth_debug("initializing start routine and arguments");
     t->start_func = start_routine;
     t->start_arg = arg;
 
     // Initialize join argument
-    // apth_debug("initializing join");
     t->join_arg = NULL;
-    // t->joinable = false;
-    // TODO: here we used a check to check whether attr is NULL.
-    // TODO: but we could give `iattr` a default when `attr` is NULL and use iattr anyway.
-    t->joinid = iattr == NULL ? NULL : (iattr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL);
-
-    // Initialize thread specific storage
-    // apth_debug("initializing TLS");
-    t->specific_used = false;
-    t->specific[0] = t->specific_1stblock;
+    t->joinid = iattr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL;
 
     // Initialize cancellation stuff
-    // apth_debug("initializing cancellation stuff");
+    t->cancelreq = false;
     t->cancelhandling = 0; // TODO: is this right? we should only clear enable bit
     t->cleanups = NULL;
 
-    t->belongs_to_list = NULL;
-    t->belongs_to_list_lock = NULL;
-
-    // Initialize sync stuff
-    // TODO:
+    // TODO: Initialize sync stuff
 
     // TODO: exception stuff
 
+    // Initialize thread specific storage
+    t->specific[0] = t->specific_1stblock;
+    t->specific_used = false;
+
+    // Scheduler list handling
+    t->worker = worker;
+    t->belongs_to_list = NULL;
+    t->belongs_to_list_lock = NULL;
+
     // Initialize the machine context of this new thread
-    // apth_debug("initializing the context of this new thread");
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
 
     if (!apth_ctx_set(t->ctx, apth_create_trampoline,
@@ -144,30 +167,14 @@ APTH_INTERNAL int apth_create_internal(
 
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
-    // apth_debug("sched = %p", sched);
-    t->state = APTH_STATE_NEW;
+    push_apth_to_new(t, sched);
 
-    push_apth_to_new(t, sched); // TODO: is sched initialized by here
-    // apth_debug("pushed apth to new");
     // Increment scheduler thread count
     inc_thrcnt(sched);
     inc_alive_thrcnt();
 
     apth_debug("Now alive thread count = %u", get_apth_alive_nthreads());
 
-    t->worker = sched->worker;
     *newthr = t;
-
-    // apth_debug("spawned new thread t=%p", t);
-    // apth_debug("leave");
-    // while(atomic_load_acquire(&SIMPLE_BARRIER) == 0);
-    // apth_debug("allow to proceed");
     return 0;
-}
-
-int apth_create(apth_t *newthr, const apth_attr_t *attr,
-                void *(*start_routine)(void *), void *arg)
-{
-    // TODO: determine which sched to spawn this apth to
-    return apth_create_internal(newthr, attr, start_routine, arg, NULL);
 }

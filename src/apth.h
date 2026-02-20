@@ -115,6 +115,7 @@ APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
 
 #include <stdbool.h>
 #include <stdlib.h> /* malloc, free — needed by APTH_MAIN_BEGIN */
+#include <sched.h> // For cpu_set_t
 
 int apth_cancel(apth_t th);
 void apth_cleanup_push(void (*func)(void *), void *arg);
@@ -142,6 +143,8 @@ int apth_attr_getname_np(apth_attr_t *attr, char *buf, size_t len);
 int apth_attr_setname_np(apth_attr_t *attr, const char *name);
 int apth_attr_getdetachstate(const apth_attr_t *attr, int *detachstate);
 int apth_attr_setdetachstate(apth_attr_t *attr, int detachstate);
+int apth_attr_getaffinity_np(const apth_attr_t *attr, size_t cpusetsize, cpu_set_t *cpuset);
+int apth_attr_setaffinity_np(apth_attr_t *attr, size_t cpusetsize, const cpu_set_t *cpuset);
 
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>

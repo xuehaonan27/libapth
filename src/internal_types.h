@@ -19,7 +19,6 @@ extern struct apth_global_scheduler_pool GLOBAL_POOL;
 extern _Atomic unsigned int WORKER_SPAWNED;
 extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
 
-extern _Atomic apth_t MAIN_APTH;
 extern _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
 // TODO: this is for debug only, remove it later
