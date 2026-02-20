@@ -27,17 +27,24 @@ int apth_join(apth_t tid, void **value)
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
 
-    if (tid == APTH_NULL || !apth_is_not_null_and_valid(tid))
+    // Trying to join NULL
+    if (tid == APTH_NULL)
         return apth_error(ESRCH, ESRCH);
+
     // Is the apth joinable?
-    if (tid != NULL && IS_DETACHED(tid))
+    if (IS_DETACHED(tid))
         return apth_error(EINVAL, EINVAL);
+
+    // `tid` is not NULL, and joinable, but not occurs in any thread list
+    if (!apth_is_not_null_and_valid(tid))
+        return apth_error(ESRCH, ESRCH);
 
     // TODO: detected all deadlock situations
     if (tid == self || /* joining myself */
         (self->joinid == tid) /* `tid` is joining me! */)
         return apth_error(EDEADLK, EDEADLK);
     // TODO: should the atomicity semantic be weak or strong?
+    // TODO: if the caller (self) is cancelled, `tid` should remain joinable
     else if (apth_unlikely(atomic_compare_exchange_weak_acquire(&tid->joinid, &self, NULL)))
         // There is already somebody waiting for `tid`
         return apth_error(EINVAL, EINVAL);

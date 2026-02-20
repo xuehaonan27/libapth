@@ -38,6 +38,14 @@ typedef enum
 struct apth_attr_st;
 typedef struct apth_attr_st *apth_attr_t;
 
+enum
+{
+    APTH_CREATE_JOINABLE,
+#define APTH_CREATE_JOINABLE APTH_CREATE_JOINABLE
+    APTH_CREATE_DETACHED
+#define APTH_CREATE_DETACHED APTH_CREATE_DETACHED
+};
+
 typedef unsigned int apth_key_t;
 
 // ==================== Cleanup ====================
@@ -129,8 +137,11 @@ int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 
 int apth_attr_init(apth_attr_t *attr);
+int apth_attr_destroy(apth_attr_t *attr);
 int apth_attr_getname_np(apth_attr_t *attr, char *buf, size_t len);
 int apth_attr_setname_np(apth_attr_t *attr, const char *name);
+int apth_attr_getdetachstate(const apth_attr_t *attr, int *detachstate);
+int apth_attr_setdetachstate(apth_attr_t *attr, int detachstate);
 
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>
