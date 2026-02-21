@@ -7,7 +7,7 @@
 int apth_detach(apth_t th)
 {
     // TODO: make sure the th is valid.
-    if (!apth_is_not_null_and_valid(th))
+    if (!APTH_IS_VALID(th))
         return apth_error(ESRCH, ESRCH);
 
     // Mark te thread as detached

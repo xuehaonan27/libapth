@@ -27,7 +27,8 @@
     X(pthread_exit)                \
     X(pthread_attr_setdetachstate) \
     X(pthread_attr_setaffinity_np) \
-    X(exit) \
+    X(pthread_cancel)              \
+    X(exit)                        \
     X(pipe)
 
 #define APTH_LIST_OF_SYSCALLS \

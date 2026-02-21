@@ -125,8 +125,13 @@ int apth_init(apth_init_t *initvals)
     // NOTE: debug here, remove this
     // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
-    for (;;)
-        ;
+    // for (;;)
+    //     ;
+    void *worker0_rslt;
+    apth_syscall_raw(pthread_join)(worker0->tid, &worker0_rslt);
+    if (worker0_rslt != NULL)
+        fprintf(stderr, "worker0_rslt should be NULL, but is %p\n", worker0_rslt);
+    fprintf(stderr, "LIBAPTH INITIALIZER JOINED WORKER 0...\n");
 #endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
 
     set_cur_sched(NULL);

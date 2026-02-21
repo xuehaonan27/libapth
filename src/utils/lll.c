@@ -9,7 +9,7 @@ MAYBE_UNUSED static void __dummy_holder__(void *, ...) { /* NOP*/ }
 
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 #ifdef APTH_DEBUG_LLL_USING_FPRINTF
-#define lll_debug(...) fprintf(stderr, __VA_ARGS__);
+#define lll_debug(s, ...) fprintf(stderr, s "\n", __VA_ARGS__);
 #else
 #define lll_debug(...) apth_debug(__VA_ARGS__)
 #endif // APTH_DEBUG_LLL_USING_FPRINTF
@@ -28,7 +28,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
     //     fprintf(stderr, "entered lll_lock %p (%lx) from=%s\n", lock, *(uintptr_t *)lock, from);
     // #endif
-    lll_debug("entered lll_lock %p (%lx) from=%s\n", lock, *(uintptr_t *)lock, from);
+    lll_debug("entered lll_lock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
 
     // #else  // APTH_DEBUG_LLL
     // APTH_INTERNAL void lll_lock(lll_t *lock)
@@ -45,7 +45,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     //     (void)from; // Make compiler happy
     // #endif
 
-    lll_debug("locking cur=%p, sched=%p, worker=%p\n", self, sched, self_worker);
+    lll_debug("locking cur=%p, sched=%p, worker=%p", self, sched, self_worker);
 
     // fprintf(stderr, "locking cur=%p, sched=%p\n", self, sched);
 
@@ -67,7 +67,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     while (1)
     {
         // fprintf(stderr, "%d CONTENTION\n", sched->id);
-        lll_debug("%d CONTENTION\n", sched->id);
+        lll_debug("%d CONTENTION", sched->id);
         uintptr_t oldval = atomic_load_acquire(inner);
 
         if (oldval == LLL_NOT_ACQUIRED)
@@ -143,7 +143,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             else
             {
                 apth_t owner = (apth_t)oldval;
-                assert(APTH_TH_MAGIC_IS_GOOD(owner));
+                assert(APTH_IS_VALID(owner));
                 apth_worker_t owner_worker = owner->worker;
                 // The owner is an apth.
                 // TODO: Notice the `owner_worker` to schedule the `owner` as soon as possible!
@@ -182,7 +182,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
         else
         {
             // apth_t self = (apth_t)self;
-            assert(APTH_TH_MAGIC_IS_GOOD(self));
+            assert(APTH_IS_VALID(self));
             apth_worker_t self_worker = self->worker;
 
             // We are now an apth, trying to get the lock
@@ -230,7 +230,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 // The owner is also an apth. Here we could yield the control back to scheduler.
                 // TODO: notice the `owner_worker` to schedule the `owner` as soon as possible.
                 apth_t owner = (apth_t)oldval;
-                assert(APTH_TH_MAGIC_IS_GOOD(owner));
+                assert(APTH_IS_VALID(owner));
                 apth_worker_t owner_worker = owner->worker;
 
                 if (owner_worker == self_worker)
@@ -284,7 +284,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
     //     (void)from; // Make compiler happy
     // #endif
 
-    lll_debug("entered lll_unlock %p (%lx) from=%s\n", lock, *(uintptr_t *)lock, from);
+    lll_debug("entered lll_unlock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
 
     // #else  // APTH_DEBUG_LLL
     // APTH_INTERNAL void lll_unlock(lll_t *lock)
@@ -324,7 +324,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             apth_sched_t owner = APTH_DECODE_FAKE_SCHED(oldval);
             if (decoded_sched != owner)
             {
-                lll_debug("decoded_sched=%p owner=%p\n", decoded_sched, owner);
+                lll_debug("decoded_sched=%p owner=%p", decoded_sched, owner);
                 apth_syscall_raw(exit)(127);
             }
             assert(decoded_sched == owner);
@@ -360,7 +360,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
     else
     {
         // We are an apth.
-        assert(APTH_TH_MAGIC_IS_GOOD(self));
+        assert(APTH_IS_VALID(self));
         if (APTH_IS_FAKE_SCHED(oldval))
         {
             // The owner is also an scheduler.
@@ -381,7 +381,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
         {
             // The owner is also an apth, good.
             apth_t owner = (apth_t)oldval;
-            assert(APTH_TH_MAGIC_IS_GOOD(owner));
+            assert(APTH_IS_VALID(owner));
             assert(self == owner);
             atomic_store_release(inner, LLL_NOT_ACQUIRED);
         }

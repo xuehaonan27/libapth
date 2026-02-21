@@ -21,16 +21,6 @@ int apth_drop(void);
 typedef struct apth_st *apth_t;
 struct apth_st;
 
-// Thread state
-typedef enum
-{
-    APTH_STATE_SCHEDULER = 0, /* the special scheduler thread only       */
-    APTH_STATE_NEW,           /* spawned, but still not dispatched       */
-    APTH_STATE_READY,         /* ready, waiting to be dispatched         */
-    APTH_STATE_WAITING,       /* suspended, waiting until event occurred */
-    APTH_STATE_TERMINATED,    /* terminated, waiting to be joined        */
-} apth_state_t;
-
 #define APTH_CANCELED ((void *)-1)
 
 // ==================== Thread Attributes ====================

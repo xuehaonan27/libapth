@@ -50,6 +50,7 @@ DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
+APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
 APTH_INTERNAL void remove_apth(apth_t th);
 #undef DECLARE_SCHED_LIST_OP
 #undef list_of
@@ -195,6 +196,7 @@ APTH_DECLARE_FETCH_LIBCFUNC(void, pthread_exit, void *retval)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setdetachstate, pthread_attr_t *attr, int detachstate)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setaffinity_np, pthread_attr_t *attr,
                             size_t cpusetsize, const cpu_set_t *cpuset)
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_cancel, pthread_t thread)
 APTH_DECLARE_FETCH_LIBCFUNC(void, exit, int status)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pipe, int pipefd[2])
 

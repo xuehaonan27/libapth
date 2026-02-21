@@ -80,7 +80,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
     {
         // struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
         apth_worker_t p = GLOBAL_POOL.worker_ptr_mem_start[worker_id];
-        fprintf(stderr, "got p = %p\n", p);
+        fprintf(stderr, "got worker (%d)= %p\n", worker_id, p);
         return p;
     }
 
@@ -142,6 +142,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     }
 
     // Prepare worker arguments
+    // TODO: free arg when drop
     apth_worker_arg_t arg;
     if ((arg = (apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))) == NULL)
         return apth_error(-1, ENOMEM);
@@ -154,12 +155,17 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 
 static int apth_worker_drop(apth_worker_t worker)
 {
+    int target_worker_id = worker->worker_id;
+    apth_debug("enter, dropping worker %d sched = %p", target_worker_id, worker->sched);
     // Tell the scheduler to end
     atomic_store_release(&worker->sched->opening, false);
 
     void *pthr_rslt;
     // TODO: since we spawned all workers as DETACHED, joining here is meaningless.
     apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);
+    apth_debug("MAIN WORKER %d joined WORKER %d", cur_worker()->worker_id, target_worker_id);
+
+    // apth_syscall_raw(pthread_cancel)(worker->tid);
     assert(pthr_rslt == NULL);
 
     free(worker);
@@ -237,13 +243,24 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
         return -1;
     }
 
+    apth_debug("WORKER %d enter", cur_worker()->worker_id);
+
     lll_lock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
-    FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
+    // FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
-        apth_worker_t worker = apth_worker_t_list_entry(e);
-        int drop_result;
-        if ((drop_result = apth_worker_drop(worker)) != 0)
-            return apth_error(drop_result, errno);
+        struct list_elem *e;
+        // for (e = list_begin(&GLOBAL_POOL.wrkpthrs_list);
+        // e != list_end(&GLOBAL_POOL.wrkpthrs_list);
+        // e = list_next(e))
+        while (!list_empty(&GLOBAL_POOL.wrkpthrs_list))
+        {
+            e = list_pop_back(&GLOBAL_POOL.wrkpthrs_list);
+
+            apth_worker_t worker = apth_worker_t_list_entry(e);
+            int drop_result;
+            if ((drop_result = apth_worker_drop(worker)) != 0)
+                return apth_error(drop_result, errno);
+        }
     }
     lll_unlock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
 

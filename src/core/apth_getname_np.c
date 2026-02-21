@@ -5,7 +5,7 @@
 
 int apth_getname_np(apth_t th, char name[], size_t size)
 {
-    if (!apth_is_not_null_and_valid(th))
+    if (!APTH_IS_VALID(th))
         return apth_error(ESRCH, ESRCH);
     if (name == NULL)
         return apth_error(EINVAL, EINVAL);

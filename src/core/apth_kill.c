@@ -32,6 +32,7 @@ int apth_kill(apth_t t, int sig)
         t->sigpendcnt++;
     }
 
+    // NOTE: containing a cancelation point
     apth_yield();
     return 0;
 }

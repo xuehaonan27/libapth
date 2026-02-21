@@ -27,6 +27,10 @@ APTH_INTERNAL void apth_do_cancel(void *result)
     apth_t self = sched->cur;
     apth_debug("apth_do_cancel: cancelling thread \"%s\"", self->name);
 
+    if (self == get_MAIN_APTH())
+        // Main apth exited
+        atomic_store_release(&MAIN_APTH_EXITED, 1);
+
     // TODO: atomically set the thread as cancelled.
 
     // TODO: specially treat main thread

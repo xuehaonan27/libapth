@@ -19,6 +19,7 @@ extern struct apth_global_scheduler_pool GLOBAL_POOL;
 extern _Atomic unsigned int WORKER_SPAWNED;
 extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
 
+extern _Atomic int MAIN_APTH_EXITED;
 extern _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
 // TODO: this is for debug only, remove it later
@@ -37,7 +38,8 @@ typedef enum
 struct apth_cxt_st
 {
     ucontext_t uc;
-    sigset_t sigs;
+    // sigset_t sigs;
+#define CTX_SIGMASK_OF(CTX) ((CTX)->uc.uc_sigmask)
     int error;
     bool restored;
 };
@@ -121,7 +123,7 @@ struct apth_perpthr_scheduler
     _Atomic unsigned int thrcnt; // APTH threads now running on this scheduler
     apth_time_t running;         // time the scheduler runs
     apth_t cur;                  // current APTH
-    _Atomic bool opening;        // scheduler is opening
+    _Atomic volatile bool opening;        // scheduler is opening
     int apth_sigpipe[2];         // internal signal occurrence pipe
     sigset_t apth_sigpending;    // mask of pending signals
     sigset_t apth_sigblock;      // mask of signals we block in scheduler
@@ -170,6 +172,16 @@ struct apth_global_scheduler_pool
 };
 
 // ============================== APTH TCB ==============================
+
+// Thread state
+typedef enum
+{
+    APTH_STATE_SCHEDULER = 0, /* the special scheduler thread only       */
+    APTH_STATE_NEW,           /* spawned, but still not dispatched       */
+    APTH_STATE_READY,         /* ready, waiting to be dispatched         */
+    APTH_STATE_WAITING,       /* suspended, waiting until event occurred */
+    APTH_STATE_TERMINATED,    /* terminated, waiting to be joined        */
+} apth_state_t;
 
 // Thread control block.
 struct ALIGNED(8) apth_st 
@@ -258,8 +270,8 @@ struct ALIGNED(8) apth_st
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
     apth_worker_t worker; // TODO: when performing work stealing, modify this
-    struct list *belongs_to_list;
-    lll_t *belongs_to_list_lock;
+    _Atomic(struct list *) belongs_to_list;
+    _Atomic(lll_t *) belongs_to_list_lock;
 };
 #define APTH_NULL (apth_t) NULL
 
@@ -271,7 +283,15 @@ struct ALIGNED(8) apth_st
 // high (> 0). On most systems this should usually be the former.
 #define APTH_STACKGROWTH (-1)
 #define APTH_MAGIC 0xCAFEBABE
-#define APTH_TH_MAGIC_IS_GOOD(th) (*(uint32_t *)(th->stackguard) == APTH_MAGIC)
+#define APTH_TH_MAGIC_IS_GOOD(th) (*(uint32_t *)((th)->stackguard) == APTH_MAGIC)
+
+// Apth is with a valid tid. Note that even apth is terminated, its tid
+// is still valid, until `apth_tcb_free` reaps it.
+// #define APTH_TID_IS_VALID(tid) (!((intptr_t)(tid) <= 0))
+
+// #define APTH_IS_VALID(t) (APTH_TID_IS_VALID(t) && APTH_TH_MAGIC_IS_GOOD(t))
+
+#define APTH_IS_VALID(t) (((t) != APTH_NULL) && APTH_TH_MAGIC_IS_GOOD(t))
 
 // ============================== Thread Events ==============================
 

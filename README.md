@@ -25,3 +25,6 @@
 15. Hook STDIO (e.g. printf, fprintf...)
 16. Better handling of cancelling (e.g. now we have way too many fields for cancellation)
 17. The use of `apth_error` should be regular.
+18. Scheduler work stealing. Should consider the CPU affinity of the apth,
+and the type of the apth (e.g. for GC Worker threads, it's better to distribute
+them evenly across all schedulers, accompanying mutator threads)

@@ -19,6 +19,7 @@ ERRORS
 
        ESRCH  No thread with the ID thread could be found.
 */
+// TODO: what will happen if `tid` was switched to DETACHED while cur is waiting its termination?
 int apth_join(apth_t tid, void **value)
 {
     apth_event_t ev;
@@ -27,17 +28,13 @@ int apth_join(apth_t tid, void **value)
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
 
-    // Trying to join NULL
-    if (tid == APTH_NULL)
+    // Trying to join invalid apth
+    if (tid == NULL || !APTH_IS_VALID(tid))
         return apth_error(ESRCH, ESRCH);
 
     // Is the apth joinable?
     if (IS_DETACHED(tid))
         return apth_error(EINVAL, EINVAL);
-
-    // `tid` is not NULL, and joinable, but not occurs in any thread list
-    if (!apth_is_not_null_and_valid(tid))
-        return apth_error(ESRCH, ESRCH);
 
     // TODO: detected all deadlock situations
     if (tid == self || /* joining myself */
@@ -56,6 +53,10 @@ int apth_join(apth_t tid, void **value)
         apth_wait_event(ev);
     }
 
+    // TODO: if `tid` was switched to DETACHED when we are waiting ...
+
+    apth_debug("(%d) tid = %p should have terminated", tid);
+
     // We mark the `tid` as terminated and as joined
     assert_msg(tid->state == APTH_STATE_TERMINATED,
                "tid = 0x%lx(\"%s\") state = %d", tid, tid->name, tid->state);
@@ -67,6 +68,8 @@ int apth_join(apth_t tid, void **value)
     // Remove the thread from scheduler. This is sane because scheduler itself
     // would do nothing about threads in the terminated list. All of them are
     // free for other threads to join to.
+    // But the apth could has not been transferred to terminated list yet.
+    wait_apth_to_be_in_list(tid);
     remove_apth(tid);
     // Note: since the thread is already terminated, then all cleanups should
     // have been executed.

@@ -37,11 +37,11 @@ static bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
 // apthes from waiting queue back to ready queue
 APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 {
-    apth_debug("apth_sched_eventmanager: enter in %s mode", dopoll ? "polling" : "waiting");
+    apth_debug("(%d) enter in %s mode", sched->id, dopoll ? "polling" : "waiting");
 
     for (;;)
     {
-        apth_debug("loop");
+        // apth_debug("(%d) loop", sched->id);
         bool loop_repeat = false;
 
         // Initialize fd sets, for `select`
@@ -81,7 +81,34 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // not block `sig`.
             for (int sig = 1; sig < APTH_NSIG; sig++)
             {
-                if (!sigismember(&(th->ctx->sigs), sig))
+                // NOTE: check signal mask here
+                sigset_t *th_signal_mask = &CTX_SIGMASK_OF(th->ctx);
+#ifdef APTH_DEBUG
+                // sigset_t th_signal_mask_acquired_by_libccall;
+                // According to manual:
+                // If  set  is  NULL,  then the signal mask is unchanged (i.e., how is ignored),
+                // but the current value of the signal mask is nevertheless returned in oldset
+                // (if it is not NULL).
+
+                // apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, NULL, &th_signal_mask_acquired_by_libccall);
+
+                // for (int sig = 1; sig < APTH_NSIG; sig++)
+                // {
+                //     if (sigismember(th_signal_mask, sig) &&
+                //         !sigismember(&th_signal_mask_acquired_by_libccall, sig))
+                //         apth_debug("sig = %d in th_signal_mask but not...", sig);
+                //     else if (
+                //         !sigismember(th_signal_mask, sig) &&
+                //         sigismember(&th_signal_mask_acquired_by_libccall, sig))
+                //         apth_debug("sig = %d in th_signal_mask_acquired_by_libccall but not...", sig);
+                // }
+
+                // apth_debug("th_signal_mask = %lx", *(uint64_t *)th_signal_mask);
+                // apth_debug("th_signal_mask_acquired_by_libccall = %lx", *(uint64_t *)(&th_signal_mask_acquired_by_libccall));
+
+                // assert(memcmp(th_signal_mask, &th_signal_mask_acquired_by_libccall, sizeof(sigset_t)) == 0);
+#endif
+                if (!sigismember(th_signal_mask, sig))
                     sigdelset(&sched->apth_sigblock, sig);
             }
 
@@ -257,37 +284,70 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             apth_time_set(&delay, &nexttimer_value);
             apth_time_sub(&delay, now);
             pdelay = &delay;
+
+            // TODO: this is of low efficiency as well. Since time waiting for the timer to
+            // expire could also be used to steal more work from other schedulers and run
+            // them.
+            // Moreover, if time interrupt is implemented, we could save this timer into the
+            // scheduler, calculate how many time slices (floor it to integer ) needed for
+            // the timer to expire, and enable time interrupt for this worker pthread
+            // temporarily (if not explicitly enabled by programmer) and use the these piece
+            // of time to do more work. For a very small timer (even not enough to fill up
+            // one time slice), we could wait it here though.
         }
         else
         {
             // No haste, no event to be checked later.
             // Do a polling without a timeout, i.e. wait for the fd sets only with blocking.
-            pdelay = NULL;
+            // pdelay = NULL;
+
+            // NOTE: in a multithreaded environment, pausing indefinitely is of low efficiency.
+            // Since this scheduler could steal work from other schedulers. So unlike in GNU
+            // Pth, we decide that not to wait, but notify the scheduler: GO TO STEAL
+            apth_time_set(&delay, APTH_TIME_ZERO);
+            pdelay = &delay;
+            // TODO: mark to notify this scheduler to steal work
         }
 
         // Clear pipe and let select() wait for read-part of the pipe.
-        // apth_debug("going to select wait for read-part of the pipe");
+        // apth_debug("(%d) GOING TO read the read-part of the signal pipe", sched->id);
+        assert(fcntl(sched->apth_sigpipe[0], F_GETFL, NULL) == APTH_O_NONBLOCKING);
         char minibuf[128];
         while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
             ;
-        FD_SET(sched->apth_sigpipe[0], &rfds);
-        if (fdmax < sched->apth_sigpipe[0])
-        {
-            apth_debug("before fdmax=%d, now should be %d", fdmax, sched->apth_sigpipe[0]);
-            fdmax = sched->apth_sigpipe[0];
-        }
+        // apth_debug("(%d) HAS read the read-part of the signal pipe", sched->id);
+        // FD_SET(sched->apth_sigpipe[0], &rfds);
+        // if (fdmax < sched->apth_sigpipe[0])
+        // {
+        //     apth_debug("(%d) before fdmax=%d, now should be %d", sched->id, fdmax, sched->apth_sigpipe[0]);
+        //     fdmax = sched->apth_sigpipe[0];
+        // }
 
         // Replace signal actions for signals we have to catch for events
         struct sigaction sa;
         struct sigaction osa[1 + APTH_NSIG];
+        bool at_least_one_signal_to_be_catched = false;
         for (int sig = 1; sig < APTH_NSIG; sig++)
         {
             if (sigismember(&sched->apth_sigcatch, sig))
             {
+                apth_debug("(%d) sig=%d is in my `apth_sigcatch`", sched->id, sig);
                 sa.sa_sigaction = apth_sched_eventmanager_sighandler;
                 sigfillset(&sa.sa_mask);
                 sa.sa_flags = SA_SIGINFO;
                 sigaction(sig, &sa, &osa[sig]);
+                at_least_one_signal_to_be_catched = true;
+            }
+        }
+
+        // If there's at least one signal to catch
+        if (at_least_one_signal_to_be_catched)
+        {
+            FD_SET(sched->apth_sigpipe[0], &rfds);
+            if (fdmax < sched->apth_sigpipe[0])
+            {
+                apth_debug("(%d) before fdmax=%d, now should be %d", sched->id, fdmax, sched->apth_sigpipe[0]);
+                fdmax = sched->apth_sigpipe[0];
             }
         }
 
@@ -299,14 +359,24 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // Now do the polling for filedescriptor I/O and timers.
         // When the scheduler sleeps at all, then here.
         int rc = -1;
-        if (!(dopoll && fdmax == -1))
-            // !dopoll: then there's some events occured.
-            // !fdmax == -1, then there's some fd to wait for.
+        // if (!(dopoll && fdmax == -1))
+
+        // TODO: Firstly, if scheduler has more apth to schedule, scheduler would not wait here
+        // TODO: Then, scheduler should check whether work stealing is available.
+        // Then, if the scheduler really really has nothing to do, then could the sched
+        // goes here:
+        //      !fdmax == -1: no more work to haste, and there's some fd to wait for.
+        //      !dopoll: no more work to haste, and there is a time event
+        if (fdmax != -1 || !dopoll)
+        {
+            apth_debug("(%d) GOING TO select the fd_set, fdmax=%d", sched->id, fdmax);
             while (
                 (rc = apth_syscall_raw(select)(fdmax + 1, &rfds, &wfds, &efds, pdelay)) < 0 && errno == EINTR)
             {
-                apth_debug("rc=%d, errno=%d", rc, errno);
+                apth_debug("(%d) rc=%d, errno=%d", sched->id, rc, errno);
             }
+            // apth_debug("(%d) HAS select the fd_set", sched->id);
+        }
 
         // Restore signal mask and actions and handle signals
         // apth_debug("Restore signal mask and actions and handle signals");
@@ -329,7 +399,8 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             else
             {
                 // It was an explicit timer event, standing for its own.
-                apth_debug("apth_sched_eventmanager: [timeout] event occurred for apth \"%s\"", nexttimer_th->name);
+                apth_debug("(%d) [timeout] event occurred for apth \"%s\"",
+                           sched->id, nexttimer_th->name);
                 nexttimer_ev->ev_status = APTH_EV_STATUS_OCCURRED;
             }
         }
@@ -365,7 +436,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                 th_last->state = APTH_STATE_READY;
                 // TODO: give th_last a higher prio
                 push_apth_to_ready(th_last, sched);
-                apth_debug("apth_sched_eventmanager: apth \"%s\" moved from waiting to ready queue", th_last->name);
+                apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
                 th_last = APTH_NULL;
             }
 
@@ -398,7 +469,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 write_condition ||
                                 excep_condition)
                             {
-                                apth_debug("apth_sched_eventmanager: [I/O event occurred for thread \"%s\"]", th->name);
+                                apth_debug("(%d) [I/O event occurred for thread \"%s\"]", sched->id, th->name);
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                             }
                             else if (rc < 0)
@@ -431,8 +502,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                     FD_ZERO(&wfds);
                                     FD_ZERO(&efds);
                                     event->ev_status = APTH_EV_STATUS_FAILED;
-                                    apth_debug("apth_sched_eventmanager: [I/O] event failed for thread \"%s\"",
-                                               th->name);
+                                    apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
                                 }
                             }
                             break;
@@ -450,8 +520,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 if (event->ev_args.SELECT.n != NULL)
                                     *(event->ev_args.SELECT.n) = n;
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
-                                apth_debug("pth_sched_eventmanager: [I/O] event occurred for thread \"%s\"",
-                                           th->name);
+                                apth_debug("(%d) [I/O] event occurred for thread \"%s\"", sched->id, th->name);
                             }
                             else if (rc < 0)
                             {
@@ -484,8 +553,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 if (rc2 < 0)
                                 {
                                     event->ev_status = APTH_EV_STATUS_FAILED;
-                                    apth_debug("pth_sched_eventmanager: [I/O] event failed for thread \"%s\"",
-                                               th->name);
+                                    apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
                                 }
                             }
                             break;
@@ -499,7 +567,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                         // If sig is in both event and this pthread raised signals
                                         if (event->ev_args.SIGS.sig != NULL)
                                             *(event->ev_args.SIGS.sig) = sig;
-                                        apth_debug("apth_sched_eventmanager: [signal] event occurred for apth \"%s\"", th->name);
+                                        apth_debug("(%d) [signal] event occurred for apth \"%s\"", sched->id, th->name);
                                         sigdelset(&sched->apth_sigraised, sig);
                                         event->ev_status = APTH_EV_STATUS_OCCURRED;
                                     }
@@ -528,7 +596,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // Cancellation support
             if (th->cancelreq == true)
             {
-                apth_debug("apth_sched_eventmanager: cancellation request pending for apth \"%s\"", th->name);
+                apth_debug("(%d) cancellation request pending for apth \"%s\"", sched->id, th->name);
                 any_occurred = true;
             }
 
@@ -545,19 +613,19 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             th_last->state = APTH_STATE_READY;
             // TODO: give th_last a higher prio
             push_apth_to_ready(th_last, sched);
-            apth_debug("apth_sched_eventmanager: apth \"%s\" moved from waiting to ready queue", th_last->name);
+            apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
             th_last = APTH_NULL;
         }
 
         if (loop_repeat)
         {
-            apth_debug("continue");
+            apth_debug("(%d) continue", sched->id);
             apth_time_set(now, APTH_TIME_NOW);
             continue;
         }
         else
         {
-            apth_debug("leave");
+            apth_debug("(%d) leave", sched->id);
             break;
         }
     }
@@ -752,7 +820,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     if (ev == APTH_EVENT_NULL)
         return apth_error(false, EINVAL);
     apth_t self = cur_apth();
-    apth_debug("apth_wait_events: enter from thread \"%s\"", self->name);
+    apth_debug("(%d) enter from thread \"%s\"", self->worker->worker_id, self->name);
 
     // Mark the event as still pending
     ev->ev_status = APTH_EV_STATUS_PENDING;
@@ -773,13 +841,20 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     assert_msg(list_empty(&self->event_list), "insane");
 
     // Judge whether the event has occurred
+
     bool result = false;
     if (ev->ev_status != APTH_EV_STATUS_PENDING)
     {
         result = true;
     }
+    else
+    {
+        // TODO: if the scheduler designed to be possible scheduling
+        // a waiting apth, then we should yield again here if the
+        // event status is still pending
+    }
 
     // Leave to current thread with number of occurred events
-    apth_debug("apth_wait_event_list: leave to thread \"%s\"", self->name);
+    apth_debug("(%d) leave to thread \"%s\"", self->worker->worker_id, self->name);
     return result;
 }
