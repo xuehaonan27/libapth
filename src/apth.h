@@ -60,6 +60,9 @@ enum
 
 typedef unsigned int apth_key_t;
 
+/* Once-only execution */
+typedef _Atomic(int) apth_once_t;
+
 // ==================== Cleanup ====================
 enum
 {
@@ -149,6 +152,7 @@ int apth_yield(void);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);
+void apth_testcancel(void);
 
 int apth_attr_init(apth_attr_t *attr);
 int apth_attr_destroy(apth_attr_t *attr);
