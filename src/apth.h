@@ -23,6 +23,10 @@ struct apth_st;
 
 #define APTH_CANCELED ((void *)-1)
 
+/* Special return value from apth_attr_getsigmask_np if the signal
+   mask has not been set.  */
+#define APTH_ATTR_NO_SIGMASK_NP (-1)
+
 // ==================== Thread Attributes ====================
 
 struct apth_attr_st;
@@ -34,6 +38,24 @@ enum
 #define APTH_CREATE_JOINABLE APTH_CREATE_JOINABLE
     APTH_CREATE_DETACHED
 #define APTH_CREATE_DETACHED APTH_CREATE_DETACHED
+};
+
+/* Scheduler inheritance.  */
+enum
+{
+    APTH_INHERIT_SCHED,
+#define APTH_INHERIT_SCHED APTH_INHERIT_SCHED
+    APTH_EXPLICIT_SCHED
+#define APTH_EXPLICIT_SCHED APTH_EXPLICIT_SCHED
+};
+
+/* Scope handling.  */
+enum
+{
+    APTH_SCOPE_SYSTEM,
+#define APTH_SCOPE_SYSTEM APTH_SCOPE_SYSTEM
+    APTH_SCOPE_PROCESS
+#define APTH_SCOPE_PROCESS APTH_SCOPE_PROCESS
 };
 
 typedef unsigned int apth_key_t;
@@ -105,7 +127,7 @@ APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
 
 #include <stdbool.h>
 #include <stdlib.h> /* malloc, free — needed by APTH_MAIN_BEGIN */
-#include <sched.h> // For cpu_set_t
+#include <sched.h>  // For cpu_set_t
 
 int apth_cancel(apth_t th);
 void apth_cleanup_push(void (*func)(void *), void *arg);
@@ -136,6 +158,23 @@ int apth_attr_getdetachstate(const apth_attr_t *attr, int *detachstate);
 int apth_attr_setdetachstate(apth_attr_t *attr, int detachstate);
 int apth_attr_getaffinity_np(const apth_attr_t *attr, size_t cpusetsize, cpu_set_t *cpuset);
 int apth_attr_setaffinity_np(apth_attr_t *attr, size_t cpusetsize, const cpu_set_t *cpuset);
+int apth_attr_getsigmask_np(const apth_attr_t *attr, sigset_t *sigmask);
+int apth_attr_setsigmask_np(apth_attr_t *attr, const sigset_t *sigmask);
+int apth_attr_getstackaddr(const apth_attr_t *attr, void **stackaddr);
+int apth_attr_setstackaddr(apth_attr_t *attr, void *stackaddr);
+int apth_attr_getstacksize(const apth_attr_t *attr, size_t *stacksize);
+int apth_attr_setstacksize(apth_attr_t *attr, size_t stacksize);
+int apth_attr_getstack(const apth_attr_t *attr, void **stackaddr, size_t *stacksize);
+int apth_attr_setstack(apth_attr_t *attr, void *stackaddr, size_t stacksize);
+int apth_attr_getguardsize(const apth_attr_t *attr, size_t *guardsize);
+int apth_attr_setguardsize(apth_attr_t *attr, size_t guardsize);
+
+int apth_attr_getscope(const apth_attr_t *attr, int *scope);
+int apth_attr_setscope(apth_attr_t *attr, int scope);
+int apth_attr_getschedpolicy(const apth_attr_t *attr, int *policy);
+int apth_attr_setschedpolicy(apth_attr_t *attr, int policy);
+int apth_attr_getschedparam(const apth_attr_t *attr, struct sched_param *param);
+int apth_attr_setschedparam(apth_attr_t *attr, const struct sched_param *param);
 
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>

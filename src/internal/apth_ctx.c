@@ -72,7 +72,8 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 }
 
 // Initialize a context into `ctx`.
-APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_addr_lo, char *stack_addr_hi)
+APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
+                                char *stack_mem_start, size_t stacksize)
 {
     apth_debug("enter");
     // fetch current context
@@ -85,9 +86,9 @@ APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void), char *stack_
     // configure new stack
     // note: according to manual of ucontext, it's not for the program to consider
     // the growth direction of the stack.
-    ctx->uc.uc_stack.ss_sp = stack_addr_lo;
+    ctx->uc.uc_stack.ss_sp = stack_mem_start;
     apth_debug("STACK address = %p", stack_addr_lo);
-    ctx->uc.uc_stack.ss_size = stack_addr_hi - stack_addr_lo;
+    ctx->uc.uc_stack.ss_size = stacksize;
     ctx->uc.uc_stack.ss_flags = 0;
 
     // configure startup function (with no arguments)

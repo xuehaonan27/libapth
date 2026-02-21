@@ -1,0 +1,25 @@
+#include "apth.h"
+#include "internal_types.h"
+#include "internal_funcs.h"
+#include "utils/apth_sysutils.h"
+#include "utils/apth_errno.h"
+
+int apth_attr_setstack(apth_attr_t *attr, void *stackaddr, size_t stacksize)
+{
+    apth_attr_t iattr = *attr;
+
+    // Catch invalid sizes
+    int ret = check_stacksize_attr(stacksize);
+    if (ret)
+        return ret;
+
+    iattr->stacksize = stacksize;
+#if APTH_STACKGROWTH < 0 // _STACK_GROWS_DOWN
+    iattr->stackaddr = (char *)stackaddr + stacksize;
+#else  // _STACK_GROWS_DOWN
+    iattr->stackaddr = (char *)stackaddr;
+#endif // _STACK_GROWS_DOWN
+    iattr->flags |= ATTR_FLAG_STACKADDR;
+
+    return 0;
+}

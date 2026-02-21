@@ -1,4 +1,3 @@
-
 #define _GNU_SOURCE
 #include <sched.h>
 
@@ -103,7 +102,9 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     assert(sched != NULL);
 
     // Allocate a new thread control block, do all the allocations
-    if ((t = apth_tcb_alloc(iattr->stacksize, iattr->stackaddr)) == NULL)
+
+    void *stackaddr = iattr->flags & ATTR_FLAG_STACKADDR ? iattr->stackaddr : NULL;
+    if ((t = apth_tcb_alloc(iattr->stacksize, stackaddr)) == NULL)
         return apth_error(errno, errno);
 
     // Standard TCB ingredients
@@ -155,8 +156,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
 
-    if (!apth_ctx_set(t->ctx, apth_create_trampoline,
-                      t->stack, (char *)((char *)t->stack + t->stacksize)))
+    if (!apth_ctx_set(t->ctx, apth_create_trampoline, t->stack_mem_start, t->stacksize))
     {
         apth_shield
         {

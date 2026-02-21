@@ -86,7 +86,7 @@ APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx);
 APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx);
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new);
 APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
-                                char *stack_addr_lo, char *stack_addr_hi);
+                                char *stack_mem_start, size_t stacksize);
 
 // ============================== Cleanup ==============================
 // APTH_INTERNAL void apth_cleanup_popall(apth_t, bool);
@@ -103,6 +103,7 @@ APTH_INTERNAL void apth_cancel_point(void);
 
 // ============================== Signal ==============================
 APTH_INTERNAL int apth_util_sigdelete(int sig);
+APTH_INTERNAL int apth_attr_setsigmask_internal(apth_attr_t *attr, const sigset_t *sigmask);
 
 // ============================== TLS ==============================
 APTH_INTERNAL void apth_key_destroydata(apth_t th);
@@ -253,6 +254,46 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
                                        fd_set *ifds2, fd_set *ofds2,
                                        fd_set *ifds3, fd_set *ofds3);
 APTH_INTERNAL int apth_fdmode(int fd, int newmode);
+
+
+/* Returns 0 if ST is a valid stack size for a thread stack and EINVAL
+   otherwise.  */
+static inline int check_stacksize_attr(size_t st)
+{
+    if (st >= APTH_STACK_SIZE_DEFAULT)
+        return 0;
+
+    return EINVAL;
+}
+
+
+/* Returns 0 if POL is a valid scheduling policy.  *
+static inline int
+check_sched_policy_attr (int pol)
+{
+//   if (pol == SCHED_OTHER || pol == SCHED_FIFO || pol == SCHED_RR)
+//     return 0;
+
+//   return EINVAL;
+
+return 0;
+}
+
+/* Returns 0 if PR is within the accepted range of priority values for
+   the scheduling policy POL or EINVAL otherwise.  */
+static inline int
+check_sched_priority_attr (int pr, int pol)
+{
+  int min = __sched_get_priority_min (pol);
+  int max = __sched_get_priority_max (pol);
+
+  if (min >= 0 && max >= 0 && pr >= min && pr <= max)
+    return 0;
+
+  return EINVAL;
+}
+
+
 
 int apth_apth_exists(apth_t t);
 

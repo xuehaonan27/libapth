@@ -1,0 +1,16 @@
+#include "apth.h"
+#include "internal_types.h"
+#include "internal_funcs.h"
+#include "utils/apth_sysutils.h"
+#include "utils/apth_errno.h"
+
+int apth_attr_getschedparam(const apth_attr_t *attr,
+                            struct sched_param *param)
+{
+    const apth_attr_t iattr = *attr;
+
+    /* Copy the current values.  */
+    memcpy(param, &iattr->schedparam, sizeof(struct sched_param));
+
+    return 0;
+}

@@ -26,16 +26,21 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
     t->ctx = apth_ctx_alloc();
 
     t->stacksize = stacksize;
-    t->stack = NULL;
+    t->stack_mem_start = NULL;
     t->stackguard = NULL;
     t->stackloan = (stackaddr != NULL ? true : false);
     if (stacksize > 0)
     {
         if (stackaddr != NULL)
-            t->stack = (char *)stackaddr;
+        // t->stack_mem_start = (char *)stackaddr;
+#if APTH_STACKGROWTH < 0
+            t->stack_mem_start = (char *)stackaddr - stacksize;
+#else
+            t->stack_mem_start = (char *)stackaddr;
+#endif
         else
         {
-            if ((t->stack = (char *)malloc(stacksize)) == NULL)
+            if ((t->stack_mem_start = (char *)malloc(stacksize)) == NULL)
             {
                 apth_shield
                 {
@@ -46,12 +51,14 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr)
             }
         }
 
+        // TODO: set guard region, allocating extra space at the end of the stack.
+        // TODO: A guard area consists of virtual memory pages that are protected to prevent read and write access.
 #if APTH_STACKGROWTH < 0
         /* guard is at lowest address (alignment is guaranteed) */
-        t->stackguard = (uint32_t *)(t->stack); /* double cast to avoid alignment warning */
+        t->stackguard = (uint32_t *)(t->stack_mem_start); /* double cast to avoid alignment warning */
 #else
         /* guard is at highest address (be careful with alignment) */
-        t->stackguard = (uint32_t *)(t->stack + (((stacksize / sizeof(long)) - 1) * sizeof(long)));
+        t->stackguard = (uint32_t *)(t->stack_mem_start + (((stacksize / sizeof(long)) - 1) * sizeof(long)));
 #endif
         *(uint32_t *)(t->stackguard) = APTH_MAGIC;
     }
@@ -68,8 +75,8 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
     assert(t != NULL);
     apth_sched_t sched = cur_sched();
 
-    if (t->stack != NULL && !t->stackloan)
-        free(t->stack);
+    if (t->stack_mem_start != NULL && !t->stackloan)
+        free(t->stack_mem_start);
 
     // apth_thread_cleanup(t);
 

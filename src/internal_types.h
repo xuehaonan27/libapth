@@ -106,29 +106,29 @@ typedef struct apth_worker_st *apth_worker_t;
 // meaningless here.
 struct apth_perpthr_scheduler
 {
-    sched_id id;                 // scheduler ID
-    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
-    struct list new_list;        // new threads
-    struct list ready_list;      // threads ready to run [elem: struct apth_st]
-    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
-    struct list suspended_list;  // suspended threads [elem: struct apth_st]
-    struct list terminated_list; // terminated threads [elem: struct apth_st]
-    lll_t new_list_lock;         // synchronize access to new list
-    lll_t ready_list_lock;       // synchronize access to ready list
-    lll_t waiting_list_lock;     // synchronize access to waiting list
-    lll_t suspended_list_lock;   // synchronize access to suspended list
-    lll_t terminated_list_lock;  // synchronize access to terminated list
-    apth_worker_t worker;        // pthread worker carrying this scheduler
-    unsigned int switches;       // context switch times
-    _Atomic unsigned int thrcnt; // APTH threads now running on this scheduler
-    apth_time_t running;         // time the scheduler runs
-    apth_t cur;                  // current APTH
-    _Atomic volatile bool opening;        // scheduler is opening
-    int apth_sigpipe[2];         // internal signal occurrence pipe
-    sigset_t apth_sigpending;    // mask of pending signals
-    sigset_t apth_sigblock;      // mask of signals we block in scheduler
-    sigset_t apth_sigcatch;      // mask of signals we have to catch
-    sigset_t apth_sigraised;     // mask of raised signals
+    sched_id id;                   // scheduler ID
+    apth_cxt_t sched_ctx;          // scheduler context (as trampoline)
+    struct list new_list;          // new threads
+    struct list ready_list;        // threads ready to run [elem: struct apth_st]
+    struct list waiting_list;      // threads waiting for an event [elem: struct apth_st]
+    struct list suspended_list;    // suspended threads [elem: struct apth_st]
+    struct list terminated_list;   // terminated threads [elem: struct apth_st]
+    lll_t new_list_lock;           // synchronize access to new list
+    lll_t ready_list_lock;         // synchronize access to ready list
+    lll_t waiting_list_lock;       // synchronize access to waiting list
+    lll_t suspended_list_lock;     // synchronize access to suspended list
+    lll_t terminated_list_lock;    // synchronize access to terminated list
+    apth_worker_t worker;          // pthread worker carrying this scheduler
+    unsigned int switches;         // context switch times
+    _Atomic unsigned int thrcnt;   // APTH threads now running on this scheduler
+    apth_time_t running;           // time the scheduler runs
+    apth_t cur;                    // current APTH
+    _Atomic volatile bool opening; // scheduler is opening
+    int apth_sigpipe[2];           // internal signal occurrence pipe
+    sigset_t apth_sigpending;      // mask of pending signals
+    sigset_t apth_sigblock;        // mask of signals we block in scheduler
+    sigset_t apth_sigcatch;        // mask of signals we have to catch
+    sigset_t apth_sigraised;       // mask of raised signals
     apth_time_t apth_loadticknext;
     float loadval;
 };
@@ -165,7 +165,7 @@ struct apth_global_scheduler_pool
     struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
 
     /* Immutable fields */
-    int init_worker_count;                    // initially spawned workers
+    int init_worker_count;               // initially spawned workers
     apth_worker_t *worker_ptr_mem_start; // start memory address of pointers to init workers
     // struct apth_worker_st *workers_mem_start; // start memory address of init workers
     // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
@@ -184,13 +184,13 @@ typedef enum
 } apth_state_t;
 
 // Thread control block.
-struct ALIGNED(8) apth_st 
+struct ALIGNED(8) apth_st
 {
     /* standard thread control block ingredients */
-    int prio;                    /* base priority of thread             */
+    int prio;                        /* base priority of thread             */
     char name[APTH_TCB_NAMELEN + 1]; /* name of thread                      */
-    int dispatches;              /* total number of thread dispatches   */
-    apth_state_t state;          /* current state indicator for thread  */
+    int dispatches;                  /* total number of thread dispatches   */
+    apth_state_t state;              /* current state indicator for thread  */
 
     /* timing */
     apth_time_t spawned; /* time point at which thread was spawned      */
@@ -206,7 +206,7 @@ struct ALIGNED(8) apth_st
 
     /* machine context */
     apth_cxt_t ctx;              /* last saved context of thread        */
-    char *stack;                 /* pointer to thread stack             */
+    char *stack_mem_start;       /* pointer to thread stack             */
     size_t stacksize;            /* size of thread stack                */
     uint32_t *stackguard;        /* stack overflow guard                */
     bool stackloan;              /* stack type                          */
@@ -226,16 +226,16 @@ struct ALIGNED(8) apth_st
 #define CANCELSTATE_BITMASK _BIT(0)
     // Bit set if asynchronous cancellation mode is selected
 #define CANCELTYPE_BITMASK _BIT(1)
-//     // Bit set if canceling has been initiated
-// #define CANCELING_BITMASK _BIT(2)
-//     // Bit set if canceled
-// #define CANCELED_BITMASK _BIT(3)
-//     // Bit set if thread is exiting
-// #define EXITING_BITMASK _BIT(4)
-//     // Bit set if thread terminated and TCB is freed
-// #define TERMINATED_BITMASK _BIT(5)
-//     // Bit set if thread is supposed to change XID
-// #define SETXID_BITMASK _BIT(6)
+    //     // Bit set if canceling has been initiated
+    // #define CANCELING_BITMASK _BIT(2)
+    //     // Bit set if canceled
+    // #define CANCELED_BITMASK _BIT(3)
+    //     // Bit set if thread is exiting
+    // #define EXITING_BITMASK _BIT(4)
+    //     // Bit set if thread terminated and TCB is freed
+    // #define TERMINATED_BITMASK _BIT(5)
+    //     // Bit set if thread is supposed to change XID
+    // #define SETXID_BITMASK _BIT(6)
     apth_cleanup_t cleanups; /* stack of thread cleanup handlers       */
 
     /* mutex ring */
@@ -276,7 +276,7 @@ struct ALIGNED(8) apth_st
 #define APTH_NULL (apth_t) NULL
 
 // Default stack size by bytes
-#define APTH_STACK_SIZE_DEFAULT 8192
+#define APTH_STACK_SIZE_DEFAULT 16384
 
 // FIXME: this should be set by build system
 // Indicate stack growth direction is from high to low (< 0) or from low to
@@ -429,11 +429,11 @@ struct apth_attr_st
 
 #define ATTR_FLAG_DETACHSTATE 0x0001
 #define ATTR_FLAG_NOTINHERITSCHED 0x0002
-#define ATTR_FLAG_SCOPEPROCESS 0x0004
+#define ATTR_FLAG_SCOPEPROCESS 0x0004 // TODO: not supported in libapth
 #define ATTR_FLAG_STACKADDR 0x0008
 #define ATTR_FLAG_OLDATTR 0x0010
 #define ATTR_FLAG_SCHED_SET 0x0020
-#define ATTR_FLAG_POLICY_SET 0x0040
+#define ATTR_FLAG_POLICY_SET 0x0040 // TODO: not supported in libapth
 #define ATTR_FLAG_DO_RSEQ 0x0080
 
 // ============================== Filedescriptors ==============================
