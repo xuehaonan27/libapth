@@ -126,6 +126,7 @@ int apth_setname_np(apth_t th, const char *name);
 int apth_yield(void);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
+int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);
 
 int apth_attr_init(apth_attr_t *attr);
 int apth_attr_destroy(apth_attr_t *attr);

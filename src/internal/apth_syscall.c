@@ -202,6 +202,7 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, (unsigned int sec), (sec))
 // APTH variant of POSIX sigwait(3)
 APTH_DEFINE_SYSCALL(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
+    apth_hook_debug(sigwait);
     apth_event_t ev;
     sigset_t pending;
 
