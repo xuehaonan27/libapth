@@ -436,6 +436,13 @@ struct apth_attr_st
 #define ATTR_FLAG_POLICY_SET 0x0040 // TODO: not supported in libapth
 #define ATTR_FLAG_DO_RSEQ 0x0080
 
+
+// ============================== Once ==============================
+/* apth_once definitions.  See apth_once for how these are used.  */
+#define __APTH_ONCE_INPROGRESS	1
+#define __APTH_ONCE_DONE		2
+#define __APTH_ONCE_FORK_GEN_INCR	4
+
 // ============================== Filedescriptors ==============================
 // Filedescriptor blocking modes
 enum

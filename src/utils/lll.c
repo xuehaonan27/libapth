@@ -5,6 +5,7 @@
 #include "internal_types.h"
 #include "debug.h"
 
+// To make compiler happy
 MAYBE_UNUSED static void __dummy_holder__(void *, ...) { /* NOP*/ }
 
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
@@ -22,33 +23,15 @@ APTH_INTERNAL void lll_init(lll_t *lock)
     atomic_init(&lock->inner, LLL_NOT_ACQUIRED);
 }
 
-// #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
 {
-    // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
-    //     fprintf(stderr, "entered lll_lock %p (%lx) from=%s\n", lock, *(uintptr_t *)lock, from);
-    // #endif
     lll_debug("entered lll_lock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
 
-    // #else  // APTH_DEBUG_LLL
-    // APTH_INTERNAL void lll_lock(lll_t *lock)
-    // {
-    // #endif // APTH_DEBUG_LLL
     apth_sched_t sched = cur_sched();
     apth_worker_t self_worker = cur_worker();
     apth_t self = sched->cur;
-    // apth_worker_t self_worker = self->worker;
-
-    // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
-    //     fprintf(stderr, "locking cur=%p, sched=%p, worker=%p\n", self, sched, self_worker);
-    // #else
-    //     (void)from; // Make compiler happy
-    // #endif
 
     lll_debug("locking cur=%p, sched=%p, worker=%p", self, sched, self_worker);
-
-    // fprintf(stderr, "locking cur=%p, sched=%p\n", self, sched);
-
     assert(self != NULL);
 
     _Atomic uintptr_t *inner = &lock->inner;
@@ -83,20 +66,6 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             // Failed to acquire, retry
             continue;
         }
-
-        // apth_worker_t owner_worker;
-        // if (APTH_IS_FAKE_SCHED(oldval)) {
-        //     apth_sched_t owner = APTH_DECODE_FAKE_SCHED(oldval);
-        //     owner_worker = owner->worker;
-        //     // The scheduler is trying to get the contented lock. There's not much we can do now.
-        //     // And we expect the owner scheduler will release the lock soon, so spin here.
-        //     // BTW, `apth_yield` could not help.
-        //     sched_yield();
-        //     continue; // Try again
-        // } else {
-        //     apth_t owner = (apth_t)oldval;
-        //     owner_worker = owner->worker;
-        // }
 
         assert(self != NULL);
         if (APTH_IS_FAKE_SCHED(self))
@@ -249,52 +218,12 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 }
             }
         }
-
-        /*
-        // Lock is held by someone else
-        // Determine if the owner is on the same worker as us
-        apth_worker_t owner_worker = owner->worker;
-        // assert(owner_worker != NULL);
-
-        // Decide whether to yield based on whether we're on the same worker
-        if (APTH_IS_FAKE_SCHED(owner) || owner_worker == self_worker)
-        {
-            // Same worker: we MUST yield to avoid deadlock
-            // The owner needs CPU time to release the lock
-            apth_yield();
-        }
-        else
-        {
-            // Different worker: the owner is running on another CPU
-            // We could spin a bit before yielding for better performance
-            // For now, yield immediately to minimize overhead
-            apth_yield();
-        }
-        */
-        // After yielding, retry acquiring the lock
     }
 }
 
-// #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
 {
-    // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
-    //     fprintf(stderr, "entered lll_unlock %p (%lx) from=%s\n", lock, *(uintptr_t *)lock, from);
-    // #else
-    //     (void)from; // Make compiler happy
-    // #endif
-
     lll_debug("entered lll_unlock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
-
-    // #else  // APTH_DEBUG_LLL
-    // APTH_INTERNAL void lll_unlock(lll_t *lock)
-    // {
-    // #endif // APTH_DEBUG_LLL
-    // if (*(uintptr_t *)lock == 0)
-    // {
-    //     fprintf(stderr, "INSANE\n");
-    //     apth_syscall_raw(exit)(127);
-    // }
 
     assert_msg(*(uintptr_t *)lock != 0, "INSANE");
 
@@ -386,22 +315,4 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             atomic_store_release(inner, LLL_NOT_ACQUIRED);
         }
     }
-
-    /*
-    apth_t owner = (apth_t)oldval;
-
-    // Verify that we own this lock
-    // In production code, this might be a debug-only check
-    // assert_msg(owner == self, "lock=%p, owner=%p, self=%p", lock, owner, self);
-    if (owner != self)
-    {
-        fprintf(stderr, "lock=%p, owner=%p, self=%p from=%s\n", lock, owner, self, from);
-        apth_syscall_raw(exit)(127);
-    }
-
-    // Release the lock by storing 0
-    // Use release semantics to ensure all previous writes are visible
-    // to the next thread that acquires the lock
-    atomic_store_release(inner, LLL_NOT_ACQUIRED);
-    */
 }

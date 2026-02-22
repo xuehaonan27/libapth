@@ -153,6 +153,7 @@ int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);
 void apth_testcancel(void);
+int apth_once(apth_once_t *once_control, void (*init_routine)(void));
 
 int apth_attr_init(apth_attr_t *attr);
 int apth_attr_destroy(apth_attr_t *attr);

@@ -5,25 +5,24 @@
 #include <stdatomic.h>
 #include "utils/archplattoold.h"
 
-/*
-Low-level locks use a combination of atomic operations (to acquire and
-release lock ownership) and cooperation of APTH scheduling system.
-A lock can be in one of the three states:
-0x0: not acquired.
-(ptcb) | 0x1: acquired with no waiters; no other threads are blocked or
-about to block for changes to the lock state.
-(ptcb) | 0x2: acquired with waiters on the same worker. That means the
-waiting apth should yield and scheduler should schedule the lock holder
-as fast as possible. The waiter should never spin in this situation.
-(ptcb) | 0x3: acquired with waiters NOT on the same worker. That means
-the waiting apth could yield or could spin, depending on the type of upper
-level of the lock (is that a spinlock?), the scheduler policy (aware of
-lock semantics and could schedule lock holder as fast as possible?).
-
-`ptcb` refers to the lock holder. Once the holder locks the lock, then it
-should store its pointer to TCB (typed as apth_t) to the lock. Since TCB is
-assured to be at least 4 bytes aligned, we can directly use the pointer value.
-*/
+/**
+ * Low-level locks use a combination of atomic operations (to acquire and
+ * release lock ownership) and cooperation of APTH scheduling system.
+ * A lock can be in one of the three states (`ptcb` refers to `poiner to TCB`,
+ * and `psched` refers to `pointer to scheduler`), stored in `inner` field:
+ * 
+ *  0x0           : not acquired.
+ *  (ptcb)        : this lock is held by an apth, and the `ptcb` points to the TCB.
+ *  (psched) | 0x1: acquired by a scheduler, not an apth.
+ *  (ptcb) | 0x2  : robbed lock. This lock is originally held by an apth, and 
+ *                  this apth is parked while still holding the lock, but its scheduler 
+ *                  need this very lock then. So the scheduler could "rob" the lock from 
+ *                  its apth workload temporarily. The robber scheduler could be got via
+ *                  `(ptcb)->sched`.
+ * s
+ * Since TCB is assured to be at least 4 bytes aligned, we can directly use the 
+ * lower bits of the pointer value.
+ */
 
 typedef struct lowlevellock
 {
