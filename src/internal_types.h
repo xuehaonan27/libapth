@@ -8,6 +8,7 @@
 #include "utils/list.h"
 #include "utils/ring.h"
 #include "utils/lll.h"
+#include "utils/apth_runqueue.h"
 #include <sys/time.h>
 #include <ucontext.h>
 #include <pthread.h>
@@ -108,14 +109,13 @@ struct apth_perpthr_scheduler
 {
     sched_id id;                   // scheduler ID
     apth_cxt_t sched_ctx;          // scheduler context (as trampoline)
-    struct list new_list;          // new threads
-    struct list ready_list;        // threads ready to run [elem: struct apth_st]
-    struct list waiting_list;      // threads waiting for an event [elem: struct apth_st]
-    struct list terminated_list;   // terminated threads [elem: struct apth_st]
-    lll_t new_list_lock;           // synchronize access to new list
-    lll_t ready_list_lock;         // synchronize access to ready list
-    lll_t waiting_list_lock;       // synchronize access to waiting list
-    lll_t terminated_list_lock;    // synchronize access to terminated list
+    
+    // New unified runqueues with built-in locking
+    apth_runqueue_t new_queue;        // new threads (simple list)
+    apth_runqueue_t ready_queue;      // threads ready to run (priority heap)
+    apth_runqueue_t waiting_queue;    // threads waiting for event (simple list)
+    apth_runqueue_t terminated_queue; // terminated threads (simple list)
+    
     apth_worker_t worker;          // pthread worker carrying this scheduler
     unsigned int switches;         // context switch times
     _Atomic unsigned int thrcnt;   // APTH threads now running on this scheduler

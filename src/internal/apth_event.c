@@ -71,7 +71,9 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // For all apths in the waiting queue
         bool any_occurred = false;
 
-        FOR_ELEMENT_IN_LIST(sched->waiting_list, e)
+        struct list *waiting_list = apth_rq_get_list(&sched->waiting_queue);
+        assert(waiting_list != NULL);  // waiting_queue should be simple list
+        FOR_ELEMENT_IN_LIST_REF(waiting_list, e)
         {
             apth_t th = apth_t_list_entry(e);
             apth_debug("checking in waiting list th=%p", th);
@@ -219,7 +221,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                         break;
                     case APTH_EVENT_TYPE_TID:
                         // Thread termination
-                        if ((event->ev_args.TID.tid == NULL && !list_empty(&sched->terminated_list)) ||
+                        if ((event->ev_args.TID.tid == NULL && !apth_rq_empty(&sched->terminated_queue)) ||
                             (event->ev_args.TID.tid != NULL &&
                              apth_state_matches_event_goal(event->ev_args.TID.tid->state, event->ev_goal)))
                             this_ev_occurred = true;
@@ -426,7 +428,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         // For all apths in the waiting queue
         apth_t th_last = APTH_NULL;
-        FOR_ELEMENT_IN_LIST(sched->waiting_list, wth_e)
+        FOR_ELEMENT_IN_LIST_REF(waiting_list, wth_e)
         {
             // Move last apth with events occurred to ready queue.
             // Insert it with a slightly increased queue priority.

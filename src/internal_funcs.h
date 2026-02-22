@@ -39,7 +39,6 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);
 #define pop_apth_from(name) pop_apth_from_##name
 #define head_apth_of(name) head_apth_of_##name
 #define apth_is_in(name) apth_is_in_##name
-#define list_of(name) name##_list
 #define DECLARE_SCHED_LIST_OP(name)                                       \
     APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched); \
     APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched);         \
@@ -52,7 +51,6 @@ DECLARE_SCHED_LIST_OP(terminated)
 APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
 APTH_INTERNAL void remove_apth(apth_t th);
 #undef DECLARE_SCHED_LIST_OP
-#undef list_of
 #undef apth_is_in
 #undef head_apth_of
 #undef pop_apth_from

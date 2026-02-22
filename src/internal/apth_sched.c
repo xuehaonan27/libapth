@@ -45,15 +45,30 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     if (sched->sched_ctx == NULL)
         return apth_error(false, ENOMEM);
 
-    list_init(&sched->new_list);
-    list_init(&sched->ready_list);
-    list_init(&sched->waiting_list);
-    list_init(&sched->terminated_list);
+    // Initialize runqueues with appropriate types
+    if (apth_rq_init_simple_list(&sched->new_queue) != 0)
+        return apth_error(false, ENOMEM);
 
-    lll_init(&sched->new_list_lock);
-    lll_init(&sched->ready_list_lock);
-    lll_init(&sched->waiting_list_lock);
-    lll_init(&sched->terminated_list_lock);
+    if (apth_rq_init_priority_heap(&sched->ready_queue, 0) != 0)
+    {
+        apth_rq_destroy(&sched->new_queue);
+        return apth_error(false, ENOMEM);
+    }
+
+    if (apth_rq_init_simple_list(&sched->waiting_queue) != 0)
+    {
+        apth_rq_destroy(&sched->new_queue);
+        apth_rq_destroy(&sched->ready_queue);
+        return apth_error(false, ENOMEM);
+    }
+
+    if (apth_rq_init_simple_list(&sched->terminated_queue) != 0)
+    {
+        apth_rq_destroy(&sched->new_queue);
+        apth_rq_destroy(&sched->ready_queue);
+        apth_rq_destroy(&sched->waiting_queue);
+        return apth_error(false, ENOMEM);
+    }
 
     sched->worker = worker;
     sched->switches = 0;
@@ -125,87 +140,32 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
 #define pop_apth_from(name) pop_apth_from_##name
 #define head_apth_of(name) head_apth_of_##name
 #define apth_is_in(name) apth_is_in_##name
-#define list_of(name) name##_list
-#define list_lock_of(name) name##_list_lock
-// TODO: acquire list lock, since the caller pthread may not be ourself
-// TODO: release list lock
-#define DEFINE_SCHED_LIST_OP(name)                                                \
-    APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched)          \
-    {                                                                             \
-        assert(APTH_IS_VALID(th));                                                \
-        assert(th->belongs_to_list == NULL);                                      \
-        assert(th->belongs_to_list_lock == NULL);                                 \
-        lll_lock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));    \
-        list_push_back(&sched->list_of(name), &th->elem);                         \
-        lll_unlock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));  \
-        th->worker = sched->worker;                                               \
-        th->belongs_to_list = &sched->list_of(name);                              \
-        th->belongs_to_list_lock = &sched->list_lock_of(name);                    \
-    }                                                                             \
-    APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)                  \
-    {                                                                             \
-        apth_t th = APTH_NULL;                                                    \
-        struct list_elem *e;                                                      \
-        lll_lock(&sched->list_lock_of(name), "pop_apth_from_" stringify(name));   \
-        if (!list_empty(&sched->list_of(name)))                                   \
-        {                                                                         \
-            e = list_pop_front(&sched->list_of(name));                            \
-            th = apth_t_list_entry(e);                                            \
-            assert(th->belongs_to_list == &sched->list_of(name));                 \
-            assert(th->belongs_to_list_lock == &sched->list_lock_of(name));       \
-            th->belongs_to_list = NULL;                                           \
-            th->belongs_to_list_lock = NULL;                                      \
-        }                                                                         \
-        lll_unlock(&sched->list_lock_of(name), "pop_apth_from_" stringify(name)); \
-        return th;                                                                \
-    }                                                                             \
-    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched)                   \
-    {                                                                             \
-        apth_t th = NULL;                                                         \
-        struct list_elem *e;                                                      \
-        lll_lock(&sched->list_lock_of(name), "head_apth_of_" stringify(name));    \
-        if (!list_empty(&sched->list_of(name)))                                   \
-        {                                                                         \
-            e = list_front(&sched->list_of(name));                                \
-            th = apth_t_list_entry(e);                                            \
-        }                                                                         \
-        lll_unlock(&sched->list_lock_of(name), "head_apth_of_" stringify(name));  \
-        return th;                                                                \
-    }                                                                             \
-    APTH_INTERNAL bool apth_is_in(name)(apth_t t, apth_sched_t sched)             \
-    {                                                                             \
-        bool found = false;                                                       \
-        lll_lock(&sched->list_lock_of(name), "apth_is_in_" stringify(name));      \
-        FOR_ELEMENT_IN_LIST_REF(&sched->list_of(name), e)                         \
-        {                                                                         \
-            apth_t th = apth_t_list_entry(e);                                     \
-            if (t == th)                                                          \
-                found = true;                                                     \
-        }                                                                         \
-        lll_unlock(&sched->list_lock_of(name), "apth_is_in_" stringify(name));    \
-        return found;                                                             \
+#define queue_of(name) name##_queue
+#define DEFINE_SCHED_LIST_OP(name)                                               \
+    APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched)         \
+    {                                                                            \
+        assert(APTH_IS_VALID(th));                                               \
+        th->worker = sched->worker;                                              \
+        apth_rq_enqueue_locked(&sched->queue_of(name), th);                      \
+    }                                                                            \
+    APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)                 \
+    {                                                                            \
+        return apth_rq_dequeue_locked(&sched->queue_of(name));                   \
+    }                                                                            \
+    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched)                  \
+    {                                                                            \
+        apth_rq_lock(&sched->queue_of(name), "head_apth_of_" stringify(name));   \
+        apth_t th = apth_rq_peek(&sched->queue_of(name));                        \
+        apth_rq_unlock(&sched->queue_of(name), "head_apth_of_" stringify(name)); \
+        return th;                                                               \
+    }                                                                            \
+    APTH_INTERNAL bool apth_is_in(name)(apth_t t, apth_sched_t sched)            \
+    {                                                                            \
+        apth_rq_lock(&sched->queue_of(name), "apth_is_in_" stringify(name));     \
+        bool found = apth_rq_contains(&sched->queue_of(name), t);                \
+        apth_rq_unlock(&sched->queue_of(name), "apth_is_in_" stringify(name));   \
+        return found;                                                            \
     }
-
-// Wait `th` to be in a list.
-APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th)
-{
-    while (atomic_load_acquire(&th->belongs_to_list) == NULL)
-        ;
-    while (atomic_load_acquire(&th->belongs_to_list_lock) == NULL)
-        ;
-}
-
-APTH_INTERNAL void remove_apth(apth_t th)
-{
-    assert(APTH_IS_VALID(th));
-    assert(th->belongs_to_list != NULL);
-    assert(th->belongs_to_list_lock != NULL);
-    lll_lock(th->belongs_to_list_lock, "remove_apth");
-    list_remove(&th->elem);
-    lll_unlock(th->belongs_to_list_lock, "remove_apth");
-    th->belongs_to_list = NULL;
-    th->belongs_to_list_lock = NULL;
-}
 
 DEFINE_SCHED_LIST_OP(new)
 DEFINE_SCHED_LIST_OP(ready)
@@ -213,12 +173,32 @@ DEFINE_SCHED_LIST_OP(waiting)
 DEFINE_SCHED_LIST_OP(terminated)
 
 #undef DEFINE_SCHED_LIST_OP
-#undef list_lock_of
-#undef list_of
+#undef queue_of
 #undef apth_is_in
 #undef head_apth_of
 #undef pop_apth_from
 #undef push_apth_to
+
+// Wait for thread to be placed in a queue
+APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th)
+{
+    while (atomic_load_acquire(&th->belongs_to_list) == NULL)
+        sched_yield();
+    while (atomic_load_acquire(&th->belongs_to_list_lock) == NULL)
+        sched_yield();
+}
+
+// Remove thread from its current queue
+APTH_INTERNAL void remove_apth(apth_t th)
+{
+    assert(APTH_IS_VALID(th));
+    lll_t *lock = atomic_load_acquire(&th->belongs_to_list_lock);
+    if (lock != NULL)
+    {
+        apth_runqueue_t *rq = (apth_runqueue_t *)((char *)lock - offsetof(apth_runqueue_t, lock));
+        apth_rq_remove_locked(rq, th);
+    }
+}
 
 APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched)
 {
@@ -234,7 +214,7 @@ APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
     if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
     {
         apth_time_t ttmp;
-        int numready = list_size(&sched->ready_list);
+        int numready = apth_rq_size(&sched->ready_queue);
         apth_time_set(&ttmp, now);
         do
         {
@@ -252,29 +232,33 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 {
     apth_sched_t sched = cur_sched();
 
-// Drop all apths
-// TODO: do not know whether should apth_thread_cleanup(t);
-#define CLEAR_T_LIST(name)                           \
-    FOR_ELEMENT_IN_LIST(sched->name##_list, e##name) \
-    {                                                \
-        apth_t t = apth_t_list_entry(e##name);       \
-        t->state = APTH_STATE_TERMINATED;            \
-        if (t->join_arg == NULL)                     \
-        {                                            \
-            t->join_arg = APTH_CANCELED;             \
-        }                                            \
-        apth_thread_cleanup(t);                      \
-        apth_tcb_free(t);                            \
-    }                                                \
-    list_init(&sched->name##_list);
+    // Drop all apths from all queues
+    apth_t t;
+#define queue_of(name) name##_queue
+#define CLEAR_APTH_QUEUE(name) \
+while ((t = apth_rq_dequeue_locked(&sched->queue_of(name))) != NULL)\
+    {\
+        t->state = APTH_STATE_TERMINATED;\
+        if (t->join_arg == NULL)\
+        {\
+            t->join_arg = APTH_CANCELED;\
+        }\
+        apth_thread_cleanup(t);\
+        apth_tcb_free(t);\
+    }
+CLEAR_APTH_QUEUE(new)
+CLEAR_APTH_QUEUE(ready)
+CLEAR_APTH_QUEUE(waiting)
+CLEAR_APTH_QUEUE(terminated)
 
-    // Clear the apth queues
-    CLEAR_T_LIST(new);
-    CLEAR_T_LIST(ready);
-    CLEAR_T_LIST(waiting);
-    CLEAR_T_LIST(terminated);
-#undef CLEAR_T_LIST
-    return;
+#undef CLEAR_APTH_QUEUE
+#undef queue_of
+
+    // Destroy the runqueues
+    apth_rq_destroy(&sched->new_queue);
+    apth_rq_destroy(&sched->ready_queue);
+    apth_rq_destroy(&sched->waiting_queue);
+    apth_rq_destroy(&sched->terminated_queue);
 
     // TODO: report scheduler statistics if in debugging mode
 
@@ -285,11 +269,11 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 
     // Remove the internal signal pipe
     // TODO: should `close` be wrapped by `apth_syscall_raw`?
-    close(sched->apth_sigpipe[0]);
-    close(sched->apth_sigpipe[1]);
+    apth_syscall_raw(close)(sched->apth_sigpipe[0]);
+    apth_syscall_raw(close)(sched->apth_sigpipe[1]);
 
     // Cancel TLS
-    set_cur_apth(APTH_NULL);
+    // set_cur_apth(APTH_NULL);
     set_cur_sched(NULL);
     set_cur_worker(NULL);
 
@@ -298,7 +282,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // Free sched
     free((void *)sched->sched_ctx);
     free((void *)sched);
-    return;
 }
 
 APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th)
@@ -646,9 +629,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Manage events in the waiting queue
 
-        // TODO: checking list empty should be protected if work stealing is implemented
+        // TODO: checking queue empty should be protected if work stealing is implemented
         // #ifdef _DEBUG_EVENT_MANAGER
-        if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
+        if (apth_rq_empty(&sched->ready_queue) && apth_rq_empty(&sched->new_queue))
         {
             apth_debug("(%d) no NEW or READY threads, have to wait for new work", sched->id);
             apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);
