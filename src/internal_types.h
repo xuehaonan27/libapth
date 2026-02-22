@@ -111,12 +111,10 @@ struct apth_perpthr_scheduler
     struct list new_list;          // new threads
     struct list ready_list;        // threads ready to run [elem: struct apth_st]
     struct list waiting_list;      // threads waiting for an event [elem: struct apth_st]
-    struct list suspended_list;    // suspended threads [elem: struct apth_st]
     struct list terminated_list;   // terminated threads [elem: struct apth_st]
     lll_t new_list_lock;           // synchronize access to new list
     lll_t ready_list_lock;         // synchronize access to ready list
     lll_t waiting_list_lock;       // synchronize access to waiting list
-    lll_t suspended_list_lock;     // synchronize access to suspended list
     lll_t terminated_list_lock;    // synchronize access to terminated list
     apth_worker_t worker;          // pthread worker carrying this scheduler
     unsigned int switches;         // context switch times
@@ -176,11 +174,11 @@ struct apth_global_scheduler_pool
 // Thread state
 typedef enum
 {
-    APTH_STATE_SCHEDULER = 0, /* the special scheduler thread only       */
-    APTH_STATE_NEW,           /* spawned, but still not dispatched       */
-    APTH_STATE_READY,         /* ready, waiting to be dispatched         */
-    APTH_STATE_WAITING,       /* suspended, waiting until event occurred */
-    APTH_STATE_TERMINATED,    /* terminated, waiting to be joined        */
+    APTH_STATE_SCHEDULER = 0, /* the special scheduler thread only */
+    APTH_STATE_NEW,           /* spawned, but still not dispatched */
+    APTH_STATE_READY,         /* ready, waiting to be dispatched   */
+    APTH_STATE_WAITING,       /* waiting until event occurred      */
+    APTH_STATE_TERMINATED,    /* terminated, waiting to be joined  */
 } apth_state_t;
 
 // Thread control block.

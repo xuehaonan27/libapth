@@ -48,7 +48,6 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);
 DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
-DECLARE_SCHED_LIST_OP(suspended)
 DECLARE_SCHED_LIST_OP(terminated)
 APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
 APTH_INTERNAL void remove_apth(apth_t th);

@@ -48,13 +48,11 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     list_init(&sched->new_list);
     list_init(&sched->ready_list);
     list_init(&sched->waiting_list);
-    list_init(&sched->suspended_list);
     list_init(&sched->terminated_list);
 
     lll_init(&sched->new_list_lock);
     lll_init(&sched->ready_list_lock);
     lll_init(&sched->waiting_list_lock);
-    lll_init(&sched->suspended_list_lock);
     lll_init(&sched->terminated_list_lock);
 
     sched->worker = worker;
@@ -212,7 +210,6 @@ APTH_INTERNAL void remove_apth(apth_t th)
 DEFINE_SCHED_LIST_OP(new)
 DEFINE_SCHED_LIST_OP(ready)
 DEFINE_SCHED_LIST_OP(waiting)
-DEFINE_SCHED_LIST_OP(suspended)
 DEFINE_SCHED_LIST_OP(terminated)
 
 #undef DEFINE_SCHED_LIST_OP
@@ -275,7 +272,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     CLEAR_T_LIST(new);
     CLEAR_T_LIST(ready);
     CLEAR_T_LIST(waiting);
-    CLEAR_T_LIST(suspended);
     CLEAR_T_LIST(terminated);
 #undef CLEAR_T_LIST
     return;
