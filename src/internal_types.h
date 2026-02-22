@@ -314,6 +314,10 @@ APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state
 APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
 APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 APTH_INTERNAL void set_sched_of(apth_t th, apth_sched_t sched);
+APTH_INTERNAL struct list *belonging_list_of(apth_t th);
+APTH_INTERNAL void set_belonging_list_of(apth_t th, struct list *l);
+APTH_INTERNAL lll_t *belonging_list_lock_of(apth_t th);
+APTH_INTERNAL void set_belonging_list_lock_of(apth_t th, lll_t *l);
 
 #define APTH_NULL (apth_t) NULL
 

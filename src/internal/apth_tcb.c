@@ -140,9 +140,20 @@ APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
     // (except pushing to waked list, which should be unprotected and private to scheudler)
     // (NOTE: for same reason, work stealing should not touch threads in waked list)
     // TODO: check that `th` has its queue
+    assert_msg(belonging_list_of(th) != NULL, "`th` should have belonging list");
     // TODO: check that the queue's lock is held
+    uintptr_t blpkval = lll_peek_val(belonging_list_lock_of(th));
+    assert_msg(blpkval != LLL_NOT_ACQUIRED, "`th` belonging list lock should be acquired");
+    (void)blpkval; // in case of non-debug build, make compiler happy
     // TODO: check that the holder is the caller itself
-    // And for future apth queue:
+    assert_msg(
+        /* The former situation is for normal case and main apth creation */
+        (APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == (uintptr_t)sched_of(th)) ||
+            /* The later situation is for `apth_create` */
+            (!APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == (uintptr_t)cur_apth()),
+        "`th` belonging list lock should be acquired by caller");
+
+    // And for future apth queue implementation:
     // TODO: queue should have a thread-safe method doing 1,2,3,4 atomically.
 
     // Ensure check
@@ -179,7 +190,29 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th)
     return atomic_load_acquire(&th->belongs_to_sched);
 }
 
+// TODO: should remove this
 APTH_INTERNAL void set_sched_of(apth_t th, apth_sched_t sched)
 {
     atomic_store_release(&th->belongs_to_sched, sched);
+}
+
+APTH_INTERNAL struct list *belonging_list_of(apth_t th)
+{
+    return atomic_load_acquire(&th->belongs_to_list);
+}
+
+APTH_INTERNAL void set_belonging_list_of(apth_t th, struct list *l)
+{
+    atomic_store_release(&th->belongs_to_list, l);
+}
+
+APTH_INTERNAL lll_t *belonging_list_lock_of(apth_t th)
+{
+    return atomic_load_acquire(&th->belongs_to_list_lock);
+}
+
+// Should remove this
+APTH_INTERNAL void set_belonging_list_lock_of(apth_t th, lll_t *l)
+{
+    atomic_store_release(&th->belongs_to_list_lock, l);
 }

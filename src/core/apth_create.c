@@ -152,8 +152,10 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Scheduler list handling
     // t->worker = worker;
     set_sched_of(t, sched);
-    t->belongs_to_list = NULL;
-    t->belongs_to_list_lock = NULL;
+    // t->belongs_to_list = NULL;
+    // t->belongs_to_list_lock = NULL;
+    set_belonging_list_of(t, NULL);
+    set_belonging_list_lock_of(t, NULL);
 
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);

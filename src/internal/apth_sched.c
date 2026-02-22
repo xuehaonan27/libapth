@@ -202,15 +202,15 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
     APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched)          \
     {                                                                             \
         assert(APTH_IS_VALID(th));                                                \
-        assert(th->belongs_to_list == NULL);                                      \
-        assert(th->belongs_to_list_lock == NULL);                                 \
+        assert(belonging_list_of(th) == NULL);                                    \
+        assert(belonging_list_lock_of(th) == NULL);                               \
+        set_belonging_list_of(th, &sched->list_of(name));                         \
+        set_belonging_list_lock_of(th, &sched->list_lock_of(name));               \
         lll_lock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));    \
         list_push_back(&sched->list_of(name), &th->elem);                         \
         commit_state_of(th, APTH_STATE_NAME(name));                               \
         lll_unlock(&sched->list_lock_of(name), "push_apth_to_" stringify(name));  \
         set_sched_of(th, sched);                                                  \
-        th->belongs_to_list = &sched->list_of(name);                              \
-        th->belongs_to_list_lock = &sched->list_lock_of(name);                    \
     }                                                                             \
     APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched)                  \
     {                                                                             \
@@ -221,10 +221,10 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
         {                                                                         \
             e = list_pop_front(&sched->list_of(name));                            \
             th = apth_t_list_entry(e);                                            \
-            assert(th->belongs_to_list == &sched->list_of(name));                 \
-            assert(th->belongs_to_list_lock == &sched->list_lock_of(name));       \
-            th->belongs_to_list = NULL;                                           \
-            th->belongs_to_list_lock = NULL;                                      \
+            assert(belonging_list_of(th) == &sched->list_of(name));               \
+            assert(belonging_list_lock_of(th) == &sched->list_lock_of(name));     \
+            set_belonging_list_of(th, NULL);                                      \
+            set_belonging_list_lock_of(th, NULL);                                 \
         }                                                                         \
         lll_unlock(&sched->list_lock_of(name), "pop_apth_from_" stringify(name)); \
         return th;                                                                \
@@ -259,13 +259,13 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
 APTH_INTERNAL void remove_apth(apth_t th)
 {
     assert(APTH_IS_VALID(th));
-    assert(th->belongs_to_list != NULL);
-    assert(th->belongs_to_list_lock != NULL);
+    assert(belonging_list_of(th) != NULL);
+    assert(belonging_list_lock_of(th) != NULL);
     lll_lock(th->belongs_to_list_lock, "remove_apth");
     list_remove(&th->elem);
     lll_unlock(th->belongs_to_list_lock, "remove_apth");
-    th->belongs_to_list = NULL;
-    th->belongs_to_list_lock = NULL;
+    set_belonging_list_of(th, NULL);
+    set_belonging_list_lock_of(th, NULL);
 }
 
 DEFINE_SCHED_LIST_OP(new)

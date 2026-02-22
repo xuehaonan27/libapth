@@ -10,17 +10,17 @@
  * release lock ownership) and cooperation of APTH scheduling system.
  * A lock can be in one of the three states (`ptcb` refers to `poiner to TCB`,
  * and `psched` refers to `pointer to scheduler`), stored in `inner` field:
- * 
+ *
  *  0x0           : not acquired.
  *  (ptcb)        : this lock is held by an apth, and the `ptcb` points to the TCB.
  *  (psched) | 0x1: acquired by a scheduler, not an apth.
- *  (ptcb) | 0x2  : robbed lock. This lock is originally held by an apth, and 
- *                  this apth is parked while still holding the lock, but its scheduler 
- *                  need this very lock then. So the scheduler could "rob" the lock from 
+ *  (ptcb) | 0x2  : robbed lock. This lock is originally held by an apth, and
+ *                  this apth is parked while still holding the lock, but its scheduler
+ *                  need this very lock then. So the scheduler could "rob" the lock from
  *                  its apth workload temporarily. The robber scheduler could be got via
  *                  `(ptcb)->sched`.
  * s
- * Since TCB is assured to be at least 4 bytes aligned, we can directly use the 
+ * Since TCB is assured to be at least 4 bytes aligned, we can directly use the
  * lower bits of the pointer value.
  */
 
@@ -45,6 +45,7 @@ typedef struct lowlevellock
 #define APTH_LLL_IS_ROBBED(val) (((uintptr_t)(val) & APTH_LLL_ROBBED_MARK_IN_PLACE) != 0)
 
 APTH_INTERNAL void lll_init(lll_t *lock);
+APTH_INTERNAL uintptr_t lll_peek_val(lll_t *lock);
 // #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 APTH_INTERNAL void lll_lock(lll_t *lock, const char *from);
 APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from);
