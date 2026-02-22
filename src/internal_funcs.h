@@ -256,44 +256,8 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
 APTH_INTERNAL int apth_fdmode(int fd, int newmode);
 
 
-/* Returns 0 if ST is a valid stack size for a thread stack and EINVAL
-   otherwise.  */
-static inline int check_stacksize_attr(size_t st)
-{
-    if (st >= APTH_STACK_SIZE_DEFAULT)
-        return 0;
-
-    return EINVAL;
-}
-
-
-/* Returns 0 if POL is a valid scheduling policy.  *
-static inline int
-check_sched_policy_attr (int pol)
-{
-//   if (pol == SCHED_OTHER || pol == SCHED_FIFO || pol == SCHED_RR)
-//     return 0;
-
-//   return EINVAL;
-
-return 0;
-}
-
-/* Returns 0 if PR is within the accepted range of priority values for
-   the scheduling policy POL or EINVAL otherwise.  */
-static inline int
-check_sched_priority_attr (int pr, int pol)
-{
-  int min = __sched_get_priority_min (pol);
-  int max = __sched_get_priority_max (pol);
-
-  if (min >= 0 && max >= 0 && pr >= min && pr <= max)
-    return 0;
-
-  return EINVAL;
-}
-
-
+// Returns 0 if ST is a valid stack size for a thread stack and EINVAL otherwise.
+APTH_INTERNAL int check_stacksize_attr(size_t st);
 
 int apth_apth_exists(apth_t t);
 

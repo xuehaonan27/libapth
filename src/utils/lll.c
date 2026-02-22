@@ -51,7 +51,9 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     {
         // fprintf(stderr, "%d CONTENTION\n", sched->id);
         lll_debug("%d CONTENTION", sched->id);
-        uintptr_t oldval = atomic_load_acquire(inner);
+        // FIX: Use seq_cst for loading lock value in contended path to ensure
+        // proper ordering with ROB operations across different threads
+        uintptr_t oldval = atomic_load_explicit(inner, __ATOMIC_SEQ_CST);
 
         if (oldval == LLL_NOT_ACQUIRED)
         {
@@ -125,9 +127,16 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                     // possible to happen, but there's no way we could continue, since the apth
                     // running on ourself might requesting our (the scheduler's) help.
                     // NOTE: for now, just ROB the lock held by the apth, and continue.
-                    uintptr_t newval = (uintptr_t)owner | APTH_LLL_ROBBED_MARK_IN_PLACE;
-                    atomic_store_release(inner, newval);
-                    return;
+                    // FIX: Use CAS to ensure atomicity - the lock state might have changed
+                    // between our load and this store operation.
+                    uintptr_t expected = (uintptr_t)owner;
+                    uintptr_t newval = expected | APTH_LLL_ROBBED_MARK_IN_PLACE;
+                    if (atomic_compare_exchange_strong(inner, &expected, newval))
+                    {
+                        return;
+                    }
+                    // CAS failed, the lock state changed, retry
+                    continue;
                 }
                 else
                 {
@@ -257,7 +266,14 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
                 apth_syscall_raw(exit)(127);
             }
             assert(decoded_sched == owner);
-            atomic_store_release(inner, LLL_NOT_ACQUIRED);
+            // FIX: Use CAS to ensure atomicity
+            uintptr_t expected = oldval;
+            if (!atomic_compare_exchange_strong(inner, &expected, LLL_NOT_ACQUIRED))
+            {
+                // Lock state changed unexpectedly
+                PANIC("Scheduler unlock: lock state changed unexpectedly");
+                apth_syscall_raw(exit)(127);
+            }
         }
         else if (APTH_LLL_IS_ROBBED(oldval))
         {
@@ -268,7 +284,14 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
 
             assert((apth_sched_t)self == robber);
             // Give the lock back to the apth that should have hold it
-            atomic_store_release(inner, (uintptr_t)owner);
+            // FIX: Use CAS to ensure atomicity
+            uintptr_t expected = oldval;
+            if (!atomic_compare_exchange_strong(inner, &expected, (uintptr_t)owner))
+            {
+                // Lock state changed unexpectedly
+                PANIC("Scheduler unlock (robbed): lock state changed unexpectedly");
+                apth_syscall_raw(exit)(127);
+            }
         }
         else
         {
@@ -312,7 +335,14 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             apth_t owner = (apth_t)oldval;
             assert(APTH_IS_VALID(owner));
             assert(self == owner);
-            atomic_store_release(inner, LLL_NOT_ACQUIRED);
+            // FIX: Use CAS to ensure atomicity
+            uintptr_t expected = oldval;
+            if (!atomic_compare_exchange_strong(inner, &expected, LLL_NOT_ACQUIRED))
+            {
+                // Lock state changed unexpectedly
+                PANIC("Apth unlock: lock state changed unexpectedly");
+                apth_syscall_raw(exit)(127);
+            }
         }
     }
 }

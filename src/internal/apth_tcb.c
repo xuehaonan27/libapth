@@ -6,6 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+APTH_INTERNAL int check_stacksize_attr(size_t st)
+{
+    if (st >= APTH_STACK_SIZE_DEFAULT)
+        return 0;
+
+    return EINVAL;
+}
+
 // The most lower 2 bits should be 0, meaning TCB should be at least 4 bytes aligned.
 #define IS_VALID_APTH_T(t) (((uintptr_t)(t) & 0x3) == 0)
 

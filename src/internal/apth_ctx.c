@@ -87,7 +87,7 @@ APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
     // note: according to manual of ucontext, it's not for the program to consider
     // the growth direction of the stack.
     ctx->uc.uc_stack.ss_sp = stack_mem_start;
-    apth_debug("STACK address = %p", stack_addr_lo);
+    apth_debug("STACK memory start at = %p", stack_mem_start);
     ctx->uc.uc_stack.ss_size = stacksize;
     ctx->uc.uc_stack.ss_flags = 0;
 
