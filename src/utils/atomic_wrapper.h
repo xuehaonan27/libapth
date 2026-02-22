@@ -14,6 +14,7 @@
 
 #define atomic_load_relaxed(mem) atomic_load_explicit((mem), __ATOMIC_RELAXED)
 #define atomic_load_acquire(mem) atomic_load_explicit((mem), __ATOMIC_ACQUIRE)
+#define atomic_load_seqcst(mem) atomic_load_explicit((mem), __ATOMIC_SEQ_CST)
 
 #define atomic_store_relaxed(mem, val) \
     atomic_store_explicit((mem), (val), __ATOMIC_RELAXED)

@@ -49,7 +49,8 @@ DECLARE_SCHED_LIST_OP(new)
 DECLARE_SCHED_LIST_OP(ready)
 DECLARE_SCHED_LIST_OP(waiting)
 DECLARE_SCHED_LIST_OP(terminated)
-APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
+DECLARE_SCHED_LIST_OP(waked)
+// APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
 APTH_INTERNAL void remove_apth(apth_t th);
 #undef DECLARE_SCHED_LIST_OP
 #undef list_of

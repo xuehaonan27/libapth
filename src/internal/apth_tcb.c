@@ -2,6 +2,7 @@
 #include "internal_funcs.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
+#include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
 #include <stdlib.h>
 #include <string.h>
@@ -99,4 +100,86 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
     dec_thrcnt(sched);
 
     return;
+}
+
+APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state)
+{
+    assert(state_as_argument_is_valid(desired_state));
+
+    // Previous state should be committed before submitting a new state to `th`
+    assert_msg(
+        state_is_committed(atomic_load_acquire(&th->state_holder)),
+        "previous state should be committed");
+
+    // Submit current state
+    atomic_store_release(&th->state_holder, make_state_uncommitted(desired_state));
+}
+
+APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
+{
+    // th: the apth whose state is to be committed
+    // check: check that the state of `th` that's to be committed should
+    // match `check`.
+    assert(state_as_argument_is_valid(check));
+
+    // Ensure that the caller could only be a scheduler, or is a NEW (apth_create)
+
+    if (check != APTH_STATE_NEW)
+    {
+        assert_msg(APTH_IS_FAKE_SCHED(cur_apth()), "caller of commit_state_of should be a scheduler");
+        assert_msg(APTH_DECODE_FAKE_SCHED(cur_apth()) == cur_sched(), "sanity");
+        assert_msg(sched_of(th) == APTH_DECODE_FAKE_SCHED(cur_apth()), "sanity");
+    }
+
+    // Ensure that `th` has been inserted to a apth queue before commit its state.
+    // And the queue's lock should still be held, which means commit code should:
+    // 1. Acquire the queue lock
+    // 2. Insert apth to queue
+    // 3. Commit state of `th`
+    // 4. Release the queue lock
+    // (except pushing to waked list, which should be unprotected and private to scheudler)
+    // (NOTE: for same reason, work stealing should not touch threads in waked list)
+    // TODO: check that `th` has its queue
+    // TODO: check that the queue's lock is held
+    // TODO: check that the holder is the caller itself
+    // And for future apth queue:
+    // TODO: queue should have a thread-safe method doing 1,2,3,4 atomically.
+
+    // Ensure check
+    apth_state_t current_uncommitted_state = atomic_load_acquire(&th->state_holder);
+    apth_state_t committed_state = make_state_committed(current_uncommitted_state);
+    assert_msg(state_is_uncommitted(current_uncommitted_state), "state should be uncommitted");
+    assert_msg(committed_state == check, "state fail to check");
+
+    // Modify the state by CAS. Since the modifier should only be the
+    // scheduler that `th` currently belongs to, the CAS should always
+    // succeed.
+
+    // The expected value of current state should be uncommitted
+    if (!atomic_compare_exchange_strong(
+            &th->state_holder,
+            &current_uncommitted_state,
+            committed_state))
+    {
+        // Thread state changed unexpectedly, meaning someone else
+        // changed it. This is a programming fault.
+        PANIC("Apth %p state changed unexpectedly");
+        apth_syscall_raw(exit)(127);
+    }
+}
+
+// `raw` means that the returned state might be uncommitted (meaning with invalid lower 1 bit set)
+APTH_INTERNAL apth_state_t raw_state_of(apth_t th)
+{
+    return atomic_load_acquire(&th->state_holder);
+}
+
+APTH_INTERNAL apth_sched_t sched_of(apth_t th)
+{
+    return atomic_load_acquire(&th->belongs_to_sched);
+}
+
+APTH_INTERNAL void set_sched_of(apth_t th, apth_sched_t sched)
+{
+    atomic_store_release(&th->belongs_to_sched, sched);
 }

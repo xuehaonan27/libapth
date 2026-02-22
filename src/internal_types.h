@@ -106,16 +106,20 @@ typedef struct apth_worker_st *apth_worker_t;
 // meaningless here.
 struct apth_perpthr_scheduler
 {
-    sched_id id;                   // scheduler ID
-    apth_cxt_t sched_ctx;          // scheduler context (as trampoline)
-    struct list new_list;          // new threads
-    struct list ready_list;        // threads ready to run [elem: struct apth_st]
-    struct list waiting_list;      // threads waiting for an event [elem: struct apth_st]
-    struct list terminated_list;   // terminated threads [elem: struct apth_st]
-    lll_t new_list_lock;           // synchronize access to new list
-    lll_t ready_list_lock;         // synchronize access to ready list
-    lll_t waiting_list_lock;       // synchronize access to waiting list
-    lll_t terminated_list_lock;    // synchronize access to terminated list
+    sched_id id;                 // scheduler ID
+    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
+    struct list new_list;        // new threads
+    struct list ready_list;      // threads ready to run [elem: struct apth_st]
+    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
+    struct list terminated_list; // terminated threads [elem: struct apth_st]
+    struct list waked_list;
+    // TODO: actually, only `ready_list_lock` is really needed. Since work stealing
+    // will only occurs at ready list.
+    lll_t new_list_lock;        // synchronize access to new list
+    lll_t ready_list_lock;      // synchronize access to ready list
+    lll_t waiting_list_lock;    // synchronize access to waiting list
+    lll_t terminated_list_lock; // synchronize access to terminated list
+    lll_t waked_list_lock;
     apth_worker_t worker;          // pthread worker carrying this scheduler
     unsigned int switches;         // context switch times
     _Atomic unsigned int thrcnt;   // APTH threads now running on this scheduler
@@ -174,21 +178,46 @@ struct apth_global_scheduler_pool
 // Thread state
 typedef enum
 {
-    APTH_STATE_SCHEDULER = 0, /* the special scheduler thread only */
-    APTH_STATE_NEW,           /* spawned, but still not dispatched */
-    APTH_STATE_READY,         /* ready, waiting to be dispatched   */
-    APTH_STATE_WAITING,       /* waiting until event occurred      */
-    APTH_STATE_TERMINATED,    /* terminated, waiting to be joined  */
+    // Lower 1 bit is used to mark commit status
+    APTH_STATE_NEW = 2, /* spawned, but still not dispatched */
+#define APTH_STATE_new APTH_STATE_NEW
+    APTH_STATE_READY = 4, /* ready, waiting to be dispatched   */
+#define APTH_STATE_ready APTH_STATE_READY
+    APTH_STATE_WAITING = 8, /* waiting until event occurred      */
+#define APTH_STATE_waiting APTH_STATE_WAITING
+    APTH_STATE_TERMINATED = 16, /* terminated, waiting to be joined  */
+#define APTH_STATE_terminated APTH_STATE_TERMINATED
+    APTH_STATE_WAKED = 32,
+#define APTH_STATE_waked APTH_STATE_WAKED
 } apth_state_t;
+
+/* special bit for marking this state is just submitted, but yet committed */
+#define __APTH_STATE_UNCOMMIT_MASK (0x1)
+static inline bool state_is_uncommitted(apth_state_t s)
+{
+    return ((s & __APTH_STATE_UNCOMMIT_MASK) != 0);
+}
+static inline bool state_is_committed(apth_state_t s)
+{
+    return ((s & __APTH_STATE_UNCOMMIT_MASK) == 0);
+}
+static inline apth_state_t make_state_uncommitted(apth_state_t s)
+{
+    return (apth_state_t)(s | __APTH_STATE_UNCOMMIT_MASK);
+}
+static inline apth_state_t make_state_committed(apth_state_t s)
+{
+    return (apth_state_t)(s & (~__APTH_STATE_UNCOMMIT_MASK));
+}
 
 // Thread control block.
 struct ALIGNED(8) apth_st
 {
     /* standard thread control block ingredients */
-    int prio;                        /* base priority of thread             */
-    char name[APTH_TCB_NAMELEN + 1]; /* name of thread                      */
-    int dispatches;                  /* total number of thread dispatches   */
-    apth_state_t state;              /* current state indicator for thread  */
+    int prio;                                    /* base priority of thread             */
+    char name[APTH_TCB_NAMELEN + 1];             /* name of thread                      */
+    int dispatches;                              /* total number of thread dispatches   */
+    volatile _Atomic(apth_state_t) state_holder; /* holds the state, could be uncommitted */
 
     /* timing */
     apth_time_t spawned; /* time point at which thread was spawned      */
@@ -267,10 +296,25 @@ struct ALIGNED(8) apth_st
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
-    apth_worker_t worker; // TODO: when performing work stealing, modify this
+    // apth_worker_t worker; // TODO: when performing work stealing, modify this
+    _Atomic(apth_sched_t) belongs_to_sched; // TODO: when performing work stealing, modify this
     _Atomic(struct list *) belongs_to_list;
     _Atomic(lll_t *) belongs_to_list_lock;
 };
+
+// Although we might modify `apth_state_t` bits, making it be in a
+// state other than APTH_STATE_{NEW, READY, WAITING, TERMINATED},
+// for any state passed in as an argument, its bits should be sane.
+static inline bool state_as_argument_is_valid(apth_state_t s)
+{
+    return state_is_committed(s); // lower 1 bit should be 0
+}
+APTH_INTERNAL apth_state_t raw_state_of(apth_t th);
+APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state);
+APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
+APTH_INTERNAL apth_sched_t sched_of(apth_t th);
+APTH_INTERNAL void set_sched_of(apth_t th, apth_sched_t sched);
+
 #define APTH_NULL (apth_t) NULL
 
 // Default stack size by bytes
@@ -290,6 +334,8 @@ struct ALIGNED(8) apth_st
 // #define APTH_IS_VALID(t) (APTH_TID_IS_VALID(t) && APTH_TH_MAGIC_IS_GOOD(t))
 
 #define APTH_IS_VALID(t) (((t) != APTH_NULL) && APTH_TH_MAGIC_IS_GOOD(t))
+
+// Fetch thread status atomically by ensure its
 
 // ============================== Thread Events ==============================
 
@@ -434,12 +480,11 @@ struct apth_attr_st
 #define ATTR_FLAG_POLICY_SET 0x0040 // TODO: not supported in libapth
 #define ATTR_FLAG_DO_RSEQ 0x0080
 
-
 // ============================== Once ==============================
 /* apth_once definitions.  See apth_once for how these are used.  */
-#define __APTH_ONCE_INPROGRESS	1
-#define __APTH_ONCE_DONE		2
-#define __APTH_ONCE_FORK_GEN_INCR	4
+#define __APTH_ONCE_INPROGRESS 1
+#define __APTH_ONCE_DONE 2
+#define __APTH_ONCE_FORK_GEN_INCR 4
 
 // ============================== Filedescriptors ==============================
 // Filedescriptor blocking modes

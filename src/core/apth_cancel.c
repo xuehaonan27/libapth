@@ -18,7 +18,8 @@ int apth_cancel(apth_t th)
     // if (th == sched->cur)
     //     return apth_error(EINVAL, EINVAL);
 
-    if (th->state == APTH_STATE_TERMINATED)
+    // if (th->state == APTH_STATE_TERMINATED)
+    if (raw_state_of(th) == APTH_STATE_TERMINATED)
         // return apth_error(EPERM, EPERM);
         return 0;
 

@@ -112,7 +112,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
-    t->state = APTH_STATE_NEW;
+    // t->state = APTH_STATE_NEW;
+    submit_desired_state_to(t, APTH_STATE_NEW);
 
     // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);
@@ -149,7 +150,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->specific_used = false;
 
     // Scheduler list handling
-    t->worker = worker;
+    // t->worker = worker;
+    set_sched_of(t, sched);
     t->belongs_to_list = NULL;
     t->belongs_to_list_lock = NULL;
 

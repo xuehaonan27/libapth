@@ -21,6 +21,10 @@ static void apth_sched_eventmanager_sighandler(int sig, MAYBE_UNUSED siginfo_t *
 
 static bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
 {
+    // If the state is not committed, then means it's yet to reach goal.
+    if (state_is_uncommitted(state))
+        return false;
+
     if (state == APTH_STATE_NEW && goal == APTH_GOAL_UNTIL_TID_NEW)
         return true;
     if (state == APTH_STATE_READY && goal == APTH_GOAL_UNTIL_TID_READY)
@@ -71,6 +75,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         // For all apths in the waiting queue
         bool any_occurred = false;
 
+        // lll_lock(&sched->waiting_list_lock, "event checking waiting list");
         FOR_ELEMENT_IN_LIST(sched->waiting_list, e)
         {
             apth_t th = apth_t_list_entry(e);
@@ -221,7 +226,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                         // Thread termination
                         if ((event->ev_args.TID.tid == NULL && !list_empty(&sched->terminated_list)) ||
                             (event->ev_args.TID.tid != NULL &&
-                             apth_state_matches_event_goal(event->ev_args.TID.tid->state, event->ev_goal)))
+                             apth_state_matches_event_goal(raw_state_of(event->ev_args.TID.tid), event->ev_goal)))
                             this_ev_occurred = true;
                         break;
                     case APTH_EVENT_TYPE_FUNC:
@@ -258,6 +263,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                 }
             }
         }
+        // lll_unlock(&sched->waiting_list_lock, "event checking waiting list");
 
         // apth_debug("any_occurred = %s", any_occurred ? "true" : "false");
         // If any event occurred, then we should do poll mode for select
@@ -426,6 +432,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
         // For all apths in the waiting queue
         apth_t th_last = APTH_NULL;
+        // lll_lock(&sched->waiting_list_lock, "event checking waiting list");
         FOR_ELEMENT_IN_LIST(sched->waiting_list, wth_e)
         {
             // Move last apth with events occurred to ready queue.
@@ -433,9 +440,11 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             if (th_last != APTH_NULL)
             {
                 remove_apth(th_last);
-                th_last->state = APTH_STATE_READY;
+                // th_last->state = APTH_STATE_READY;
+                // We want to submit READY state to `th_last`
+                submit_desired_state_to(th_last, APTH_STATE_WAKED);
                 // TODO: give th_last a higher prio
-                push_apth_to_ready(th_last, sched);
+                push_apth_to_waked(th_last, sched);
                 apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
                 th_last = APTH_NULL;
             }
@@ -605,14 +614,17 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                 th_last = th;
             }
         }
+        // lll_unlock(&sched->waiting_list_lock, "event checking waiting list");
 
         // If the last th is also someone with occurred event, move it to ready queue as well
         if (th_last != APTH_NULL)
         {
             remove_apth(th_last);
-            th_last->state = APTH_STATE_READY;
+            // th_last->state = APTH_STATE_READY;
+            // We want to submit READY state to `th_last`
+            submit_desired_state_to(th_last, APTH_STATE_WAKED);
             // TODO: give th_last a higher prio
-            push_apth_to_ready(th_last, sched);
+            push_apth_to_waked(th_last, sched);
             apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
             th_last = APTH_NULL;
         }
@@ -789,7 +801,9 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     self->event_list = *el;
 
     // Move apth into waiting state and transfer control to scheduler
-    self->state = APTH_STATE_WAITING;
+    // self->state = APTH_STATE_WAITING;
+    // We want to submit WAITING state to `self`
+    submit_desired_state_to(self, APTH_STATE_WAITING);
     apth_yield();
 
     // Check for cancellation
@@ -820,7 +834,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     if (ev == APTH_EVENT_NULL)
         return apth_error(false, EINVAL);
     apth_t self = cur_apth();
-    apth_debug("(%d) enter from thread \"%s\"", self->worker->worker_id, self->name);
+    apth_debug("(%d) enter from thread \"%s\"", sched_of(self)->id, self->name);
 
     // Mark the event as still pending
     ev->ev_status = APTH_EV_STATUS_PENDING;
@@ -829,7 +843,9 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     apth_event_list_add(&self->event_list, ev);
 
     // Move thread into waiting state and transfer control to scheduler
-    self->state = APTH_STATE_WAITING;
+    // self->state = APTH_STATE_WAITING;
+    // We want to submit WAITING state to `self`
+    submit_desired_state_to(self, APTH_STATE_WAITING);
     apth_yield();
 
     // Check for cancellation
@@ -855,6 +871,6 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     }
 
     // Leave to current thread with number of occurred events
-    apth_debug("(%d) leave to thread \"%s\"", self->worker->worker_id, self->name);
+    apth_debug("(%d) leave to thread \"%s\"", sched_of(self)->id, self->name);
     return result;
 }
