@@ -45,17 +45,23 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     if (sched->sched_ctx == NULL)
         return apth_error(false, ENOMEM);
 
-    list_init(&sched->new_list);
-    list_init(&sched->ready_list);
-    list_init(&sched->waiting_list);
-    list_init(&sched->terminated_list);
-    list_init(&sched->waked_list);
+    // list_init(&sched->new_list);
+    // list_init(&sched->ready_list);
+    // list_init(&sched->waiting_list);
+    // list_init(&sched->terminated_list);
+    // list_init(&sched->waked_list);
 
-    lll_init(&sched->new_list_lock);
-    lll_init(&sched->ready_list_lock);
-    lll_init(&sched->waiting_list_lock);
-    lll_init(&sched->terminated_list_lock);
-    lll_init(&sched->waked_list_lock);
+    // lll_init(&sched->new_list_lock);
+    // lll_init(&sched->ready_list_lock);
+    // lll_init(&sched->waiting_list_lock);
+    // lll_init(&sched->terminated_list_lock);
+    // lll_init(&sched->waked_list_lock);
+    thqueue_init(&sched->new_queue, sched, APTH_STATE_NEW);
+    thqueue_init(&sched->ready_queue, sched, APTH_STATE_READY);
+    thqueue_init(&sched->waiting_queue, sched, APTH_STATE_WAITING);
+    thqueue_init(&sched->terminated_queue, sched, APTH_STATE_TERMINATED);
+    thqueue_init(&sched->waked_queue, sched, APTH_STATE_WAKED);
+    thqueue_init(&sched->running_queue, sched, APTH_STATE_RUNNING);
 
     sched->worker = worker;
     sched->switches = 0;
@@ -198,6 +204,7 @@ APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
 //         ;
 // }
 
+/*
 #define DEFINE_SCHED_LIST_OP(name)                                                \
     APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched)          \
     {                                                                             \
@@ -275,6 +282,7 @@ DEFINE_SCHED_LIST_OP(terminated)
 DEFINE_SCHED_LIST_OP(waked)
 
 #undef DEFINE_SCHED_LIST_OP
+*/
 #undef APTH_STATE_NAME
 #undef apth_is_in
 #undef head_apth_of
@@ -295,7 +303,8 @@ APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
     if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
     {
         apth_time_t ttmp;
-        int numready = list_size(&sched->ready_list);
+        // int numready = list_size(&sched->ready_list);
+        int numready = thqueue_size(sched->ready_queue);
         apth_time_set(&ttmp, now);
         do
         {
@@ -308,38 +317,54 @@ APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
     // apth_debug("leave");
 }
 
+static void __drain_free_th(apth_t t)
+{
+    // submit_desired_state_to(t, APTH_STATE_TERMINATED);
+    if (t->join_arg == NULL)
+    {
+        t->join_arg = APTH_CANCELED;
+    }
+    apth_thread_cleanup(t);
+    apth_tcb_free(t);
+}
+
 // Kill the schduler ingredients
 APTH_INTERNAL void apth_scheduler_kill(void)
 {
     apth_sched_t sched = cur_sched();
 
-// Drop all apths
-// TODO: do not know whether should apth_thread_cleanup(t);
-#define CLEAR_T_LIST(name)                                    \
-    lll_lock(&sched->list_lock_of(name), "scheduler kill");   \
-    FOR_ELEMENT_IN_LIST(sched->list_of(name), e##name)        \
-    {                                                         \
-        apth_t t = apth_t_list_entry(e##name);                \
-        submit_desired_state_to(t, APTH_STATE_TERMINATED);    \
-        if (t->join_arg == NULL)                              \
-        {                                                     \
-            t->join_arg = APTH_CANCELED;                      \
-        }                                                     \
-        apth_thread_cleanup(t);                               \
-        apth_tcb_free(t);                                     \
-    }                                                         \
-    lll_unlock(&sched->list_lock_of(name), "scheduler kill"); \
-    list_init(&sched->name##_list);
+    // Drop all apths
+    // TODO: do not know whether should apth_thread_cleanup(t);
+    /*#define CLEAR_T_LIST(name)                                    \
+        lll_lock(&sched->list_lock_of(name), "scheduler kill");   \
+        FOR_ELEMENT_IN_LIST(sched->list_of(name), e##name)        \
+        {                                                         \
+            apth_t t = apth_t_list_entry(e##name);                \
+            submit_desired_state_to(t, APTH_STATE_TERMINATED);    \
+            if (t->join_arg == NULL)                              \
+            {                                                     \
+                t->join_arg = APTH_CANCELED;                      \
+            }                                                     \
+            apth_thread_cleanup(t);                               \
+            apth_tcb_free(t);                                     \
+        }                                                         \
+        lll_unlock(&sched->list_lock_of(name), "scheduler kill"); \
+        list_init(&sched->name##_list);
 
-    // Clear the apth queues
-    CLEAR_T_LIST(new);
-    CLEAR_T_LIST(ready);
-    CLEAR_T_LIST(waiting);
-    CLEAR_T_LIST(terminated);
-#undef CLEAR_T_LIST
-#undef list_lock_of
-#undef list_of
-    return;
+        // Clear the apth queues
+        CLEAR_T_LIST(new);
+        CLEAR_T_LIST(ready);
+        CLEAR_T_LIST(waiting);
+        CLEAR_T_LIST(terminated);
+    #undef CLEAR_T_LIST
+    #undef list_lock_of
+    #undef list_of*/
+
+    drain_thqueue(sched->new_queue, __drain_free_th);
+    drain_thqueue(sched->ready_queue, __drain_free_th);
+    drain_thqueue(sched->waiting_queue, __drain_free_th);
+    drain_thqueue(sched->terminated_queue, __drain_free_th);
+    drain_thqueue(sched->waked_queue, __drain_free_th);
 
     // TODO: report scheduler statistics if in debugging mode
 
@@ -350,11 +375,11 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 
     // Remove the internal signal pipe
     // TODO: should `close` be wrapped by `apth_syscall_raw`?
-    close(sched->apth_sigpipe[0]);
-    close(sched->apth_sigpipe[1]);
+    apth_syscall_raw(close)(sched->apth_sigpipe[0]);
+    apth_syscall_raw(close)(sched->apth_sigpipe[1]);
 
     // Cancel TLS
-    set_cur_apth(APTH_NULL);
+    // set_cur_apth(APTH_NULL);
     set_cur_sched(NULL);
     set_cur_worker(NULL);
 
@@ -521,30 +546,40 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_debug("(%d) new loop", sched->id);
         // Move all new threads to ready list
         apth_t th;
-        while ((th = pop_apth_from_new(sched)) != APTH_NULL)
-        {
-            apth_debug("(%d) move from new to ready: %p (\"%s\")", sched->id, th, th->name);
-            // th->state = APTH_STATE_READY;
-            // push_apth_to_ready(th, sched);
+        // while ((th = pop_apth_from(sched->new_queue)) != APTH_NULL)
+        // {
+        //     apth_debug("(%d) move from new to ready: %p (\"%s\")", sched->id, th, th->name);
+        //     // th->state = APTH_STATE_READY;
+        //     // push_apth_to_ready(th, sched);
 
-            // TODO: insert into ready queue according to policy, here just append
-            submit_desired_state_to(th, APTH_STATE_READY);
-            push_apth_to_ready(th, sched);
-        }
+        //     // TODO: insert into ready queue according to policy, here just append
+        //     submit_desired_state_to(th, APTH_STATE_READY);
+        //     // push_apth_to_ready(th, sched);
+        //     push_apth_to(sched->ready_queue, th);
+        // }
+        while ((th = transfer_one_th(sched->new_queue, sched->ready_queue, "transfer_one_th moving new")) != APTH_NULL);
 
+        apth_debug("(%d) moving waked apths", sched->id);
         // Move all waked apths to ready list
-        while ((th = pop_apth_from_waked(sched)) != APTH_NULL)
-        {
-            apth_debug("(%d) move from waked to ready: %p (\"%s\")", sched->id, th, th->name);
-            submit_desired_state_to(th, APTH_STATE_READY);
-            push_apth_to_ready(th, sched);
-        }
+        // while ((th = pop_apth_from(sched->waked_queue)) != APTH_NULL)
+        // {
+        //     apth_debug("(%d) move from waked to ready: %p (\"%s\")", sched->id, th, th->name);
+        //     submit_desired_state_to(th, APTH_STATE_READY);
+        //     // push_apth_to_ready(th, sched);
+        //     push_apth_to(sched->ready_queue, th);
+        // }
+        while ((th = transfer_one_th(sched->waked_queue, sched->ready_queue, "transfer_one_th moving waked")) != APTH_NULL);
 
         // Update statistics
         apth_sched_calc_load(sched, &snapshot);
 
         // Find the next thread in ready queue and set it to be run
-        th = pop_apth_from_ready(sched);
+        // th = pop_apth_from_ready(sched);
+
+        // th = pop_apth_from(sched->ready_queue);
+        // submit_desired_state_to(th, APTH_STATE_RUNNING);
+        th = transfer_one_th(sched->ready_queue, sched->running_queue, "transfer_one_th popping candidate");
+
         // apth_debug("(%d) popped apth=%p (\"%s\")", sched->id, th, th == APTH_NULL ? "" : th->name);
 
         if (th == APTH_NULL)
@@ -569,6 +604,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_debug("(%d) decided next thread to run: %p (\"%s\")", sched->id, th, th->name);
 
         // Set current thread
+        // submit_desired_state_to(th, APTH_STATE_RUNNING);
+        // push_apth_to(sched->running_queue, th);
         set_cur_apth(th);
 
         // Handle signals
@@ -685,21 +722,31 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Prepare for thread insertion and event management phase
         set_cur_apth(APTH_FAKE_SCHED(sched));
 
-        apth_state_t retired_th_state = raw_state_of(th);
+        apth_state_t retired_th_state = state_holder_of(th);
+        // remove_apth_from(sched->running_queue, th);
         switch (make_state_committed(retired_th_state))
         {
         case APTH_STATE_NEW:
             PANIC("Insane");
             break;
         case APTH_STATE_READY:
-            assert_msg(state_is_committed(retired_th_state),
-                       "If retired apth is still READY, then state should still be committed as well");
-            push_apth_to_ready(th, sched);
+            PANIC("Insane");
+            break;
+        case APTH_STATE_RUNNING:
+            // assert_msg(state_is_committed(retired_th_state),
+            //            "If retired apth is still READY, then state should still be committed as well");
+            assert(retired_th_state == APTH_STATE_RUNNING);
+            apth_debug("(%d), moving thread \"%s\" to ready queue", sched->id, th->name);
+            submit_desired_state_to(th, APTH_STATE_READY, "moving running to ready");
+            // push_apth_to(sched->ready_queue, th);
+            transfer_th(th, sched->running_queue, sched->ready_queue);
             break;
         case APTH_STATE_WAITING:
             assert(state_is_uncommitted(retired_th_state));
-            apth_debug("(%d), moving thread \"%s\", to waiting queue", sched->id, th->name);
-            push_apth_to_waiting(th, sched);
+            apth_debug("(%d), moving thread \"%s\" to waiting queue", sched->id, th->name);
+            // push_apth_to_waiting(th, sched);
+            // push_apth_to(sched->waiting_queue, th);
+            transfer_th(th, sched->running_queue, sched->waiting_queue);
             break;
         case APTH_STATE_TERMINATED:
             assert(state_is_uncommitted(retired_th_state));
@@ -707,11 +754,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             dec_alive_thrcnt(); // decrement alive nthreads
             // NOTE: since `th` is marked as terminated, then all cleanups should
             // have been executed.
-            if (IS_DETACHED(th))
+            if (IS_DETACHED(th)) {
+                // commit_state_of(th, APTH_STATE_TERMINATED);
+                remove_apth_from(sched->terminated_queue, th);
                 apth_tcb_free(th);
+            }
             else
                 // For other apths to join `th`
-                push_apth_to_terminated(th, sched);
+                // push_apth_to_terminated(th, sched);
+                // push_apth_to(sched->terminated_queue, th);
+                transfer_th(th, sched->running_queue, sched->terminated_queue);
             break;
         default:
             PANIC("Insane");
@@ -762,7 +814,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Manage events in the waiting queue
 
         // TODO: checking list empty should be protected if work stealing is implemented
-        if (list_empty(&sched->ready_list) && list_empty(&sched->new_list))
+        if (thqueue_size(sched->ready_queue) == 0 && thqueue_size(sched->new_queue) == 0)
         {
             apth_debug("(%d) no NEW or READY threads, have to wait for new work", sched->id);
             apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);

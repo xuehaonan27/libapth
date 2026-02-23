@@ -3,13 +3,16 @@
 
 int apth_apth_exists(apth_t t)
 {
-    apth_sched_t sched = cur_sched();
-    
-    bool found = apth_is_in_new(t, sched) ? true :
-        (apth_is_in_new(t, sched) ? true :
-        (apth_is_in_ready(t, sched) ? true :
-        (apth_is_in_waiting(t, sched) ? true :
-        (apth_is_in_terminated(t, sched)))));
+    if (!APTH_IS_VALID(t))
+        return false;
 
-    return found;
+    apth_sched_t sched = cur_sched();
+
+    bool found_in_new = apth_is_in(sched->new_queue, t);
+    bool found_in_ready = apth_is_in(sched->ready_queue, t);
+    bool found_in_waiting = apth_is_in(sched->waiting_queue, t);
+    bool found_in_terminated = apth_is_in(sched->terminated_queue, t);
+    bool found_in_waked = apth_is_in(sched->waked_queue, t);
+
+    return found_in_new || found_in_ready || found_in_waiting || found_in_terminated || found_in_waked;
 }

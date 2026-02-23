@@ -20,6 +20,8 @@
     atomic_store_explicit((mem), (val), __ATOMIC_RELAXED)
 #define atomic_store_release(mem, val) \
     atomic_store_explicit((mem), (val), __ATOMIC_RELEASE)
+#define atomic_store_seqcst(mem, val) \
+    atomic_store_explicit((mem), (val), __ATOMIC_SEQ_CST)
 
 /* On failure, this CAS has memory_order_relaxed semantics. */
 #define atomic_compare_exchange_weak_relaxed(mem, expected, desired) \

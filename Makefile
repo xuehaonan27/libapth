@@ -4,7 +4,7 @@
 # ==================== Configuration ====================
 CC := gcc
 AR := ar
-CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC -DAPTH_CUR_USING_KEYWORD -DAPTH_DEBUG -DAPTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC -DAPTH_CUR_USING_KEYWORD -DAPTH_DEBUG_HOLD_INITIALIZER_PTHREAD -DAPTH_DEBUG
 LDFLAGS := -pthread
 ARFLAGS := rcs
 

@@ -292,7 +292,8 @@ void apth_configure(apth_init_t *cfg);
             ((struct __apth_main_args *)__apth_args__)->argv;                   \
         free(__apth_args__);                                                    \
         (void)argc_name;                                                        \
-        (void)argv_name;
+        (void)argv_name;                                                        \
+        if (true)
 
 /* Closes the function body opened by APTH_MAIN_BEGIN. */
 #define APTH_MAIN_END \

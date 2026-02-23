@@ -47,7 +47,7 @@ int apth_join(apth_t tid, void **value)
         return apth_error(EINVAL, EINVAL);
 
     // If the `tid` is not terminated, then wait it until so
-    if (raw_state_of(tid) != APTH_STATE_TERMINATED)
+    if (state_holder_of(tid) != APTH_STATE_TERMINATED)
     {
         ev = apth_event_tid(APTH_GOAL_UNTIL_TID_DEAD | APTH_EVENT_MODE_STATIC, tid);
         apth_wait_event(ev);
@@ -55,12 +55,12 @@ int apth_join(apth_t tid, void **value)
 
     // TODO: if `tid` was switched to DETACHED when we are waiting ...
 
-    apth_debug("(%d) tid = %p should have terminated", tid);
+    apth_debug("(%d) tid = %p should have terminated", sched->id, tid);
 
     // We mark the `tid` as terminated and as joined
     // NOTE: should get state once again, so state should be volatile.
     // (see `struct apth_st`)
-    apth_state_t dbg_tid_state = raw_state_of(tid);
+    apth_state_t dbg_tid_state = atomic_load_acquire(&tid->state_holder);
     assert_msg(
         state_is_committed(dbg_tid_state) && dbg_tid_state == APTH_STATE_TERMINATED,
         "tid = 0x%lx(\"%s\") state = %d", tid, tid->name, dbg_tid_state);
@@ -78,7 +78,7 @@ int apth_join(apth_t tid, void **value)
     // event goal, so there's no risk receiving `tid` as one without belonging
     // list / queue. Therefore `wait_apth_to_be_in_list` is no longer needed.
     // wait_apth_to_be_in_list(tid);
-    remove_apth(tid); // TODO: must modify queue with more sane method
+    remove_apth_from(sched_of(tid)->terminated_queue, tid); // TODO: must modify queue with more sane method
 
     // Note: since the thread is already terminated, then all cleanups should
     // have been executed.

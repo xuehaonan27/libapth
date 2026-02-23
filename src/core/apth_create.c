@@ -113,7 +113,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
     // t->state = APTH_STATE_NEW;
-    submit_desired_state_to(t, APTH_STATE_NEW);
+    submit_desired_state_to(t, APTH_STATE_NEW, "apth_create");
 
     // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);
@@ -150,12 +150,9 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->specific_used = false;
 
     // Scheduler list handling
-    // t->worker = worker;
-    set_sched_of(t, sched);
-    // t->belongs_to_list = NULL;
-    // t->belongs_to_list_lock = NULL;
+    /*set_sched_of(t, sched);
     set_belonging_list_of(t, NULL);
-    set_belonging_list_lock_of(t, NULL);
+    set_belonging_list_lock_of(t, NULL);*/
 
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
@@ -171,7 +168,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
-    push_apth_to_new(t, sched);
+    // push_apth_to_new(t, sched);
+    push_apth_to(sched->new_queue, t);
 
     // Increment scheduler thread count
     inc_thrcnt(sched);

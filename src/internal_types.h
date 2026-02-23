@@ -89,6 +89,52 @@ struct apth_cleanup_st
 };
 typedef struct apth_cleanup_st *apth_cleanup_t;
 
+// Thread state
+typedef enum
+{
+    // Lower 1 bit is used to mark commit status
+    APTH_STATE_NEW = 2,         /* spawned, but still not dispatched */
+    APTH_STATE_READY = 4,       /* ready, waiting to be dispatched   */
+    APTH_STATE_WAITING = 8,     /* waiting until event occurred      */
+    APTH_STATE_TERMINATED = 16, /* terminated, waiting to be joined  */
+    APTH_STATE_WAKED = 32,
+    APTH_STATE_RUNNING = 64
+} apth_state_t;
+
+/* special bit for marking this state is just submitted, but yet committed */
+#define __APTH_STATE_UNCOMMIT_MASK (0x1)
+static inline bool state_is_uncommitted(apth_state_t s)
+{
+    return ((s & __APTH_STATE_UNCOMMIT_MASK) != 0);
+}
+static inline bool state_is_committed(apth_state_t s)
+{
+    return ((s & __APTH_STATE_UNCOMMIT_MASK) == 0);
+}
+static inline apth_state_t make_state_uncommitted(apth_state_t s)
+{
+    return (apth_state_t)(s | __APTH_STATE_UNCOMMIT_MASK);
+}
+static inline apth_state_t make_state_committed(apth_state_t s)
+{
+    return (apth_state_t)(s & (~__APTH_STATE_UNCOMMIT_MASK));
+}
+
+// Although we might modify `apth_state_t` bits, making it be in a
+// state other than APTH_STATE_{NEW, READY, WAITING, TERMINATED},
+// for any state passed in as an argument, its bits should be sane.
+static inline bool state_as_argument_is_valid(apth_state_t s)
+{
+    return state_is_committed(s); // lower 1 bit should be 0
+}
+
+
+APTH_INTERNAL apth_state_t queue_state_of(apth_t th);
+// The returned state might be uncommitted (meaning with invalid lower 1 bit set)
+APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
+APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg);
+APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
+
 // ============================== Thread Scheduler ==============================
 typedef int sched_id;
 
@@ -98,6 +144,21 @@ typedef struct apth_perpthr_scheduler *apth_sched_t;
 // We don't want to expose this struct to public space
 typedef struct apth_worker_st *apth_worker_t;
 
+// ============================== Thread Queue ==============================
+struct apth_thqueue_st
+{
+    struct list th_list;
+    lll_t th_list_lock;
+    apth_sched_t sched;
+    apth_state_t th_state; // State that apths belonging to this queue should be
+    size_t size;
+};
+
+typedef struct apth_thqueue_st *apth_thqueue_t;
+typedef void drain_thqueue_th_func(apth_t th);
+#define APTH_DONT_MOVE_BUT_COUNT (apth_thqueue_t)(-1)
+typedef apth_thqueue_t visit_thqueue_th_func(apth_t th, void *);
+
 #define APTH_NSIG 65
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
@@ -106,20 +167,27 @@ typedef struct apth_worker_st *apth_worker_t;
 // meaningless here.
 struct apth_perpthr_scheduler
 {
-    sched_id id;                 // scheduler ID
-    apth_cxt_t sched_ctx;        // scheduler context (as trampoline)
-    struct list new_list;        // new threads
-    struct list ready_list;      // threads ready to run [elem: struct apth_st]
-    struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
-    struct list terminated_list; // terminated threads [elem: struct apth_st]
-    struct list waked_list;
+    sched_id id;          // scheduler ID
+    apth_cxt_t sched_ctx; // scheduler context (as trampoline)
+    // struct list new_list;        // new threads
+    // struct list ready_list;      // threads ready to run [elem: struct apth_st]
+    // struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
+    // struct list terminated_list; // terminated threads [elem: struct apth_st]
+    // struct list waked_list;
     // TODO: actually, only `ready_list_lock` is really needed. Since work stealing
     // will only occurs at ready list.
-    lll_t new_list_lock;        // synchronize access to new list
-    lll_t ready_list_lock;      // synchronize access to ready list
-    lll_t waiting_list_lock;    // synchronize access to waiting list
-    lll_t terminated_list_lock; // synchronize access to terminated list
-    lll_t waked_list_lock;
+    apth_thqueue_t new_queue;
+    apth_thqueue_t ready_queue;
+    apth_thqueue_t waiting_queue;
+    apth_thqueue_t terminated_queue;
+    apth_thqueue_t waked_queue;
+    apth_thqueue_t running_queue;
+
+    // lll_t new_list_lock;        // synchronize access to new list
+    // lll_t ready_list_lock;      // synchronize access to ready list
+    // lll_t waiting_list_lock;    // synchronize access to waiting list
+    // lll_t terminated_list_lock; // synchronize access to terminated list
+    // lll_t waked_list_lock;
     apth_worker_t worker;          // pthread worker carrying this scheduler
     unsigned int switches;         // context switch times
     _Atomic unsigned int thrcnt;   // APTH threads now running on this scheduler
@@ -134,6 +202,8 @@ struct apth_perpthr_scheduler
     apth_time_t apth_loadticknext;
     float loadval;
 };
+
+// ============================== Thread Worker ==============================
 
 // Pthread worker occupying CPU and carrying APTH loads
 struct apth_worker_st
@@ -174,41 +244,6 @@ struct apth_global_scheduler_pool
 };
 
 // ============================== APTH TCB ==============================
-
-// Thread state
-typedef enum
-{
-    // Lower 1 bit is used to mark commit status
-    APTH_STATE_NEW = 2, /* spawned, but still not dispatched */
-#define APTH_STATE_new APTH_STATE_NEW
-    APTH_STATE_READY = 4, /* ready, waiting to be dispatched   */
-#define APTH_STATE_ready APTH_STATE_READY
-    APTH_STATE_WAITING = 8, /* waiting until event occurred      */
-#define APTH_STATE_waiting APTH_STATE_WAITING
-    APTH_STATE_TERMINATED = 16, /* terminated, waiting to be joined  */
-#define APTH_STATE_terminated APTH_STATE_TERMINATED
-    APTH_STATE_WAKED = 32,
-#define APTH_STATE_waked APTH_STATE_WAKED
-} apth_state_t;
-
-/* special bit for marking this state is just submitted, but yet committed */
-#define __APTH_STATE_UNCOMMIT_MASK (0x1)
-static inline bool state_is_uncommitted(apth_state_t s)
-{
-    return ((s & __APTH_STATE_UNCOMMIT_MASK) != 0);
-}
-static inline bool state_is_committed(apth_state_t s)
-{
-    return ((s & __APTH_STATE_UNCOMMIT_MASK) == 0);
-}
-static inline apth_state_t make_state_uncommitted(apth_state_t s)
-{
-    return (apth_state_t)(s | __APTH_STATE_UNCOMMIT_MASK);
-}
-static inline apth_state_t make_state_committed(apth_state_t s)
-{
-    return (apth_state_t)(s & (~__APTH_STATE_UNCOMMIT_MASK));
-}
 
 // Thread control block.
 struct ALIGNED(8) apth_st
@@ -297,27 +332,14 @@ struct ALIGNED(8) apth_st
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
     // apth_worker_t worker; // TODO: when performing work stealing, modify this
-    _Atomic(apth_sched_t) belongs_to_sched; // TODO: when performing work stealing, modify this
-    _Atomic(struct list *) belongs_to_list;
-    _Atomic(lll_t *) belongs_to_list_lock;
+    // _Atomic(apth_sched_t) belongs_to_sched; // TODO: when performing work stealing, modify this
+    // _Atomic(struct list *) belongs_to_list;
+    // _Atomic(lll_t *) belongs_to_list_lock;
+
+    _Atomic(apth_thqueue_t) belongs_to_queue;
 };
 
-// Although we might modify `apth_state_t` bits, making it be in a
-// state other than APTH_STATE_{NEW, READY, WAITING, TERMINATED},
-// for any state passed in as an argument, its bits should be sane.
-static inline bool state_as_argument_is_valid(apth_state_t s)
-{
-    return state_is_committed(s); // lower 1 bit should be 0
-}
-APTH_INTERNAL apth_state_t raw_state_of(apth_t th);
-APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state);
-APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
 APTH_INTERNAL apth_sched_t sched_of(apth_t th);
-APTH_INTERNAL void set_sched_of(apth_t th, apth_sched_t sched);
-APTH_INTERNAL struct list *belonging_list_of(apth_t th);
-APTH_INTERNAL void set_belonging_list_of(apth_t th, struct list *l);
-APTH_INTERNAL lll_t *belonging_list_lock_of(apth_t th);
-APTH_INTERNAL void set_belonging_list_lock_of(apth_t th, lll_t *l);
 
 #define APTH_NULL (apth_t) NULL
 

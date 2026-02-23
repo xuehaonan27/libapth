@@ -38,10 +38,11 @@ NOTE: only for developers. You do not want to compile the library with these deb
 12. Current event manager goes over each event of every waiting apth, which is of low efficiency.
 13. Event manager should use `poll` or `epoll` instead of old and slow `select`.
 14. Check all passed in arguments to API functions (e.g. `th`) is valid.
-15. Hook STDIO (e.g. printf, fprintf...)
+15. Hook STDIO (e.g. printf, fprintf...) *
 16. Better handling of cancelling (e.g. now we have way too many fields for cancellation)
 17. The use of `apth_error` should be regular.
 18. Scheduler work stealing. Should consider the CPU affinity of the apth,
 and the type of the apth (e.g. for GC Worker threads, it's better to distribute
 them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
+20. better queue

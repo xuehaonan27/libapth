@@ -121,7 +121,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
     {
         // struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
         apth_worker_t p = GLOBAL_POOL.worker_ptr_mem_start[worker_id];
-        fprintf(stderr, "got worker (%d)= %p\n", worker_id, p);
+        // fprintf(stderr, "got worker (%d)= %p\n", worker_id, p);
         return p;
     }
 

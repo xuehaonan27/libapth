@@ -161,7 +161,7 @@ APTH_INTERNAL void list_splice(
     struct list_elem *last);
 APTH_INTERNAL void list_push_front(struct list *, struct list_elem *);
 APTH_INTERNAL void list_push_back(struct list *, struct list_elem *);
-APTH_INTERNAL void list_append(struct list *, struct list *);
+APTH_INTERNAL struct list_elem *list_append(struct list *, struct list *);
 
 /** List removal. */
 APTH_INTERNAL struct list_elem *list_remove(struct list_elem *);

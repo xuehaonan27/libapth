@@ -43,7 +43,7 @@ APTH_INTERNAL void apth_do_cancel(void *result)
     {
         self->join_arg = result;
         // self->state = APTH_STATE_TERMINATED;
-        submit_desired_state_to(self, APTH_STATE_TERMINATED);
+        submit_desired_state_to(self, APTH_STATE_TERMINATED, "apth_do_cancel");
         apth_debug("apth_do_cancel: switching from thread \"%s\" to scheduler", self->name);
         // apth_ctx_switch(self->ctx, sched->sched_ctx);
         apth_yield();
