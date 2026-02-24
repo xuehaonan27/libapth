@@ -1,8 +1,6 @@
 #ifndef __LIBAPTH_INTERNAL_TYPES_H
 #define __LIBAPTH_INTERNAL_TYPES_H
-
-#define APTH_TCB_NAMELEN 31
-#define _GNU_SOURCE // for pthread_attr_setaffinity_np
+#define _GNU_SOURCE
 #include "apth.h"
 
 #include "utils/list.h"
@@ -128,7 +126,6 @@ static inline bool state_as_argument_is_valid(apth_state_t s)
     return state_is_committed(s); // lower 1 bit should be 0
 }
 
-
 APTH_INTERNAL apth_state_t queue_state_of(apth_t th);
 // The returned state might be uncommitted (meaning with invalid lower 1 bit set)
 APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
@@ -156,49 +153,42 @@ struct apth_thqueue_st
 
 typedef struct apth_thqueue_st *apth_thqueue_t;
 typedef void drain_thqueue_th_func(apth_t th);
+// This return values from `visit_thqueue_th_func` indicates not an apth_thqueue,
+// but just to tell `visit_thqueue`, take that count into its return value, but
+// do not move `th`. Useful in fist loop of event manager.
 #define APTH_DONT_MOVE_BUT_COUNT (apth_thqueue_t)(-1)
 typedef apth_thqueue_t visit_thqueue_th_func(apth_t th, void *);
 
+#define APTH_TCB_NAMELEN 31
 #define APTH_NSIG 65
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
 // thread but a background role. Besides, since the main thread only runs on
 // one of schedulers, holding a special reference field to the main thread is
 // meaningless here.
+// TODO: actually, only `ready_list_lock` is really needed. Since work stealing
+// will only occurs at ready list.
 struct apth_perpthr_scheduler
 {
-    sched_id id;          // scheduler ID
-    apth_cxt_t sched_ctx; // scheduler context (as trampoline)
-    // struct list new_list;        // new threads
-    // struct list ready_list;      // threads ready to run [elem: struct apth_st]
-    // struct list waiting_list;    // threads waiting for an event [elem: struct apth_st]
-    // struct list terminated_list; // terminated threads [elem: struct apth_st]
-    // struct list waked_list;
-    // TODO: actually, only `ready_list_lock` is really needed. Since work stealing
-    // will only occurs at ready list.
-    apth_thqueue_t new_queue;
-    apth_thqueue_t ready_queue;
-    apth_thqueue_t waiting_queue;
-    apth_thqueue_t terminated_queue;
-    apth_thqueue_t waked_queue;
-    apth_thqueue_t running_queue;
-
-    // lll_t new_list_lock;        // synchronize access to new list
-    // lll_t ready_list_lock;      // synchronize access to ready list
-    // lll_t waiting_list_lock;    // synchronize access to waiting list
-    // lll_t terminated_list_lock; // synchronize access to terminated list
-    // lll_t waked_list_lock;
-    apth_worker_t worker;          // pthread worker carrying this scheduler
-    unsigned int switches;         // context switch times
-    _Atomic unsigned int thrcnt;   // APTH threads now running on this scheduler
-    apth_time_t running;           // time the scheduler runs
-    apth_t cur;                    // current APTH
-    _Atomic volatile bool opening; // scheduler is opening
-    int apth_sigpipe[2];           // internal signal occurrence pipe
-    sigset_t apth_sigpending;      // mask of pending signals
-    sigset_t apth_sigblock;        // mask of signals we block in scheduler
-    sigset_t apth_sigcatch;        // mask of signals we have to catch
-    sigset_t apth_sigraised;       // mask of raised signals
+    sched_id id;                     // scheduler ID
+    apth_cxt_t sched_ctx;            // scheduler context (as trampoline)
+    apth_thqueue_t new_queue;        // new threads
+    apth_thqueue_t ready_queue;      // threads ready to run
+    apth_thqueue_t waiting_queue;    // threads waiting for an event
+    apth_thqueue_t terminated_queue; // terminated threads
+    apth_thqueue_t waked_queue;      // threads waked by event(s)
+    apth_thqueue_t running_queue;    // should assert size == 1
+    apth_worker_t worker;            // pthread worker carrying this scheduler
+    unsigned int switches;           // context switch times
+    _Atomic(unsigned int) thrcnt;    // APTH threads now running on this scheduler
+    apth_time_t running;             // time the scheduler runs
+    apth_t cur;                      // current APTH
+    volatile _Atomic(bool) opening;  // scheduler is opening
+    int apth_sigpipe[2];             // internal signal occurrence pipe
+    sigset_t apth_sigpending;        // mask of pending signals
+    sigset_t apth_sigblock;          // mask of signals we block in scheduler
+    sigset_t apth_sigcatch;          // mask of signals we have to catch
+    sigset_t apth_sigraised;         // mask of raised signals
     apth_time_t apth_loadticknext;
     float loadval;
 };
@@ -228,19 +218,13 @@ typedef struct apth_worker_pthread_arg *apth_worker_arg_t;
 // Accessing to this pool should be synchronized.
 struct apth_global_scheduler_pool
 {
-    // TODO: there should be a lock protecting access to this pool.
-    // TODO: this lock should be RW-lock since there's a lot of reads and a few writes.
-    // TODO: and at Pthread level.
-
-    lll_t pool_lock;
+    lll_t pool_lock;           // protect access to the pool
     int worker_count;          // total worker pthreads count
     struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
 
     /* Immutable fields */
     int init_worker_count;               // initially spawned workers
     apth_worker_t *worker_ptr_mem_start; // start memory address of pointers to init workers
-    // struct apth_worker_st *workers_mem_start; // start memory address of init workers
-    // struct apth_worker_t_list_elem *worker_elems_mem_start; // start memory address of init worker list elems
 };
 
 // ============================== APTH TCB ==============================
@@ -249,41 +233,42 @@ struct apth_global_scheduler_pool
 struct ALIGNED(8) apth_st
 {
     /* standard thread control block ingredients */
-    int prio;                                    /* base priority of thread             */
-    char name[APTH_TCB_NAMELEN + 1];             /* name of thread                      */
-    int dispatches;                              /* total number of thread dispatches   */
-    volatile _Atomic(apth_state_t) state_holder; /* holds the state, could be uncommitted */
+    int prio;                                    // base priority of thread
+    char name[APTH_TCB_NAMELEN + 1];             // name of thread
+    int dispatches;                              // total number of thread dispatches
+    volatile _Atomic(apth_state_t) state_holder; // holds the state, could be uncommitted
 
     /* timing */
-    apth_time_t spawned; /* time point at which thread was spawned      */
-    apth_time_t lastran; /* time point at which thread was last running */
-    apth_time_t running; /* time range the thread was already running   */
+    apth_time_t spawned; // time point at which thread was spawned
+    apth_time_t lastran; // time point at which thread was last running
+    apth_time_t running; // time range the thread was already running
 
     /* event handling */
-    struct list event_list; /* events the tread is waiting for          */
+    struct list event_list; // events the tread is waiting for
 
     /* per-thread signal handling */
-    sigset_t sigpending; /* set    of pending signals                   */
-    int sigpendcnt;      /* number of pending signals                   */
+    sigset_t sigpending; // set of pending signals
+    int sigpendcnt;      // number of pending signals
 
     /* machine context */
-    apth_cxt_t ctx;              /* last saved context of thread        */
-    char *stack_mem_start;       /* pointer to thread stack             */
-    size_t stacksize;            /* size of thread stack                */
-    uint32_t *stackguard;        /* stack overflow guard                */
-    bool stackloan;              /* stack type                          */
-    void *(*start_func)(void *); /* start routine                       */
-    void *start_arg;             /* start argument                      */
+    apth_cxt_t ctx;              // last saved context of thread
+    char *stack_mem_start;       // pointer to thread stack
+    size_t stacksize;            // size of thread stack
+    uint32_t *stackguard;        // stack overflow guard
+    bool stackloan;              // stack type
+    void *(*start_func)(void *); // start routine
+    void *start_arg;             // start argument
 
     /* thread joining */
-    // bool joinable;  /* whether thread is joinable                       */
-    _Atomic apth_t joinid; /* Who is joining me? */
+    _Atomic apth_t joinid; // Who is joining me? Only one apth can do this, store here
+    // When (pd)->joinid == (pd), then `pd` is marked as DETACHED
 #define IS_DETACHED(pd) ((pd)->joinid == (pd))
-    void *join_arg; /* joining argument                                 */
+    void *join_arg; // joining argument
 
     /* cancellation support */
-    bool cancelreq;                      /* cancellation request is pending        */
-    _Atomic unsigned int cancelhandling; /* cancellation state of thread           */
+    bool cancelreq;                       // cancellation request is pending
+    _Atomic(unsigned int) cancelhandling; // cancellation state of thread
+
     // Bit set if cancellation is disabled
 #define CANCELSTATE_BITMASK _BIT(0)
     // Bit set if asynchronous cancellation mode is selected
@@ -298,10 +283,8 @@ struct ALIGNED(8) apth_st
     // #define TERMINATED_BITMASK _BIT(5)
     //     // Bit set if thread is supposed to change XID
     // #define SETXID_BITMASK _BIT(6)
-    apth_cleanup_t cleanups; /* stack of thread cleanup handlers       */
 
-    /* mutex ring */
-    struct ring mutexring; /* ring of aquired mutex structures          */
+    apth_cleanup_t cleanups; // stack of thread cleanup handlers
 
     /* per-thread exception handling */
     // TODO: exception handling
@@ -331,17 +314,13 @@ struct ALIGNED(8) apth_st
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
-    // apth_worker_t worker; // TODO: when performing work stealing, modify this
-    // _Atomic(apth_sched_t) belongs_to_sched; // TODO: when performing work stealing, modify this
-    // _Atomic(struct list *) belongs_to_list;
-    // _Atomic(lll_t *) belongs_to_list_lock;
 
     _Atomic(apth_thqueue_t) belongs_to_queue;
 };
 
 APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 
-#define APTH_NULL (apth_t) NULL
+#define APTH_NULL ((apth_t) NULL)
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 16384
@@ -360,8 +339,6 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 // #define APTH_IS_VALID(t) (APTH_TID_IS_VALID(t) && APTH_TH_MAGIC_IS_GOOD(t))
 
 #define APTH_IS_VALID(t) (((t) != APTH_NULL) && APTH_TH_MAGIC_IS_GOOD(t))
-
-// Fetch thread status atomically by ensure its
 
 // ============================== Thread Events ==============================
 
@@ -477,24 +454,19 @@ typedef struct apth_event_st *apth_event_t;
 // Thread attributes
 struct apth_attr_st
 {
-    // Scheduler parameters and priority
-    struct sched_param schedparam;
-    int schedpolicy;
-    // Various flags like detachstate, scope, etc
-    int flags;
-    // Size of guard area
-    size_t guardsize;
-    // Stack handling
-    void *stackaddr;
-    size_t stacksize;
+    struct sched_param schedparam; // Scheduler parameters and priority (not used)
+    int schedpolicy;               // Scheduler policy (not used)
+    int flags;                     // Various flags like detachstate, scope, etc
+    size_t guardsize;              // Size of guard area
+    void *stackaddr;               // Stack address (NOT the start memory address of stack area)
+    size_t stacksize;              // Stack size
     char name[APTH_TCB_NAMELEN + 1];
 
     /* These are extensions. Modified according to APTH needs */
-    // Affinity map
-    cpu_set_t *cpuset;
-    size_t cpusetsize;
-    sigset_t sigmask;
-    bool sigmask_set;
+    cpu_set_t *cpuset; // Affinity map
+    size_t cpusetsize; // Size of affinity map
+    sigset_t sigmask;  // Spawn with this signal mask
+    bool sigmask_set;  // Whether `sigmask` should be used
 };
 
 #define ATTR_FLAG_DETACHSTATE 0x0001

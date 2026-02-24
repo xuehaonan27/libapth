@@ -22,11 +22,11 @@ _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
 // C11 _Thread_local is preferred, but fall back to __thread if not available
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
-    #define APTH_THREAD_LOCAL _Thread_local
+#define APTH_THREAD_LOCAL _Thread_local
 #elif defined(__GNUC__) || defined(__clang__)
-    #define APTH_THREAD_LOCAL __thread
+#define APTH_THREAD_LOCAL __thread
 #else
-    #error "APTH_CUR_USING_KEYWORD is defined but no thread-local storage keyword is available"
+#error "APTH_CUR_USING_KEYWORD is defined but no thread-local storage keyword is available"
 #endif
 
 static APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
@@ -52,6 +52,16 @@ void worker_key_t_init(void)
 #endif
 }
 
+void worker_key_t_drop(void)
+{
+#ifdef APTH_CUR_USING_KEYWORD
+    __cur_worker_tls = NULL;
+#else
+    int result = apth_syscall_raw(pthread_key_delete)(__CUR_WORKER_KEY);
+    assert_msg(result == 0, "fail pthread_key_delete");
+#endif
+}
+
 void sched_key_t_init(void)
 {
 #ifdef APTH_CUR_USING_KEYWORD
@@ -60,6 +70,16 @@ void sched_key_t_init(void)
 #else
     int result = apth_syscall_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
     assert_msg(result == 0, "fail pthread_key_create");
+#endif
+}
+
+void sched_key_t_drop(void)
+{
+#ifdef APTH_CUR_USING_KEYWORD
+    __cur_sched_tls = NULL;
+#else
+    int result = apth_syscall_raw(pthread_key_delete)(__CUR_SCHED_KEY);
+    assert_msg(result == 0, "fail pthread_key_delete");
 #endif
 }
 
@@ -119,9 +139,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
     // which is usually the situation
     if (0 <= worker_id && worker_id < GLOBAL_POOL.init_worker_count)
     {
-        // struct apth_worker_st *p = GLOBAL_POOL.workers_mem_start + worker_id;
         apth_worker_t p = GLOBAL_POOL.worker_ptr_mem_start[worker_id];
-        // fprintf(stderr, "got worker (%d)= %p\n", worker_id, p);
         return p;
     }
 
@@ -146,10 +164,9 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
 APTH_INTERNAL int worker_count(void)
 {
     int result;
-    // TODO: acquire read lock
-    // atomic_load(&GLOBAL_POOL.worker_count);
+    lll_lock(&GLOBAL_POOL.pool_lock, "worker_count");
     result = GLOBAL_POOL.worker_count;
-    // TODO: release read lock
+    lll_unlock(&GLOBAL_POOL.pool_lock, "worker_count");
     return result;
 }
 
@@ -198,15 +215,12 @@ static int apth_worker_drop(apth_worker_t worker)
 {
     int target_worker_id = worker->worker_id;
     apth_debug("enter, dropping worker %d sched = %p", target_worker_id, worker->sched);
-    // Tell the scheduler to end
+    // Tell the scheduler to clean and exit
     atomic_store_release(&worker->sched->opening, false);
 
     void *pthr_rslt;
-    // TODO: since we spawned all workers as DETACHED, joining here is meaningless.
     apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);
     apth_debug("MAIN WORKER %d joined WORKER %d", cur_worker()->worker_id, target_worker_id);
-
-    // apth_syscall_raw(pthread_cancel)(worker->tid);
     assert(pthr_rslt == NULL);
 
     free(worker);
@@ -233,14 +247,6 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
                                : (int)cpu_cores();
     atomic_store_release(&WORKER_SPAWNED, wrkthrs_to_spwan);
 
-    // TODO: initialize the pool lock
-    // TODO: acquire pool lock
-
-    // TODO: handle possible OOM with apth_error
-    // struct apth_worker_st *workers_mem;
-    // if ((workers_mem = malloc(wrkthrs_to_spwan * sizeof(struct apth_worker_st))) == NULL)
-    //     return apth_error(-1, ENOMEM);
-
     apth_worker_t *worker_ptr_mem;
     if ((worker_ptr_mem = (apth_worker_t *)malloc(wrkthrs_to_spwan * sizeof(apth_worker_t))) == NULL)
         return apth_error(-1, ENOMEM);
@@ -262,7 +268,6 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
             return apth_error(init_result, errno);
         fprintf(stderr, "spwaned worker %d at %p\n", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
-        // *worker_ptr_mem = workers_mem;
         worker_ptr_mem[worker_cnt] = workers_mem;
     }
 

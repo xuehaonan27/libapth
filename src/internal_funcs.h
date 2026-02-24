@@ -22,7 +22,9 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
 // ============================== Worker ==============================
 
 APTH_INTERNAL void worker_key_t_init(void);
-void sched_key_t_init(void);
+APTH_INTERNAL void worker_key_t_drop(void);
+APTH_INTERNAL void sched_key_t_init(void);
+APTH_INTERNAL void sched_key_t_drop(void);
 APTH_INTERNAL apth_worker_t cur_worker(void);
 APTH_INTERNAL void set_cur_worker(apth_worker_t worker);
 APTH_INTERNAL apth_sched_t cur_sched(void);
@@ -49,34 +51,9 @@ APTH_INTERNAL unsigned int get_apth_nthreads(void);
 APTH_INTERNAL void inc_alive_thrcnt(void);
 APTH_INTERNAL void dec_alive_thrcnt(void);
 APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);
-/*
-#define push_apth_to(name) push_apth_to_##name
-#define pop_apth_from(name) pop_apth_from_##name
-#define head_apth_of(name) head_apth_of_##name
-#define apth_is_in(name) apth_is_in_##name
-#define list_of(name) name##_list
-#define DECLARE_SCHED_LIST_OP(name)                                       \
-    APTH_INTERNAL void push_apth_to(name)(apth_t th, apth_sched_t sched); \
-    APTH_INTERNAL apth_t pop_apth_from(name)(apth_sched_t sched);         \
-    APTH_INTERNAL apth_t head_apth_of(name)(apth_sched_t sched);          \
-    APTH_INTERNAL bool apth_is_in(name)(apth_t t, apth_sched_t sched);
-DECLARE_SCHED_LIST_OP(new)
-DECLARE_SCHED_LIST_OP(ready)
-DECLARE_SCHED_LIST_OP(waiting)
-DECLARE_SCHED_LIST_OP(terminated)
-DECLARE_SCHED_LIST_OP(waked)
-// APTH_INTERNAL void wait_apth_to_be_in_list(apth_t th);
-APTH_INTERNAL void remove_apth(apth_t th);
-#undef DECLARE_SCHED_LIST_OP
-#undef list_of
-#undef apth_is_in
-#undef head_apth_of
-#undef pop_apth_from
-#undef push_apth_to
-*/
+
 APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched);
 APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
-APTH_INTERNAL bool apth_is_not_null_and_valid(apth_t th);
 APTH_INTERNAL void *scheduler_routine(void *arg);
 
 // ============================== TCB ==============================

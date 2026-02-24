@@ -59,31 +59,9 @@
     X(unsetenv)               \
     X(getenv)
 
-// Fetch POSIX pthread library functions
-// APTH_FETCH_LIBCFUNC(int, pthread_sigmask, int how, const sigset_t *set, sigset_t *oset)
-// APTH_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
-// APTH_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
-// APTH_FETCH_LIBCFUNC(int, pthread_key_create, pthread_key_t *__key,
-//                     void (*__destr_function)(void *))
-// APTH_FETCH_LIBCFUNC(void *, pthread_getspecific, pthread_key_t __key)
-// APTH_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
-//                     const void *__pointer)
-// APTH_FETCH_LIBCFUNC(int, pthread_attr_init, pthread_attr_t *attr)
-// APTH_FETCH_LIBCFUNC(int, pthread_join, pthread_t thread, void **retval)
-
 #define X APTH_FETCH_LIBCFUNC
 APTH_LIST_OF_FETCH_ONLY
 #undef X
-
-// APTH_FETCH_LIBCFUNC(pthread_sigmask)
-// APTH_FETCH_LIBCFUNC(pthread_self)
-// APTH_FETCH_LIBCFUNC(pthread_kill)
-// APTH_FETCH_LIBCFUNC(pthread_key_create)
-// APTH_FETCH_LIBCFUNC(pthread_getspecific)
-// APTH_FETCH_LIBCFUNC(pthread_setspecific)
-// APTH_FETCH_LIBCFUNC(pthread_attr_init)
-// APTH_FETCH_LIBCFUNC(pthread_join)
-// APTH_FETCH_LIBCFUNC(pthread_join)
 
 APTH_INTERNAL int apth_syscall_system_init(void)
 {
