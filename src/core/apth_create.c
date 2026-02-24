@@ -48,19 +48,19 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         apth_attr_init(&iattr);
     assert(iattr != NULL);
 
-    if (newthr == get_addr_of_MAIN_APTH())
-    {
-        // We are spawning main thread. `apth_init` should have prepared proper
-        // worker TLS for us.
-        worker = cur_worker();
-        sched = cur_sched();
-        assert(sched != NULL);
-        assert(sched == worker->sched);
-        assert(worker == sched->worker);
-        cur = sched->cur;
-        assert(APTH_IS_FAKE_SCHED(cur));
-    }
-    else
+    // if (newthr == get_addr_of_MAIN_APTH())
+    // {
+    //     // We are spawning main thread. `apth_init` should have prepared proper
+    //     // worker TLS for us.
+    //     worker = cur_worker();
+    //     sched = cur_sched();
+    //     assert(sched != NULL);
+    //     assert(sched == worker->sched);
+    //     assert(worker == sched->worker);
+    //     cur = sched->cur;
+    //     assert(APTH_IS_FAKE_SCHED(cur));
+    // }
+    // else
     {
         // We are spawning other threads. TLS should have been set. The scheduler
         // to spawn to new apth to, should be determined first from CPU affinity.
@@ -95,7 +95,11 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
             // Spawn in current scheduler
             worker = cur_worker();
             sched = cur_sched();
+            assert(sched != NULL);
+            assert(sched == worker->sched);
+            assert(worker == sched->worker);
             cur = sched->cur;
+            assert(APTH_IS_FAKE_SCHED(cur));
         }
     }
 

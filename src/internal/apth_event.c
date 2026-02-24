@@ -52,9 +52,9 @@ struct aux_for_eventmanager
     apth_time_t nexttimer_value;
 
     struct timeval delay;
-        struct timeval *pdelay;
+    struct timeval *pdelay;
 
-        int rc; // int rc = -1;
+    int rc; // int rc = -1;
 };
 
 static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
@@ -267,7 +267,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                         write_condition ||
                         excep_condition)
                     {
-                        apth_debug("(%d) [I/O event occurred for thread \"%s\"]", sched->id, th->name);
+                        apth_debug("[I/O event occurred for thread \"%s\"]", th->name);
                         event->ev_status = APTH_EV_STATUS_OCCURRED;
                     }
                     else if (aux->rc < 0)
@@ -300,7 +300,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                             FD_ZERO(&aux->wfds);
                             FD_ZERO(&aux->efds);
                             event->ev_status = APTH_EV_STATUS_FAILED;
-                            apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
+                            apth_debug("[I/O] event failed for thread \"%s\"", th->name);
                         }
                     }
                     break;
@@ -318,7 +318,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                         if (event->ev_args.SELECT.n != NULL)
                             *(event->ev_args.SELECT.n) = n;
                         event->ev_status = APTH_EV_STATUS_OCCURRED;
-                        apth_debug("(%d) [I/O] event occurred for thread \"%s\"", sched->id, th->name);
+                        apth_debug("[I/O] event occurred for thread \"%s\"", th->name);
                     }
                     else if (aux->rc < 0)
                     {
@@ -351,7 +351,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                         if (rc2 < 0)
                         {
                             event->ev_status = APTH_EV_STATUS_FAILED;
-                            apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
+                            apth_debug("[I/O] event failed for thread \"%s\"", th->name);
                         }
                     }
                     break;
@@ -365,7 +365,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                                 // If sig is in both event and this pthread raised signals
                                 if (event->ev_args.SIGS.sig != NULL)
                                     *(event->ev_args.SIGS.sig) = sig;
-                                apth_debug("(%d) [signal] event occurred for apth \"%s\"", sched->id, th->name);
+                                apth_debug("[signal] event occurred for apth \"%s\"", th->name);
                                 sigdelset(&sched->apth_sigraised, sig);
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                             }
@@ -394,7 +394,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
     // Cancellation support
     if (th->cancelreq == true)
     {
-        apth_debug("(%d) cancellation request pending for apth \"%s\"", sched->id, th->name);
+        apth_debug("cancellation request pending for apth \"%s\"", th->name);
         any_occurred = true;
     }
 
@@ -408,11 +408,10 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
 // apthes from waiting queue back to ready queue
 APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll)
 {
-    apth_debug("(%d) enter in %s mode", sched->id, dopoll ? "polling" : "waiting");
+    apth_debug("enter in %s mode", dopoll ? "polling" : "waiting");
 
     for (;;)
     {
-        // apth_debug("(%d) loop", sched->id);
         bool loop_repeat = false;
 
         struct aux_for_eventmanager aux = {
@@ -671,16 +670,16 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         }
 
         // Clear pipe and let select() wait for read-part of the pipe.
-        // apth_debug("(%d) GOING TO read the read-part of the signal pipe", sched->id);
+        // apth_debug("GOING TO read the read-part of the signal pipe");
         assert(fcntl(sched->apth_sigpipe[0], F_GETFL, NULL) == APTH_O_NONBLOCKING);
         char minibuf[128];
         while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
             ;
-        // apth_debug("(%d) HAS read the read-part of the signal pipe", sched->id);
+        // apth_debug("HAS read the read-part of the signal pipe");
         // FD_SET(sched->apth_sigpipe[0], &rfds);
         // if (fdmax < sched->apth_sigpipe[0])
         // {
-        //     apth_debug("(%d) before fdmax=%d, now should be %d", sched->id, fdmax, sched->apth_sigpipe[0]);
+        //     apth_debug("before fdmax=%d, now should be %d", fdmax, sched->apth_sigpipe[0]);
         //     fdmax = sched->apth_sigpipe[0];
         // }
 
@@ -692,7 +691,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         {
             if (sigismember(&sched->apth_sigcatch, sig))
             {
-                apth_debug("(%d) sig=%d is in my `apth_sigcatch`", sched->id, sig);
+                apth_debug("sig=%d is in my `apth_sigcatch`", sig);
                 sa.sa_sigaction = apth_sched_eventmanager_sighandler;
                 sigfillset(&sa.sa_mask);
                 sa.sa_flags = SA_SIGINFO;
@@ -707,7 +706,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             FD_SET(sched->apth_sigpipe[0], &aux.rfds);
             if (aux.fdmax < sched->apth_sigpipe[0])
             {
-                apth_debug("(%d) before fdmax=%d, now should be %d", sched->id, aux.fdmax, sched->apth_sigpipe[0]);
+                apth_debug("before fdmax=%d, now should be %d", aux.fdmax, sched->apth_sigpipe[0]);
                 aux.fdmax = sched->apth_sigpipe[0];
             }
         }
@@ -730,13 +729,13 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         //      !dopoll: no more work to haste, and there is a time event
         if (aux.fdmax != -1 || !dopoll)
         {
-            apth_debug("(%d) GOING TO select the fd_set, fdmax=%d", sched->id, aux.fdmax);
+            apth_debug("GOING TO select the fd_set, fdmax=%d", aux.fdmax);
             while (
                 (aux.rc = apth_syscall_raw(select)(aux.fdmax + 1, &aux.rfds, &aux.wfds, &aux.efds, aux.pdelay)) < 0 && errno == EINTR)
             {
-                apth_debug("(%d) rc=%d, errno=%d", sched->id, aux.rc, errno);
+                apth_debug("rc=%d, errno=%d", aux.rc, errno);
             }
-            // apth_debug("(%d) HAS select the fd_set", sched->id);
+            // apth_debug("HAS select the fd_set");
         }
 
         // Restore signal mask and actions and handle signals
@@ -760,8 +759,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             else
             {
                 // It was an explicit timer event, standing for its own.
-                apth_debug("(%d) [timeout] event occurred for apth \"%s\"",
-                           sched->id, aux.nexttimer_th->name);
+                apth_debug("[timeout] event occurred for apth \"%s\"", aux.nexttimer_th->name);
                 aux.nexttimer_ev->ev_status = APTH_EV_STATUS_OCCURRED;
             }
         }
@@ -801,7 +799,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                 submit_desired_state_to(th_last, APTH_STATE_WAKED);
                 // TODO: give th_last a higher prio
                 push_apth_to(sched->waked_queue, th_last);
-                apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
+                apth_debug("apth \"%s\" moved from waiting to ready queue", th_last->name);
                 th_last = APTH_NULL;
             }
 
@@ -834,7 +832,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 write_condition ||
                                 excep_condition)
                             {
-                                apth_debug("(%d) [I/O event occurred for thread \"%s\"]", sched->id, th->name);
+                                apth_debug("[I/O event occurred for thread \"%s\"]", th->name);
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                             }
                             else if (rc < 0)
@@ -867,7 +865,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                     FD_ZERO(&wfds);
                                     FD_ZERO(&efds);
                                     event->ev_status = APTH_EV_STATUS_FAILED;
-                                    apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
+                                    apth_debug("[I/O] event failed for thread \"%s\"", th->name);
                                 }
                             }
                             break;
@@ -885,7 +883,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 if (event->ev_args.SELECT.n != NULL)
                                     *(event->ev_args.SELECT.n) = n;
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
-                                apth_debug("(%d) [I/O] event occurred for thread \"%s\"", sched->id, th->name);
+                                apth_debug("[I/O] event occurred for thread \"%s\"", th->name);
                             }
                             else if (rc < 0)
                             {
@@ -918,7 +916,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                 if (rc2 < 0)
                                 {
                                     event->ev_status = APTH_EV_STATUS_FAILED;
-                                    apth_debug("(%d) [I/O] event failed for thread \"%s\"", sched->id, th->name);
+                                    apth_debug("[I/O] event failed for thread \"%s\"", th->name);
                                 }
                             }
                             break;
@@ -932,7 +930,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                                         // If sig is in both event and this pthread raised signals
                                         if (event->ev_args.SIGS.sig != NULL)
                                             *(event->ev_args.SIGS.sig) = sig;
-                                        apth_debug("(%d) [signal] event occurred for apth \"%s\"", sched->id, th->name);
+                                        apth_debug("[signal] event occurred for apth \"%s\"", th->name);
                                         sigdelset(&sched->apth_sigraised, sig);
                                         event->ev_status = APTH_EV_STATUS_OCCURRED;
                                     }
@@ -961,7 +959,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // Cancellation support
             if (th->cancelreq == true)
             {
-                apth_debug("(%d) cancellation request pending for apth \"%s\"", sched->id, th->name);
+                apth_debug("cancellation request pending for apth \"%s\"", th->name);
                 any_occurred = true;
             }
 
@@ -982,21 +980,22 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         //     submit_desired_state_to(th_last, APTH_STATE_WAKED);
         //     // TODO: give th_last a higher prio
         //     push_apth_to(sched->waked_queue, th_last);
-        //     apth_debug("(%d) apth \"%s\" moved from waiting to ready queue", sched->id, th_last->name);
+        //     apth_debug("apth \"%s\" moved from waiting to ready queue", th_last->name);
         //     th_last = APTH_NULL;
         // }
 
         size_t _clean_loop_ret = visit_thqueue(sched->waiting_queue, __second_loop, &aux);
+        (void) _clean_loop_ret; // we do not need it, so make compiler happy here
 
         if (loop_repeat)
         {
-            apth_debug("(%d) continue", sched->id);
+            apth_debug("continue");
             apth_time_set(now, APTH_TIME_NOW);
             continue;
         }
         else
         {
-            apth_debug("(%d) leave", sched->id);
+            apth_debug("leave");
             break;
         }
     }
@@ -1193,7 +1192,8 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     if (ev == APTH_EVENT_NULL)
         return apth_error(false, EINVAL);
     apth_t self = cur_apth();
-    apth_debug("(%d) enter from thread \"%s\"", sched_of(self)->id, self->name);
+    assert(sched_of(self) == cur_sched());
+    apth_debug("enter from thread \"%s\"", self->name);
 
     // Mark the event as still pending
     ev->ev_status = APTH_EV_STATUS_PENDING;
@@ -1230,6 +1230,6 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     }
 
     // Leave to current thread with number of occurred events
-    apth_debug("(%d) leave to thread \"%s\"", sched_of(self)->id, self->name);
+    apth_debug("leave to thread \"%s\"", self->name);
     return result;
 }

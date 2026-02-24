@@ -35,7 +35,6 @@ APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
 
 #ifdef APTH_DEBUG
 #define _apth_mctx_switch_debug apth_debug(APTH_SWITCH_DEBUG_LINE);
-// #define _apth_mctx_switch_debug fprintf(stderr, APTH_SWITCH_DEBUG_LINE);
 #else
 #define _apth_mctx_switch_debug /* NOP */
 #endif
@@ -51,9 +50,7 @@ APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
     _apth_mctx_switch_debug;
-    apth_debug("(%d) old=%p, new=%p", cur_sched()->id, old, new);
-    // fprintf(stderr, APTH_SWITCH_DEBUG_LINE "\n");
-    // fprintf(stderr, "(%d) old=%p, new=%p\n", cur_sched()->id, old, new);
+    apth_debug("old=%p, new=%p", old, new);
     swapcontext(&old->uc, &new->uc);
 
     // After the context has been switched

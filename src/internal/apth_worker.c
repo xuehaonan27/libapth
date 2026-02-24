@@ -178,14 +178,12 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     // Set detached and CPU affinity
     if ((result = apth_syscall_raw(pthread_attr_init)(&worker->attr)) != 0)
     {
-        // apth_debug("fail pthread_attr_init");
-        fprintf(stderr, "fail pthread_attr_init\n");
+        apth_debug("fail pthread_attr_init");
         return apth_error(-1, EINVAL);
     }
     if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, PTHREAD_CREATE_JOINABLE)) != 0)
     {
-        // apth_debug("fail pthread_attr_setdetachstate");
-        fprintf(stderr, "fail pthread_attr_setdetachstate\n");
+        apth_debug("fail pthread_attr_setdetachstate");
         return apth_error(-1, EINVAL);
     }
     cpu_set_t cpuset;
@@ -194,8 +192,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     CPU_SET(worker_id, &cpuset);
     if ((result = apth_syscall_raw(pthread_attr_setaffinity_np)(&worker->attr, sizeof(cpu_set_t), &cpuset)) != 0)
     {
-        // apth_debug("fail pthread_attr_setaffinity_np");
-        fprintf(stderr, "fail pthread_attr_setaffinity_np\n");
+        apth_debug("fail pthread_attr_setaffinity_np");
         return apth_error(-1, EINVAL);
     }
 
@@ -266,7 +263,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
 
         if ((init_result = apth_worker_init(workers_mem, worker_cnt)) != 0)
             return apth_error(init_result, errno);
-        fprintf(stderr, "spwaned worker %d at %p\n", worker_cnt, workers_mem);
+        apth_debug("spwaned worker %d at %p", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
         worker_ptr_mem[worker_cnt] = workers_mem;
     }
@@ -275,7 +272,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     GLOBAL_POOL.init_worker_count = worker_cnt;
     GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
     GLOBAL_POOL.worker_ptr_mem_start = worker_ptr_mem;
-    fprintf(stderr, "Spawned %d workers\n", GLOBAL_POOL.worker_count);
+    apth_debug("Spawned %d workers", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
 
     return 0;

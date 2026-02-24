@@ -53,7 +53,6 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     // Slow path: lock is contended
     while (1)
     {
-        // fprintf(stderr, "%d CONTENTION\n", sched->id);
         lll_debug("%d CONTENTION", caller_sched->id);
         // FIX: Use seq_cst for loading lock value in contended path to ensure
         // proper ordering with ROB operations across different threads
@@ -252,7 +251,6 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
     apth_t self = sched->cur;
     lll_debug("sched=%p, self_worker=%p, self=%p", sched, self_worker, self);
 
-    // fprintf(stderr, "lll_unlock self=%p\n", self);
     _Atomic uintptr_t *inner = &lock->inner;
 
     // Load the current lock value

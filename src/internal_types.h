@@ -20,9 +20,6 @@ extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
 extern _Atomic int MAIN_APTH_EXITED;
 extern _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
-// TODO: this is for debug only, remove it later
-// extern _Atomic unsigned int SIMPLE_BARRIER;
-
 // Event status code
 typedef enum
 {
@@ -320,7 +317,7 @@ struct ALIGNED(8) apth_st
 
 APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 
-#define APTH_NULL ((apth_t) NULL)
+#define APTH_NULL ((apth_t)NULL)
 
 // Default stack size by bytes
 #define APTH_STACK_SIZE_DEFAULT 16384

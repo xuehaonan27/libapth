@@ -6,43 +6,73 @@
 #include "atomic_wrapper.h"
 #include "internal_funcs.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+static _Atomic(int) DEBUG_USING_HOOKED = 0;
+
+APTH_INTERNAL int get_DEBUG_USING_HOOKED(void)
+{
+    return atomic_load_acquire(&DEBUG_USING_HOOKED);
+}
+
+APTH_INTERNAL void set_DEBUG_USING_HOOKED(int v)
+{
+    atomic_store_release(&DEBUG_USING_HOOKED, v);
+}
 
 static char str[1024];
-// static lll_t buf_lock;
 
 _Atomic int dbg_spinl = 0;
-static void _dbg_spin_lock(void) {
+static void _dbg_spin_lock(void)
+{
     int expected = 0;
-    while (!atomic_compare_exchange_weak_acquire(&dbg_spinl, &expected, 1)) {
+    while (!atomic_compare_exchange_weak_acquire(&dbg_spinl, &expected, 1))
+    {
         expected = 0;
     }
 }
 
-static void _dbg_spin_unlock(void) {
+static void _dbg_spin_unlock(void)
+{
     atomic_store_release(&dbg_spinl, 0);
 }
 
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...)
 {
+    if (get_DEBUG_USING_HOOKED() == 0)
+    {
+        va_list ap;
+        size_t n;
+
+        va_start(ap, message);
+        _dbg_spin_lock();
+
+        if (file != NULL)
+            snprintf(str, sizeof(str), "%s:%04d:%s: (nil) ", file, line, function);
+        else
+            str[0] = NUL;
+        n = strlen(str);
+        vsnprintf(str + n, sizeof(str) - n, message, ap);
+        va_end(ap);
+        n = strlen(str);
+        str[n++] = '\n';
+        str[n++] = '\0';
+        fwrite(str, 1, n, stderr);
+
+        _dbg_spin_unlock();
+        return;
+    }
+
     va_list ap;
     size_t n;
 
     apth_shield
     {
-        pthread_t tid = apth_syscall_raw(pthread_self)();
-// #ifdef APTH_DEBUG_LLL
-//         char lll_str[256];
-//         apth_snprintf(lll_str, sizeof(lll_str), "%p:%s:%04d:%s: debug enter", tid, file, line, function);
-//         lll_lock(&buf_lock, lll_str);
-// #else  // APTH_DEBUG_LLL
-//         lll_lock(&buf_lock, "dummy");
-// #endif // APTH_DEBUG_LLL
-
         _dbg_spin_lock();
 
         va_start(ap, message);
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%p:%s:%04d:%s: ", tid, file, line, function);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, cur_sched()->id);
         else
             str[0] = NUL;
         n = strlen(str);
@@ -52,15 +82,8 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
-// #ifdef APTH_DEBUG_LLL
-//         apth_snprintf(lll_str, sizeof(lll_str), "%p:%s:%04d:%s: debug leave", tid, file, line, function);
-//         lll_unlock(&buf_lock, lll_str);
-// #else  // APTH_DEBUG_LLL
-//         lll_unlock(&buf_lock, "dummy");
-// #endif // APTH_DEBUG_LLL
 
         _dbg_spin_unlock();
-
     }
     return;
 }
@@ -68,15 +91,37 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 static void apth_vdebug_fn(const char *file, int line, const char *function,
                            const char *msg1, const char *msg2, va_list args)
 {
+    if (get_DEBUG_USING_HOOKED() == 0)
+    {
+        size_t n;
+
+        _dbg_spin_lock();
+
+        if (file != NULL)
+            snprintf(str, sizeof(str), "%s:%04d:%s: (nil) ", file, line, function);
+        else
+            str[0] = '\0';
+        n = strlen(str);
+        vsnprintf(str + n, sizeof(str) - n, msg1, args);
+        n = strlen(str);
+        vsnprintf(str + n, sizeof(str) - n, msg2, args);
+        n = strlen(str);
+        str[n++] = '\n';
+        str[n++] = '\0';
+        fwrite(str, 1, n, stderr);
+
+        _dbg_spin_unlock();
+        return;
+    }
+
     size_t n;
 
     apth_shield
     {
-        pthread_t tid = apth_syscall_raw(pthread_self)();
-        // lll_lock(&buf_lock, "vdebug enter");
         _dbg_spin_lock();
+
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%p:%s:%04d:%s: ", tid, file, line, function);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, cur_sched()->id);
         else
             str[0] = '\0';
         n = strlen(str);
@@ -87,7 +132,7 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         str[n++] = '\n';
         str[n++] = '\0';
         apth_syscall_raw(write)(STDERR_FILENO, str, n);
-        // lll_unlock(&buf_lock, "vdebug leave");
+
         _dbg_spin_unlock();
     }
     return;

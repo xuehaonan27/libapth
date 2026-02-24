@@ -45,4 +45,3 @@ NOTE: only for developers. You do not want to compile the library with these deb
 and the type of the apth (e.g. for GC Worker threads, it's better to distribute
 them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
-20. better queue

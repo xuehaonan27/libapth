@@ -66,24 +66,27 @@ APTH_LIST_OF_FETCH_ONLY
 APTH_INTERNAL int apth_syscall_system_init(void)
 {
     // Since before syscall is loaded and hooked, `write` does not exists,
-    // so use fprintf for debugging.
-    fprintf(stderr, "apth_syscall_system_init: enter\n");
-#define X(name)                                                                                              \
-    if (apth_syscall_init(name)() != 0)                                                                      \
-    {                                                                                                        \
-        fprintf(stderr, "apth_syscall_system_init: fail to initialize system call `%s`\n", stringify(name)); \
-        return -1;                                                                                           \
+    // so use stdio for debugging.
+    // FIX: now apth_debug could auto-detect and pick right way to output
+    apth_debug("enter");
+#define X(name)                                                             \
+    if (apth_syscall_init(name)() != 0)                                     \
+    {                                                                       \
+        apth_debug("fail to initialize system call `%s`", stringify(name)); \
+        return -1;                                                          \
     }
     APTH_LIST_OF_SYSCALLS
     APTH_LIST_OF_FETCH_ONLY
 #undef X
-    fprintf(stderr, "apth_syscall_system_init: leave\n");
+    apth_debug("leave");
     return 0;
 }
 
 APTH_INTERNAL int apth_syscall_system_drop(void)
 {
     // TODO("apth_syscall_system_drop");
+    apth_debug("enter");
+    apth_debug("leave");
     return 0;
 }
 

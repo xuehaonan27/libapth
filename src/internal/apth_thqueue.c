@@ -7,7 +7,7 @@
 APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg)
 {
     apth_thqueue_t q = atomic_load_acquire(&th->belongs_to_queue);
-    assert_msg(q != NULL, "(%d) calling belonging_queue_of from: %s", cur_sched()->id, dbg_msg);
+    assert_msg(q != NULL, "calling belonging_queue_of from: %s", dbg_msg);
     return q;
 }
 

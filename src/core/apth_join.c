@@ -55,7 +55,7 @@ int apth_join(apth_t tid, void **value)
 
     // TODO: if `tid` was switched to DETACHED when we are waiting ...
 
-    apth_debug("(%d) tid = %p should have terminated", sched->id, tid);
+    apth_debug("tid = %p should have terminated", tid);
 
     // We mark the `tid` as terminated and as joined
     // NOTE: should get state once again, so state should be volatile.

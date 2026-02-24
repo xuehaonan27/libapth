@@ -1,10 +1,6 @@
 #ifndef __LIBAPTH_H
 #define __LIBAPTH_H
 
-// Initialize and destruct.
-// int apth_init(void) __attribute__((constructor));
-// int apth_drop(void) __attribute__((destructor));
-
 typedef struct
 {
     int workers;
@@ -23,8 +19,8 @@ struct apth_st;
 
 #define APTH_CANCELED ((void *)-1)
 
-/* Special return value from apth_attr_getsigmask_np if the signal
-   mask has not been set.  */
+// Special return value from apth_attr_getsigmask_np if the signal
+// mask has not been set.
 #define APTH_ATTR_NO_SIGMASK_NP (-1)
 
 // ==================== Thread Attributes ====================

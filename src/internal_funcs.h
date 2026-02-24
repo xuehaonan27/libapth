@@ -4,7 +4,6 @@
 #include "internal_types.h"
 #include "utils/archplattoold.h"
 
-
 APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg);
 APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q);
 APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue, apth_sched_t sched, apth_state_t state);
@@ -120,11 +119,11 @@ APTH_INTERNAL bool apth_event_free(apth_event_t ev);
 APTH_INTERNAL int apth_syscall_system_init(void);
 APTH_INTERNAL int apth_syscall_system_drop(void);
 
-#define apth_syscall(name) apth_syscall_##name           /* Get reference to APTH wrapped syscall call which is also exposed */
-#define apth_syscall_raw(name) apth_syscall_raw_##name   /* Get reference to LIBC system call */
-#define apth_syscall_init(name) apth_syscall_init_##name /* Get reference to LIBC system call initializer  */
-#define apth_syscall_pfn_t(name) name##_pfn_t            /* Get system call function pointer type */
-#define stringify(x) #x                                  /* Stringify the identifier `x` */
+#define apth_syscall(name) apth_syscall_##name           // Get reference to APTH wrapped syscall call which is also exposed
+#define apth_syscall_raw(name) apth_syscall_raw_##name   // Get reference to LIBC system call
+#define apth_syscall_init(name) apth_syscall_init_##name // Get reference to LIBC system call initializer
+#define apth_syscall_pfn_t(name) name##_pfn_t            // Get system call function pointer type
+#define stringify(x) #x                                  // Stringify the identifier `x`
 #define apth_hook_debug(name) apth_debug("Hook " stringify(name) " succeed")
 
 #define APTH_DECLARE_FETCH_LIBCFUNC(rettype, name, ...)       \
@@ -137,10 +136,10 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
     APTH_INTERNAL rettype apth_syscall(name)(__VA_ARGS__);
 
 #ifdef APTH_DEBUG_SYSCALL_INIT_DBG
-#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG \
-    fprintf(stderr, "found syscall " stringify(name) " = %p\n", func);
+#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG(name) \
+    apth_debug("found syscall " stringify(name) " = %p", func);
 #else
-#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG
+#define APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG(name)
 #endif
 
 #define APTH_FETCH_LIBCFUNC(name)                                                                    \
@@ -151,7 +150,7 @@ APTH_INTERNAL int apth_syscall_system_drop(void);
         apth_syscall_pfn_t(name) func = (apth_syscall_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
         if (func == NULL)                                                                            \
             return -1;                                                                               \
-        APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG                                                     \
+        APTH_INTERNAL_DEBUG_SYSCALL_INIT_DBG_MSG(name)                                               \
         apth_syscall_raw(name) = func;                                                               \
         assert_msg(apth_syscall_raw(name) != NULL, "sanity");                                        \
         return 0;                                                                                    \
