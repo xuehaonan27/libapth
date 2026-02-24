@@ -45,3 +45,6 @@ NOTE: only for developers. You do not want to compile the library with these deb
 and the type of the apth (e.g. for GC Worker threads, it's better to distribute
 them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
+20. Self-make allocator
+21. If there's too many terminated apths, scheduler should schedule apth
+that's waiting to join others as quick as possible

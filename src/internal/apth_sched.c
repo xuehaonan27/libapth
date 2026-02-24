@@ -13,7 +13,6 @@ _Atomic unsigned int apth_nthreads = 0;
 _Atomic unsigned int apth_alive_nthreads = 0;
 
 static _Atomic apth_t MAIN_APTH = APTH_NULL;
-
 _Atomic int MAIN_APTH_EXITED = 0;
 _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
 
@@ -158,6 +157,12 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     drain_thqueue(sched->terminated_queue, __drain_free_th);
     drain_thqueue(sched->waked_queue, __drain_free_th);
 
+    free(sched->new_queue);
+    free(sched->ready_queue);
+    free(sched->waiting_queue);
+    free(sched->terminated_queue);
+    free(sched->waked_queue);
+
     // TODO: report scheduler statistics if in debugging mode
 
     // Signal mask restore, allow all signals
@@ -181,11 +186,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     free((void *)sched->sched_ctx);
     free((void *)sched);
     return;
-}
-
-static inline bool is_main_worker(apth_worker_t worker)
-{
-    return worker->worker_id == 0;
 }
 
 static inline bool worker0_check_end_process(apth_worker_t worker)
@@ -313,9 +313,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         assert(APTH_IS_VALID(th));
         apth_debug("decided next thread to run: %p (\"%s\")", th, th->name);
 
-        // Set current thread
-        set_cur_apth(th);
-
         // Handle signals
         if (th->sigpendcnt > 0)
         {
@@ -342,7 +339,12 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Switch the thread
         th->dispatches += 1;
+
+        // Set current thread
+        set_cur_apth(th);
         apth_ctx_switch(sched->sched_ctx, th->ctx);
+        // Prepare for thread insertion and event management phase
+        set_cur_apth(APTH_FAKE_SCHED(sched));
 
         // Update scheduler times
         apth_time_set(&snapshot, APTH_TIME_NOW);
@@ -421,9 +423,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             }
         }
 
-        // Prepare for thread insertion and event management phase
-        set_cur_apth(APTH_FAKE_SCHED(sched));
-
         apth_state_t retired_th_state = state_holder_of(th);
         // remove_apth_from(sched->running_queue, th);
         switch (make_state_committed(retired_th_state))
@@ -435,8 +434,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             PANIC("Insane");
             break;
         case APTH_STATE_RUNNING:
-            // assert_msg(state_is_committed(retired_th_state),
-            //            "If retired apth is still READY, then state should still be committed as well");
             assert(retired_th_state == APTH_STATE_RUNNING);
             apth_debug("moving thread \"%s\" to ready queue", th->name);
             submit_desired_state_to(th, APTH_STATE_READY, "moving running to ready");

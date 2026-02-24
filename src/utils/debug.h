@@ -13,8 +13,8 @@ APTH_INTERNAL void set_DEBUG_USING_HOOKED(int b);
 #endif // APTH_DEBUG
 
 void apth_debug_fn(const char *file, int line, const char *function, const char *message, ...);
-void apth_panic_fn(const char *file, int line, const char *function, const char *message, ...);
-void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...);
+NORETURN void apth_panic_fn(const char *file, int line, const char *function, const char *message, ...);
+NORETURN void apth_todo_fn(const char *file, int line, const char *function, const char *message, ...);
 
 #define PANIC(...) apth_panic_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define TODO(...) apth_todo_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)

@@ -81,7 +81,6 @@ int apth_init(apth_init_t *initvals)
     // TODO: optional support for exceptional handling
 
     // TODO: add synchronization here, making sure all workers are running now
-    // TOOD: Maybe checking whether all scheds are opening is useful
     // TODO: more reliable sync
     while (atomic_load_acquire(&WORKER_SPAWNED) != 0)
     {
@@ -101,13 +100,9 @@ int apth_init(apth_init_t *initvals)
     set_cur_sched(sched);
     set_cur_apth(APTH_FAKE_SCHED(sched));
 
-    // apth_debug("worker0 = %p", worker0);
     apth_debug("worker0 = %p", worker0);
     apth_debug("sched = %p", sched);
 
-    // apth_debug("spawning main thread at scheduler: %p", sched);
-
-    // apth_t main_th;
     apth_attr_t main_attr;
     apth_attr_init(&main_attr);
     apth_attr_setname_np(&main_attr, "main apth");
@@ -121,20 +116,11 @@ int apth_init(apth_init_t *initvals)
     set_DEBUG_USING_HOOKED(1);
     set_MAIN_APTH(main_th);
 
-    // apth_setname_np(get_MAIN_APTH(), "main apth");
-    // set_MAIN_APTH(main_th);
-
-    // apth_debug("spawned main thread: %p (\"%s\")", main_th, main_th->name);
-    // apth_debug("apth_init: leave");
-
-    // Here we determine that libapth is initialized
-    // atomic_store_release(&SYNC_BEFORE_MAIN_APTH_SPAWN, 1);
+    apth_debug("LIBAPTH INITIALIZER GOING TO CLEAR AND EXIT...");
 
     // NOTE: debug here, remove this
     // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
-    // for (;;)
-    //     ;
     void *worker0_rslt;
     apth_syscall_raw(pthread_join)(worker0->tid, &worker0_rslt);
     if (worker0_rslt != NULL)
@@ -147,7 +133,6 @@ int apth_init(apth_init_t *initvals)
 
     // Call `pthread_exit`, the initializer pthread should exit but others
     // should continue to run
-    apth_debug("LIBAPTH INITIALIZER PTHREAD EXITING...");
     apth_syscall_raw(pthread_exit)(NULL);
     return 0;
 }

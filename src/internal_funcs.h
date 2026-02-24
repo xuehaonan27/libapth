@@ -35,6 +35,7 @@ APTH_INTERNAL int worker_count(void);
 APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers);
 APTH_INTERNAL int apth_global_scheduler_pool_drop(void);
 APTH_INTERNAL int add_worker_thread(void);
+APTH_INTERNAL bool is_main_worker(apth_worker_t worker);
 
 // ============================== Scheduler ==============================
 

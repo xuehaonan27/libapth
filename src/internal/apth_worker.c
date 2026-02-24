@@ -170,6 +170,11 @@ APTH_INTERNAL int worker_count(void)
     return result;
 }
 
+APTH_INTERNAL bool is_main_worker(apth_worker_t worker)
+{
+    return worker->worker_id == 0;
+}
+
 static int apth_worker_init(apth_worker_t worker, int worker_id)
 {
     int result;
@@ -181,7 +186,18 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
         apth_debug("fail pthread_attr_init");
         return apth_error(-1, EINVAL);
     }
-    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, PTHREAD_CREATE_JOINABLE)) != 0)
+
+    int spawn_detach_state;
+    if (is_main_worker(worker))
+#ifdef APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+        spawn_detach_state = PTHREAD_CREATE_JOINABLE;
+#else
+        spawn_detach_state = PTHREAD_CREATE_DETACHED;
+#endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+    else
+        spawn_detach_state = PTHREAD_CREATE_JOINABLE;
+
+    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, spawn_detach_state)) != 0)
     {
         apth_debug("fail pthread_attr_setdetachstate");
         return apth_error(-1, EINVAL);

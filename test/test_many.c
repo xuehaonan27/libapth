@@ -52,6 +52,8 @@ APTH_MAIN_BEGIN(argc, argv)
         CPU_SET(affinity_id, &cpuset);
         apth_attr_setaffinity_np(&child_attr, sizeof(cpuset), &cpuset);
 
+        apth_attr_setstacksize(&child_attr, 2000);
+
         static char child_name_buffer[1024];
         apth_snprintf(child_name_buffer, sizeof(child_name_buffer), "CHILD APTH %d\0", i + 1);
         apth_attr_setname_np(&child_attr, child_name_buffer);
