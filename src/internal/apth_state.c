@@ -49,25 +49,22 @@ APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
     // 2. Insert apth to queue
     // 3. Commit state of `th`
     // 4. Release the queue lock
-    // (except pushing to waked list, which should be unprotected and private to scheudler)
+    // (except pushing to waked list, which should be unprotected and private to scheduler)
     // (NOTE: for same reason, work stealing should not touch threads in waked list)
-    // TODO: check that `th` has its queue
+    // Check that `th` has its queue
     assert_msg(belonging_queue_of(th, "commit_state_of") != NULL, "`th` should have belonging queue");
 
-    // // TODO: check that the queue's lock is held
-    // uintptr_t blpkval = lll_peek_val(belonging_list_lock_of(th));
-    // assert_msg(blpkval != LLL_NOT_ACQUIRED, "`th` belonging list lock should be acquired");
+    // Check that the queue's lock is held
+    uintptr_t blpkval = lll_peek_val(&belonging_queue_of(th, "lll_peek_val")->th_list_lock);
+    assert_msg(blpkval != LLL_NOT_ACQUIRED, "`th` belonging list lock should be acquired");
     // (void)blpkval; // in case of non-debug build, make compiler happy
-    // // TODO: check that the holder is the caller itself
-    // assert_msg(
-    //     /* The former situation is for normal case and main apth creation */
-    //     (APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == (uintptr_t)sched_of(th)) ||
-    //         /* The later situation is for `apth_create` */
-    //         (!APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == (uintptr_t)cur_apth()),
-    //     "`th` belonging list lock should be acquired by caller");
-
-    // And for future apth queue implementation:
-    // TODO: queue should have a thread-safe method doing 1,2,3,4 atomically.
+    // Check that the holder is the caller itself
+    assert_msg(
+        /* The former situation is for normal case and main apth creation */
+        (APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == sched_of(th)) ||
+            /* The later situation is for `apth_create` */
+            (!APTH_IS_FAKE_SCHED(blpkval) && APTH_DECODE_FAKE_SCHED(blpkval) == cur_apth()),
+        "`th` belonging list lock should be acquired by caller");
 
     // Ensure check
     apth_state_t current_uncommitted_state = atomic_load_acquire(&th->state_holder);

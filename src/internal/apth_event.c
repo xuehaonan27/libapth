@@ -93,136 +93,137 @@ static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
     {
         apth_event_t event = apth_event_t_list_entry(ev_e);
 
-        if (event->ev_status == APTH_EV_STATUS_PENDING)
+        if (event->ev_status != APTH_EV_STATUS_PENDING)
+            continue;
+
+        this_ev_occurred = false;
+
+        switch (event->ev_type)
         {
-            this_ev_occurred = false;
-
-            switch (event->ev_type)
+        case APTH_EVENT_TYPE_FD:
+            // Filedescriptor I/O
+            // Filedescriptors are checked later all at once. Here we
+            // only assemble them in the fd sets
+            if (event->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
+                FD_SET(event->ev_args.FD.fd, &aux->rfds);
+            if (event->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
+                FD_SET(event->ev_args.FD.fd, &aux->wfds);
+            if (event->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
+                FD_SET(event->ev_args.FD.fd, &aux->efds);
+            if (aux->fdmax < event->ev_args.FD.fd)
+                aux->fdmax = event->ev_args.FD.fd;
+            break;
+        case APTH_EVENT_TYPE_SELECT:
+            // Filedescriptor Set Select I/O
+            // Filedescriptors are checked later all at once. Here we
+            // only assemble them in the fd sets
+            apth_util_fds_merge(event->ev_args.SELECT.nfd,
+                                event->ev_args.SELECT.rfds, &aux->rfds,
+                                event->ev_args.SELECT.wfds, &aux->wfds,
+                                event->ev_args.SELECT.efds, &aux->efds);
+            if (aux->fdmax < event->ev_args.SELECT.nfd - 1)
+                aux->fdmax = event->ev_args.SELECT.nfd - 1;
+            break;
+        case APTH_EVENT_TYPE_SIGS:
+            // Signal Set
+            for (int sig = 1; sig < APTH_NSIG; sig++)
             {
-            case APTH_EVENT_TYPE_FD:
-                // Filedescriptor I/O
-                // Filedescriptors are checked later all at once. Here we
-                // only assemble them in the fd sets
-                if (event->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-                    FD_SET(event->ev_args.FD.fd, &aux->rfds);
-                if (event->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-                    FD_SET(event->ev_args.FD.fd, &aux->wfds);
-                if (event->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-                    FD_SET(event->ev_args.FD.fd, &aux->efds);
-                if (aux->fdmax < event->ev_args.FD.fd)
-                    aux->fdmax = event->ev_args.FD.fd;
-                break;
-            case APTH_EVENT_TYPE_SELECT:
-                // Filedescriptor Set Select I/O
-                // Filedescriptors are checked later all at once. Here we
-                // only assemble them in the fd sets
-                apth_util_fds_merge(event->ev_args.SELECT.nfd,
-                                    event->ev_args.SELECT.rfds, &aux->rfds,
-                                    event->ev_args.SELECT.wfds, &aux->wfds,
-                                    event->ev_args.SELECT.efds, &aux->efds);
-                if (aux->fdmax < event->ev_args.SELECT.nfd - 1)
-                    aux->fdmax = event->ev_args.SELECT.nfd - 1;
-                break;
-            case APTH_EVENT_TYPE_SIGS:
-                // Signal Set
-                for (int sig = 1; sig < APTH_NSIG; sig++)
+                if (sigismember(event->ev_args.SIGS.sigs, sig))
                 {
-                    if (sigismember(event->ev_args.SIGS.sigs, sig))
+                    // Apth signal handling
+                    if (sigismember(&th->sigpending, sig))
                     {
-                        // Apth signal handling
-                        if (sigismember(&th->sigpending, sig))
-                        {
-                            // This signal is both in event goal and the apth
-                            // so move the pending signal from apth to event
+                        // This signal is both in event goal and the apth
+                        // so move the pending signal from apth to event
+                        *(event->ev_args.SIGS.sig) = sig;
+                        sigdelset(&th->sigpending, sig);
+                        th->sigpendcnt--;
+                        this_ev_occurred = true;
+                    }
+
+                    // Pthread signal handling
+                    if (sigismember(&sched->apth_sigpending, sig))
+                    {
+                        // This signal is both in event goal and pthread
+                        // so move the pending signal from pthread to event
+                        if (event->ev_args.SIGS.sig != NULL)
                             *(event->ev_args.SIGS.sig) = sig;
-                            sigdelset(&th->sigpending, sig);
-                            th->sigpendcnt--;
-                            this_ev_occurred = true;
-                        }
-
-                        // Pthread signal handling
-                        if (sigismember(&sched->apth_sigpending, sig))
-                        {
-                            // This signal is both in event goal and pthread
-                            // so move the pending signal from pthread to event
-                            if (event->ev_args.SIGS.sig != NULL)
-                                *(event->ev_args.SIGS.sig) = sig;
-                            apth_util_sigdelete(sig);
-                            this_ev_occurred = true;
-                        }
-                        else
-                        {
-                            // This signal is in event goal but not in pthread
-                            // pending set. So allow the signal, and add it to
-                            // catch set.
-                            sigdelset(&sched->apth_sigblock, sig);
-                            sigaddset(&sched->apth_sigcatch, sig);
-                        }
+                        apth_util_sigdelete(sig);
+                        this_ev_occurred = true;
                     }
-                }
-                break;
-            case APTH_EVENT_TYPE_TIME:
-                // Timer
-                if (apth_time_cmp(&(event->ev_args.TIME.tv), now) < 0)
-                    // timed out
-                    this_ev_occurred = true;
-
-                else
-                {
-                    // Remember the timer which will be elapsed next
-                    if (
-                        (aux->nexttimer_th == NULL && aux->nexttimer_ev == NULL) ||
-                        (apth_time_cmp(&(event->ev_args.TIME.tv), &aux->nexttimer_value) < 0))
+                    else
                     {
-                        aux->nexttimer_th = th;
-                        aux->nexttimer_ev = event;
-                        apth_time_set(&aux->nexttimer_value, &(event->ev_args.TIME.tv));
+                        // This signal is in event goal but not in pthread
+                        // pending set. So allow the signal, and add it to
+                        // catch set.
+                        sigdelset(&sched->apth_sigblock, sig);
+                        sigaddset(&sched->apth_sigcatch, sig);
                     }
                 }
-                break;
-            case APTH_EVENT_TYPE_MUTEX:
-                break;
-            case APTH_EVENT_TYPE_COND:
-                break;
-            case APTH_EVENT_TYPE_TID:
-                // Thread termination
-                if ((event->ev_args.TID.tid == NULL && thqueue_size(sched->terminated_queue) != 0) ||
-                    (event->ev_args.TID.tid != NULL &&
-                     apth_state_matches_event_goal(state_holder_of(event->ev_args.TID.tid), event->ev_goal)))
-                    this_ev_occurred = true;
-                break;
-            case APTH_EVENT_TYPE_FUNC:
-                if (event->ev_args.FUNC.func(event->ev_args.FUNC.arg))
-                    // Function returns true, so occurred
-                    this_ev_occurred = true;
-                else
-                {
-                    // Else we elapse for some time and check it again
-                    apth_time_t tv;
-                    apth_time_set(&tv, now);
-                    apth_time_add(&tv, &(event->ev_args.FUNC.tv));
-                    if ((aux->nexttimer_th == NULL && aux->nexttimer_ev == NULL) ||
-                        apth_time_cmp(&tv, &aux->nexttimer_value) < 0)
-                    {
-                        aux->nexttimer_th = th;
-                        aux->nexttimer_ev = event;
-                        apth_time_set(&aux->nexttimer_value, &tv);
-                    }
-                }
-                break;
-            default:
-                PANIC("Should not reach here");
-                break;
             }
+            break;
+        case APTH_EVENT_TYPE_TIME:
+            // Timer
+            if (apth_time_cmp(&(event->ev_args.TIME.tv), now) < 0)
+                // timed out
+                this_ev_occurred = true;
 
-            // Tag this event if it has occurred
-            if (this_ev_occurred)
+            else
             {
-                apth_debug("apth_sched_eventmanager: [non-I/O] event occurred for apth \"%s\"", th->name);
-                event->ev_status = APTH_EV_STATUS_OCCURRED;
-                // any_occurred = true;
-                ret_val = APTH_DONT_MOVE_BUT_COUNT;
+                // Remember the timer which will be elapsed next
+                if (
+                    (aux->nexttimer_th == NULL && aux->nexttimer_ev == NULL) ||
+                    (apth_time_cmp(&(event->ev_args.TIME.tv), &aux->nexttimer_value) < 0))
+                {
+                    aux->nexttimer_th = th;
+                    aux->nexttimer_ev = event;
+                    apth_time_set(&aux->nexttimer_value, &(event->ev_args.TIME.tv));
+                }
             }
+            break;
+        case APTH_EVENT_TYPE_MUTEX:
+            // TODO
+            break;
+        case APTH_EVENT_TYPE_COND:
+            // TODO
+            break;
+        case APTH_EVENT_TYPE_TID:
+            // Thread termination
+            if ((event->ev_args.TID.tid == NULL && thqueue_size(sched->terminated_queue) != 0) ||
+                (event->ev_args.TID.tid != NULL &&
+                 apth_state_matches_event_goal(state_holder_of(event->ev_args.TID.tid), event->ev_goal)))
+                this_ev_occurred = true;
+            break;
+        case APTH_EVENT_TYPE_FUNC:
+            if (event->ev_args.FUNC.func(event->ev_args.FUNC.arg))
+                // Function returns true, so occurred
+                this_ev_occurred = true;
+            else
+            {
+                // Else we elapse for some time and check it again
+                apth_time_t tv;
+                apth_time_set(&tv, now);
+                apth_time_add(&tv, &(event->ev_args.FUNC.tv));
+                if ((aux->nexttimer_th == NULL && aux->nexttimer_ev == NULL) ||
+                    apth_time_cmp(&tv, &aux->nexttimer_value) < 0)
+                {
+                    aux->nexttimer_th = th;
+                    aux->nexttimer_ev = event;
+                    apth_time_set(&aux->nexttimer_value, &tv);
+                }
+            }
+            break;
+        default:
+            PANIC("Should not reach here");
+            break;
+        }
+
+        // Tag this event if it has occurred
+        if (this_ev_occurred)
+        {
+            apth_debug("apth_sched_eventmanager: [non-I/O] event occurred for apth \"%s\"", th->name);
+            event->ev_status = APTH_EV_STATUS_OCCURRED;
+            ret_val = APTH_DONT_MOVE_BUT_COUNT;
         }
     }
 
@@ -475,7 +476,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
 
             // NOTE: in a multithreaded environment, pausing indefinitely is of low efficiency.
             // Since this scheduler could steal work from other schedulers. So unlike in GNU
-            // Pth, we decide that not to wait, but notify the scheduler: GO TO STEAL
+            // Pth, we decide not to wait, but notify the scheduler: GO AHEAD STEAL
             apth_time_set(&aux.delay, APTH_TIME_ZERO);
             aux.pdelay = &aux.delay;
             // TODO: mark to notify this scheduler to steal work

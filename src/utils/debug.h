@@ -6,8 +6,11 @@
 APTH_INTERNAL int get_DEBUG_USING_HOOKED(void);
 APTH_INTERNAL void set_DEBUG_USING_HOOKED(int b);
 
+// To make compiler happy
+MAYBE_UNUSED static void __dummy_holder__(void *, ...) { /* NOP*/ }
+
 #ifndef APTH_DEBUG
-#define apth_debug(...)
+#define apth_debug(...) __dummy_holder__(NULL, __VA_ARGS__)
 #else
 #define apth_debug(...) apth_debug_fn(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #endif // APTH_DEBUG

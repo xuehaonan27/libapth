@@ -5,9 +5,6 @@
 #include "internal_types.h"
 #include "debug.h"
 
-// To make compiler happy
-MAYBE_UNUSED static void __dummy_holder__(void *, ...) { /* NOP*/ }
-
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 #ifdef APTH_DEBUG_LLL_USING_FPRINTF
 #define lll_debug(s, ...) fprintf(stderr, s "\n", __VA_ARGS__);

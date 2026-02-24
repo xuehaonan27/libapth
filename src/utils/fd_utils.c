@@ -21,15 +21,12 @@ APTH_INTERNAL void apth_util_fds_merge(int nfd,
 
     for (s = 0; s < nfd; s++)
     {
-        if (ifds1 != NULL)
-            if (FD_ISSET(s, ifds1))
-                FD_SET(s, ofds1);
-        if (ifds2 != NULL)
-            if (FD_ISSET(s, ifds2))
-                FD_SET(s, ofds2);
-        if (ifds3 != NULL)
-            if (FD_ISSET(s, ifds3))
-                FD_SET(s, ofds3);
+        if (ifds1 != NULL && FD_ISSET(s, ifds1))
+            FD_SET(s, ofds1);
+        if (ifds2 != NULL && FD_ISSET(s, ifds2))
+            FD_SET(s, ofds2);
+        if (ifds3 != NULL && FD_ISSET(s, ifds3))
+            FD_SET(s, ofds3);
     }
     return;
 }
@@ -44,8 +41,7 @@ APTH_INTERNAL bool apth_util_fds_test(int nfd,
 
     for (s = 0; s < nfd; s++)
     {
-        if (ifds1 != NULL)
-            if (FD_ISSET(s, ifds1) && FD_ISSET(s, ofds1))
+        if (ifds1 != NULL && FD_ISSET(s, ifds1) && FD_ISSET(s, ofds1))
                 return true;
         if (ifds2 != NULL)
             if (FD_ISSET(s, ifds2) && FD_ISSET(s, ofds2))
