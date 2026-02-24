@@ -285,18 +285,18 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_debug("new loop");
         // Move all new threads to ready list
         apth_t th;
-        while ((th = transfer_one_th(sched->new_queue, sched->ready_queue, "transfer_one_th moving new")) != APTH_NULL)
+        while ((th = transfer_one_th(sched->new_queue, sched->ready_queue, false, "transfer_one_th moving new")) != APTH_NULL)
             ;
 
         apth_debug("moving waked apths");
-        while ((th = transfer_one_th(sched->waked_queue, sched->ready_queue, "transfer_one_th moving waked")) != APTH_NULL)
+        while ((th = transfer_one_th(sched->waked_queue, sched->ready_queue, true, "transfer_one_th moving waked")) != APTH_NULL)
             ;
 
         // Update statistics
         apth_sched_calc_load(sched, &snapshot);
 
         // Move one apth from ready queue to running queue
-        th = transfer_one_th(sched->ready_queue, sched->running_queue, "transfer_one_th popping candidate");
+        th = transfer_one_th(sched->ready_queue, sched->running_queue, false, "transfer_one_th popping candidate");
 
         apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
 

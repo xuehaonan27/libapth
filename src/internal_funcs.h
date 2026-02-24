@@ -14,7 +14,8 @@ APTH_INTERNAL bool apth_is_in(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn);
 APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to);
-APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to, const char *dbg_msg);
+APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
+                                     bool insert_from_front, const char *dbg_msg);
 APTH_INTERNAL void transfer_thqueue(apth_thqueue_t queue_1, apth_thqueue_t queue_2);
 APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func fn, void *);
 

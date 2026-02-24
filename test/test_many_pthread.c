@@ -8,7 +8,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-#define N_CHILDREN 10000
+#define N_CHILDREN 200000
 #define N_WORKERS 4
 
 #define handle_error_en(en, msg) \
@@ -57,7 +57,7 @@ int main(int argc, char **argv)
         CPU_SET(affinity_id, &cpuset);
         pthread_attr_setaffinity_np(&child_attr, sizeof(cpuset), &cpuset);
 
-        pthread_attr_setstacksize(&child_attr, 2000);
+        pthread_attr_setstacksize(&child_attr, 2048);
 
         // static char child_name_buffer[1024];
         // snprintf(child_name_buffer, sizeof(child_name_buffer), "CHILD APTH %d", i + 1);

@@ -130,7 +130,8 @@ APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn)
     lll_unlock(&queue->th_list_lock, "drain_thqueue");
 }
 
-APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to, const char *dbg_msg)
+APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
+                                     bool insert_from_front, const char *dbg_msg)
 {
     assert(from != NULL);
     assert(to != NULL);
@@ -158,7 +159,10 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to, con
 
     // Then we should push `th` to `to`
     lll_lock(&to->th_list_lock, "transfer_th locking to");
-    list_push_back(&to->th_list, &th->elem);
+    if (insert_from_front)
+        list_push_front(&to->th_list, &th->elem);
+    else
+        list_push_back(&to->th_list, &th->elem);
     to->size += 1;
     set_belonging_queue_of(th, to);
     // Till now, state of `th` should still be former value
