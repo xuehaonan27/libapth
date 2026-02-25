@@ -55,7 +55,7 @@ APTH_MAIN_BEGIN(argc, argv)
         {
             if ((int)cdatas[i] != 0 || errno != EINVAL)
             {
-                static char err_2_msg[] = "child apth 2 should yield EINVAL, but not\n";
+                static char err_2_msg[] = "child apth 2 yields EINVAL\n";
                 write(2, err_2_msg, sizeof(err_2_msg));
             }
         }

@@ -42,9 +42,6 @@ int main(int argc, char **argv)
 {
     static char main_hi[] = "Hi from main apth\n";
 
-    // TODO: remove this
-    fcntl(2, F_SETFL, O_NONBLOCK);
-
     write(2, main_hi, sizeof(main_hi));
 
     for (int i = 0; i < N_CHILDREN; i++)
@@ -59,14 +56,10 @@ int main(int argc, char **argv)
 
         pthread_attr_setstacksize(&child_attr, 2048);
 
-        // static char child_name_buffer[1024];
-        // snprintf(child_name_buffer, sizeof(child_name_buffer), "CHILD APTH %d", i + 1);
-        // pthread_attr_setname_np(&child_attr, child_name_buffer);
-
         pthread_create(&tids[i], &child_attr, thread_func, (void *)i);
         pthread_attr_destroy(&child_attr);
     }
-    // sleep(2);
+
     for (int i = 0; i < N_CHILDREN; i++)
     {
         pthread_join(tids[i], &cdatas[i]);

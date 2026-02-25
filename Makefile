@@ -25,18 +25,58 @@ SHARED_LIB := $(LIB_DIR)/lib$(LIB_NAME).so
 INCLUDES := -I$(SRC_DIR)
 
 # ==================== Source Files ====================
-# Find all .c files in src directory (excluding test directory)
+# Find all .c files in src directory
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f)
 
 # Generate object file paths
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
-# Test files
-TEST_SOURCES := $(wildcard $(TEST_DIR)/*.c)
-TEST_BINS := $(patsubst $(TEST_DIR)/%.c,$(BIN_DIR)/%,$(TEST_SOURCES))
+# All test sources
+ALL_TEST_SOURCES := $(wildcard $(TEST_DIR)/*.c)
 
-# ==================== Targets ====================
-.PHONY: all static shared tests clean distclean help
+# -------------------------------------------------------
+# Classify test sources into four categories:
+#
+#  1. IO_APTH_SRCS   – new I/O tests that USE libapth.
+#                      Filename ends with _apth.c.
+#                      Built against libapth.a; run with LD_PRELOAD=libapth.so.
+#
+#  2. IO_PTHREAD_SRCS – tests that use plain pthreads (no apth).
+#                      Filename ends with _pthread.c.
+#                      Built against -lpthread only; run WITHOUT LD_PRELOAD.
+#
+#  3. TCP_SRCS       – multi-process TCP server/client test pair.
+#                      test_tcp_server.c + test_tcp_client.c.
+#                      Built against -lpthread; run via coordinated run-tcp-test.
+#
+#  4. LEGACY_TEST_SRCS – all other tests (original test suite).
+#                      Built against libapth.a; run with LD_PRELOAD=libapth.so.
+# -------------------------------------------------------
+IO_APTH_SRCS    := $(filter %_apth.c,    $(ALL_TEST_SOURCES))
+IO_PTHREAD_SRCS := $(filter %_pthread.c, $(ALL_TEST_SOURCES))
+TCP_SERVER_SRC  := $(TEST_DIR)/test_tcp_server.c
+TCP_CLIENT_SRC  := $(TEST_DIR)/test_tcp_client.c
+TCP_SRCS        := $(TCP_SERVER_SRC) $(TCP_CLIENT_SRC)
+# Legacy = everything that is not _apth, _pthread, or tcp
+LEGACY_TEST_SRCS := $(filter-out %_apth.c %_pthread.c \
+                        $(TCP_SERVER_SRC) $(TCP_CLIENT_SRC), \
+                        $(ALL_TEST_SOURCES))
+
+# Corresponding binaries
+IO_APTH_BINS    := $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/%, $(IO_APTH_SRCS))
+IO_PTHREAD_BINS := $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/%, $(IO_PTHREAD_SRCS))
+TCP_SERVER_BIN  := $(BIN_DIR)/test_tcp_server
+TCP_CLIENT_BIN  := $(BIN_DIR)/test_tcp_client
+LEGACY_TEST_BINS := $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/%, $(LEGACY_TEST_SRCS))
+
+ALL_TEST_BINS := $(IO_APTH_BINS) $(IO_PTHREAD_BINS) \
+                 $(TCP_SERVER_BIN) $(TCP_CLIENT_BIN) \
+                 $(LEGACY_TEST_BINS)
+
+# ==================== Phony targets ====================
+.PHONY: all static shared tests
+.PHONY: run-tests run-io-apth-tests run-io-pthread-tests run-tcp-test run-io-tests
+.PHONY: test-% clean distclean help info
 
 # Default target
 all: static shared
@@ -47,60 +87,149 @@ static: $(STATIC_LIB)
 # Build shared library
 shared: $(SHARED_LIB)
 
-# Build all tests
-tests: shared $(TEST_BINS)
+# Build ALL test binaries
+tests: shared $(ALL_TEST_BINS)
 
 # ==================== Library Building ====================
-# Create static library
 $(STATIC_LIB): $(OBJ_FILES) | $(LIB_DIR)
 	@echo "Creating static library: $@"
 	$(AR) $(ARFLAGS) $@ $^
 	@echo "Static library created successfully!"
 
-# Create shared library
 $(SHARED_LIB): $(OBJ_FILES) | $(LIB_DIR)
 	@echo "Creating shared library: $@"
-	$(CC) -shared -o $@ $^ $(LDFLAGS)
+	$(CC) -shared -o $@ $^ $(LDFLAGS) -ldl
 	@echo "Shared library created successfully!"
 
 # ==================== Object Files ====================
-# Compile source files to object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	@mkdir -p $(dir $@)
 	@echo "Compiling: $<"
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # ==================== Test Building ====================
-# Build test executables
-$(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
-	@echo "Building test: $@"
-	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS)
-	@echo "Test built successfully: $@"
+# ----- Category 1: apth I/O tests -----
+# Link against libapth; the hooks (write, read, …) are provided by the library.
+$(IO_APTH_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
+	@echo "Building apth I/O test: $@"
+	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
+	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS) -ldl
+	@echo "Done: $@"
+
+# ----- Category 2: pthread I/O tests -----
+# Pure pthreads; do NOT link libapth so the real libc functions are used.
+$(IO_PTHREAD_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c | $(BIN_DIR)
+	@echo "Building pthread I/O test: $@"
+	$(CC) $(CFLAGS) $< -o $@ -lpthread
+	@echo "Done: $@"
+
+# ----- Category 3: TCP multi-process tests -----
+$(TCP_SERVER_BIN) $(TCP_CLIENT_BIN): $(BIN_DIR)/%: $(TEST_DIR)/%.c | $(BIN_DIR)
+	@echo "Building TCP test binary: $@"
+	$(CC) $(CFLAGS) $< -o $@ -lpthread
+	@echo "Done: $@"
+
+# ----- Category 4: Legacy tests -----
+# Original test suite: link against libapth, run with LD_PRELOAD.
+$(LEGACY_TEST_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
+	@echo "Building legacy test: $@"
+	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
+	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS)
+	@echo "Done: $@"
 
 # ==================== Test Running ====================
-.PHONY: run-tests test-%
 
-# Run all tests
+# --- Run legacy tests (original suite) with LD_PRELOAD ---
 run-tests: tests
 	@echo "=========================================="
-	@echo "Running all tests..."
+	@echo "Running legacy tests (with LD_PRELOAD)..."
 	@echo "=========================================="
-	@for test in $(TEST_BINS); do \
-		if [ -f $$test ]; then \
-			echo "\n>>> Running: $$test"; \
-			LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(BUILD_DIR)/lib \
-			LD_PRELOAD=$(BUILD_DIR)/lib/libapth.so $$test || echo "Test failed: $$test"; \
+	@for t in $(LEGACY_TEST_BINS); do \
+		if [ -f "$$t" ]; then \
+			echo "\n>>> [legacy] $$t"; \
+			LD_LIBRARY_PATH=$(LIB_DIR):$$LD_LIBRARY_PATH \
+			LD_PRELOAD=$(SHARED_LIB) $$t \
+			    && echo "  OK" || echo "  FAILED: $$t"; \
 		fi; \
 	done
 	@echo "=========================================="
-	@echo "All tests completed!"
+
+# --- Run apth I/O tests with LD_PRELOAD ---
+run-io-apth-tests: shared $(IO_APTH_BINS)
+	@echo "=========================================="
+	@echo "Running apth I/O tests (with LD_PRELOAD)..."
+	@echo "=========================================="
+	@rc=0; \
+	for t in $(IO_APTH_BINS); do \
+		if [ -f "$$t" ]; then \
+			echo "\n>>> [apth] $$t"; \
+			LD_LIBRARY_PATH=$(LIB_DIR):$$LD_LIBRARY_PATH \
+			LD_PRELOAD=$(SHARED_LIB) $$t \
+			    || { echo "  FAILED: $$t"; rc=1; }; \
+		fi; \
+	done; \
+	exit $$rc
 	@echo "=========================================="
 
-# Run individual test (usage: make test-test_init)
+# --- Run pthread I/O tests WITHOUT LD_PRELOAD ---
+run-io-pthread-tests: $(IO_PTHREAD_BINS)
+	@echo "=========================================="
+	@echo "Running pthread I/O tests (no LD_PRELOAD)..."
+	@echo "=========================================="
+	@rc=0; \
+	for t in $(IO_PTHREAD_BINS); do \
+		if [ -f "$$t" ]; then \
+			echo "\n>>> [pthread] $$t"; \
+			$$t || { echo "  FAILED: $$t"; rc=1; }; \
+		fi; \
+	done; \
+	exit $$rc
+	@echo "=========================================="
+
+# --- Run multi-process TCP test ---
+# The server prints "READY\n" to stdout when the listen socket is bound.
+# A temporary FIFO is used to synchronise the two processes without polling.
+run-tcp-test: $(TCP_SERVER_BIN) $(TCP_CLIENT_BIN)
+	@echo ">>> Starting multi-process TCP test"
+	@FIFO=$$(mktemp -u /tmp/apth_tcp_XXXXXX); \
+	mkfifo "$$FIFO"; \
+	$(TCP_SERVER_BIN) > "$$FIFO" & \
+	SERVER_PID=$$!; \
+	read READY_LINE < "$$FIFO"; \
+	rm -f "$$FIFO"; \
+	$(TCP_CLIENT_BIN); \
+	CLIENT_RC=$$?; \
+	wait $$SERVER_PID; \
+	SERVER_RC=$$?; \
+	if [ $$CLIENT_RC -eq 0 ] && [ $$SERVER_RC -eq 0 ]; then \
+	    echo "[PASS] run-tcp-test"; \
+	else \
+	    echo "[FAIL] run-tcp-test (server_rc=$$SERVER_RC client_rc=$$CLIENT_RC)"; \
+	    exit 1; \
+	fi
+
+# --- Run all I/O tests ---
+run-io-tests: run-io-apth-tests run-io-pthread-tests run-tcp-test
+	@echo "=========================================="
+	@echo "All I/O tests completed."
+	@echo "=========================================="
+
+# --- Run a single legacy test by name (usage: make test-test_init) ---
 test-%: $(BIN_DIR)/%
-	@echo "Running test: $<"
-	@ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(BUILD_DIR)/lib \
-		LD_PRELOAD=$(BUILD_DIR)/lib/libapth.so $<
+	@echo "Running legacy test: $<"
+	@LD_LIBRARY_PATH=$(LIB_DIR):$$LD_LIBRARY_PATH \
+	    LD_PRELOAD=$(SHARED_LIB) $<
+
+# --- Run a single apth I/O test (usage: make test-io-apth-rw_pipe) ---
+test-io-apth-%: $(BIN_DIR)/%_apth
+	@echo "Running apth I/O test: $<"
+	@LD_LIBRARY_PATH=$(LIB_DIR):$$LD_LIBRARY_PATH \
+	    LD_PRELOAD=$(SHARED_LIB) $<
+
+# --- Run a single pthread I/O test (usage: make test-io-pthread-rw_pipe) ---
+test-io-pthread-%: $(BIN_DIR)/%_pthread
+	@echo "Running pthread I/O test: $<"
+	@$<
 
 # ==================== Directory Creation ====================
 $(OBJ_DIR):
@@ -125,45 +254,62 @@ distclean: clean
 
 # ==================== Help ====================
 help:
-	@echo "Libapth Makefile Targets:"
-	@echo "=========================="
-	@echo "  all          - Build both static and shared libraries (default)"
-	@echo "  static       - Build static library (libapth.a)"
-	@echo "  shared       - Build shared library (libapth.so)"
-	@echo "  tests        - Build all test programs"
-	@echo "  run-tests    - Build and run all tests"
-	@echo "  test-<name>  - Run specific test (e.g., make test-test_init)"
-	@echo "  clean        - Remove all build artifacts"
-	@echo "  distclean    - Remove all build artifacts and backup files"
-	@echo "  help         - Display this help message"
+	@echo "Libapth Makefile Targets"
+	@echo "========================"
+	@echo ""
+	@echo "Library:"
+	@echo "  all              Build both static and shared libraries (default)"
+	@echo "  static           Build static library only (libapth.a)"
+	@echo "  shared           Build shared library only (libapth.so)"
+	@echo ""
+	@echo "Tests – build:"
+	@echo "  tests            Build ALL test binaries"
+	@echo ""
+	@echo "Tests – run:"
+	@echo "  run-tests        Run legacy tests (original suite, with LD_PRELOAD)"
+	@echo "  run-io-apth-tests    Run *_apth I/O tests (with LD_PRELOAD)"
+	@echo "  run-io-pthread-tests Run *_pthread I/O tests (no LD_PRELOAD)"
+	@echo "  run-tcp-test     Run multi-process TCP server+client test"
+	@echo "  run-io-tests     Run all of the above I/O tests"
+	@echo ""
+	@echo "Tests – single:"
+	@echo "  test-<name>           Run legacy test  (e.g. make test-test_init)"
+	@echo "  test-io-apth-<stem>   Run apth I/O test (e.g. make test-io-apth-rw_pipe)"
+	@echo "  test-io-pthread-<stem> Run pthread test (e.g. make test-io-pthread-rw_pipe)"
+	@echo ""
+	@echo "Misc:"
+	@echo "  clean            Remove all build artifacts"
+	@echo "  distclean        Remove all build artifacts and backup files"
+	@echo "  info             Show source/test file counts"
+	@echo "  help             Display this help message"
 	@echo ""
 	@echo "Build directories:"
-	@echo "  $(BUILD_DIR)/obj/ - Object files"
-	@echo "  $(BUILD_DIR)/lib/ - Library files"
-	@echo "  $(BUILD_DIR)/bin/ - Test executables"
-	@echo ""
-	@echo "Compiler flags:"
-	@echo "  CFLAGS  = $(CFLAGS)"
-	@echo "  LDFLAGS = $(LDFLAGS)"
+	@echo "  $(OBJ_DIR)  Object files"
+	@echo "  $(LIB_DIR)  Library files"
+	@echo "  $(BIN_DIR)  Test executables"
 
 # ==================== Info Target ====================
-.PHONY: info
-
 info:
-	@echo "Project Information:"
-	@echo "===================="
-	@echo "Library name: lib$(LIB_NAME)"
-	@echo "Source files found: $(words $(SRC_FILES))"
-	@echo "Test files found: $(words $(TEST_SOURCES))"
+	@echo "Project Information"
+	@echo "==================="
+	@echo "Library name        : lib$(LIB_NAME)"
+	@echo "Source files        : $(words $(SRC_FILES))"
+	@echo "apth I/O tests      : $(words $(IO_APTH_SRCS))"
+	@echo "pthread I/O tests   : $(words $(IO_PTHREAD_SRCS))"
+	@echo "TCP multi-proc tests: $(words $(TCP_SRCS))"
+	@echo "Legacy tests        : $(words $(LEGACY_TEST_SRCS))"
 	@echo ""
-	@echo "Source files:"
-	@$(foreach src,$(SRC_FILES),echo "  - $(src)";)
+	@echo "apth I/O test binaries:"
+	@$(foreach b,$(IO_APTH_BINS),echo "  $(b)";)
 	@echo ""
-	@echo "Test files:"
-	@$(foreach test,$(TEST_SOURCES),echo "  - $(test)";)
+	@echo "pthread I/O test binaries:"
+	@$(foreach b,$(IO_PTHREAD_BINS),echo "  $(b)";)
+	@echo ""
+	@echo "TCP test binaries:"
+	@echo "  $(TCP_SERVER_BIN)"
+	@echo "  $(TCP_CLIENT_BIN)"
 
 # ==================== Dependencies ====================
-# Automatic dependency generation (optional enhancement)
 -include $(OBJ_FILES:.o=.d)
 
 $(OBJ_DIR)/%.d: $(SRC_DIR)/%.c | $(OBJ_DIR)

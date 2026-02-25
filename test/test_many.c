@@ -24,6 +24,10 @@ thread_func(void *arg)
 {
     int id = (int)arg;
     char child_msg_buffer[1024];
+
+    apth_snprintf(child_msg_buffer, sizeof(child_msg_buffer), "CHILD APTH %d", id);
+    apth_setname_np(apth_self(), child_msg_buffer);
+
     int retlen = apth_snprintf(
         child_msg_buffer, sizeof(child_msg_buffer),
         "Hi from child apth %d\n\0", id);
@@ -54,14 +58,10 @@ APTH_MAIN_BEGIN(argc, argv)
 
         apth_attr_setstacksize(&child_attr, 2048);
 
-        static char child_name_buffer[1024];
-        apth_snprintf(child_name_buffer, sizeof(child_name_buffer), "CHILD APTH %d\0", i + 1);
-        apth_attr_setname_np(&child_attr, child_name_buffer);
-
         apth_create(&tids[i], &child_attr, thread_func, (void *)i);
         apth_attr_destroy(&child_attr);
     }
-    // sleep(2);
+
     for (int i = 0; i < N_CHILDREN; i++)
     {
         apth_join(tids[i], &cdatas[i]);

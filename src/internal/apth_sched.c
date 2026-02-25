@@ -453,7 +453,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             if (IS_DETACHED(th))
             {
                 // commit_state_of(th, APTH_STATE_TERMINATED);
-                remove_apth_from(sched->terminated_queue, th);
+                // We should first move `th` from running queue to terminated queue
+                remove_apth_from(sched->running_queue, th);
                 apth_tcb_free(th);
             }
             else

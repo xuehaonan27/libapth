@@ -95,7 +95,12 @@ APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th)
     assert(queue != NULL);
     assert(APTH_IS_VALID(th));
     assert(belonging_queue_of(th, "remove_apth_from") != NULL);
-    assert(belonging_queue_of(th, "remove_apth_from") == queue);
+    assert_msg(belonging_queue_of(th, "remove_apth_from") == queue,
+               "belonging_queue_of %p (\"%s\") = %p (state=%d) but got %p(state=%d)",
+               th, th->name,
+               belonging_queue_of(th, "remove_apth_from"),
+               belonging_queue_of(th, "remove_apth_from")->th_state,
+               queue, queue->th_state);
     lll_lock(&queue->th_list_lock, "remove_apth_from");
     list_remove(&th->elem);
     queue->size -= 1;
@@ -256,7 +261,13 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
 #define HANDLE_MOVE_TH                                                              \
     if (th_last != APTH_NULL)                                                       \
     {                                                                               \
-        assert(belonging_queue_of(th_last, "visit_thqueue") == queue);              \
+        assert_msg(belonging_queue_of(th_last, "visit_thqueue") == queue,           \
+                   "belonging_queue_of %p (\"%s\") = %p"                            \
+                   "(state=%d) but got %p(state=%d)",                               \
+                   th_last, th_last->name,                                          \
+                   belonging_queue_of(th_last, "visit_thqueue"),                    \
+                   belonging_queue_of(th_last, "visit_thqueue")->th_state,          \
+                   queue, queue->th_state);                                         \
         list_remove(&th_last->elem);                                                \
         queue->size -= 1;                                                           \
         submit_desired_state_to(th_last, last_to_queue->th_state, "visit_thqueue"); \
@@ -266,6 +277,7 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
         set_belonging_queue_of(th_last, last_to_queue);                             \
         commit_state_of(th_last, last_to_queue->th_state);                          \
         lll_unlock(&last_to_queue->th_list_lock, "visit_thqueue");                  \
+        th_last = APTH_NULL;                                                        \
     }
         HANDLE_MOVE_TH
         apth_t th = apth_t_list_entry(e);

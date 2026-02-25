@@ -30,7 +30,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     apth_t t;
     apth_attr_t iattr = NULL;
     apth_time_t ts;
-    apth_t cur;
+    // apth_t cur;
     apth_sched_t sched = NULL;
     apth_worker_t worker = NULL;
 
@@ -88,7 +88,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         {
             worker = get_worker_by_id(cpu_favored);
             sched = worker->sched;
-            cur = sched->cur;
+            // cur = sched->cur;
         }
         else
         {
@@ -98,8 +98,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
             assert(sched != NULL);
             assert(sched == worker->sched);
             assert(worker == sched->worker);
-            cur = sched->cur;
-            assert(APTH_IS_FAKE_SCHED(cur));
+            // cur = sched->cur;
+            // assert(APTH_IS_FAKE_SCHED(cur));
         }
     }
 

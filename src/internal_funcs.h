@@ -230,7 +230,6 @@ APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
 APTH_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
 APTH_DECLARE_SYSCALL(int, unsetenv, const char *n)
 APTH_DECLARE_SYSCALL(char *, getenv, const char *n)
-// APTH_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 // ============================== Utility ==============================
 APTH_INTERNAL bool apth_util_fd_valid(int fd);
