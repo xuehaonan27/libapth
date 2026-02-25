@@ -18,6 +18,7 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
                                      bool insert_from_front, const char *dbg_msg);
 APTH_INTERNAL void transfer_thqueue(apth_thqueue_t queue_1, apth_thqueue_t queue_2);
 APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func fn, void *);
+APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux);
 
 // ============================== Worker ==============================
 
@@ -95,8 +96,13 @@ APTH_INTERNAL void apth_cancel_point(void);
 // static inline bool apth_cancel_enabled_and_canceled_and_async(int value);
 
 // ============================== Signal ==============================
-APTH_INTERNAL int apth_util_sigdelete(int sig);
+APTH_INTERNAL int apth_signal_system_init(void);
+APTH_INTERNAL int apth_signal_system_drop(void);
+APTH_INTERNAL void apth_deliver_pending_signals(apth_t th);
+
+// APTH_INTERNAL int apth_util_sigdelete(int sig);
 APTH_INTERNAL int apth_attr_setsigmask_internal(apth_attr_t *attr, const sigset_t *sigmask);
+APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched);
 
 // ============================== TLS ==============================
 APTH_INTERNAL void apth_key_destroydata(apth_t th);
@@ -199,6 +205,12 @@ APTH_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespe
 APTH_DECLARE_SYSCALL(int, usleep, unsigned int usec)
 APTH_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 APTH_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
+APTH_DECLARE_SYSCALL(int, sigaction, int signum, const struct sigaction *restrict act,
+                     struct sigaction *restrict oldact)
+APTH_DECLARE_SYSCALL(int, sigpending, sigset_t *set)
+APTH_DECLARE_SYSCALL(int, sigsuspend, const sigset_t *mask)
+APTH_DECLARE_SYSCALL(int, raise, int sig)
+APTH_DECLARE_SYSCALL(int, sigaltstack, const stack_t *restrict ss, stack_t *restrict oss)
 APTH_DECLARE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
 APTH_DECLARE_SYSCALL(pid_t, fork, void)
 APTH_DECLARE_SYSCALL(int, system, const char *cmd)

@@ -48,3 +48,4 @@ them evenly across all schedulers, accompanying mutator threads)
 20. Self-make allocator
 21. If there's too many terminated apths, scheduler should schedule apth
 that's waiting to join others as quick as possible
+22. On Linux platform, mechanisms like signalfd, eventfd should also be considered, hooked.

@@ -10,6 +10,9 @@
 #include <ucontext.h>
 #include <pthread.h>
 
+#define _POSIX_C_SOURCE 200809L // For struct sigaction
+#include <signal.h>
+
 #define _BIT(n) (1 << (n))
 
 extern struct apth_global_scheduler_pool GLOBAL_POOL;
@@ -28,13 +31,23 @@ typedef enum
     APTH_EV_STATUS_FAILED,
 } apth_ev_status_t;
 
+//  ============================== Thread Context ==============================
+#define APTH_NSIG 65
+// Process level gloabl signal configure table
+struct apth_global_sigaction
+{
+    struct sigaction actions[APTH_NSIG]; // Signal handler registered by user
+    lll_t lock;                          // Access protection
+};
+extern struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
+
 // ============================== Thread Context ==============================
 // APTH Thread context
 struct apth_cxt_st
 {
     ucontext_t uc;
     // sigset_t sigs;
-#define CTX_SIGMASK_OF(CTX) ((CTX)->uc.uc_sigmask)
+// #define CTX_SIGMASK_OF(CTX) ((CTX)->uc.uc_sigmask)
     int error;
     bool restored;
 };
@@ -155,9 +168,9 @@ typedef void drain_thqueue_th_func(apth_t th);
 // do not move `th`. Useful in fist loop of event manager.
 #define APTH_DONT_MOVE_BUT_COUNT (apth_thqueue_t)(-1)
 typedef apth_thqueue_t visit_thqueue_th_func(apth_t th, void *);
+typedef bool find_first_in_thqueue_th_func(apth_t th, void *);
 
 #define APTH_TCB_NAMELEN 31
-#define APTH_NSIG 65
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
 // thread but a background role. Besides, since the main thread only runs on
@@ -181,11 +194,11 @@ struct apth_perpthr_scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH
     volatile _Atomic(bool) opening;  // scheduler is opening
-    int apth_sigpipe[2];             // internal signal occurrence pipe
-    sigset_t apth_sigpending;        // mask of pending signals
-    sigset_t apth_sigblock;          // mask of signals we block in scheduler
-    sigset_t apth_sigcatch;          // mask of signals we have to catch
-    sigset_t apth_sigraised;         // mask of raised signals
+    // int apth_sigpipe[2];             // internal signal occurrence pipe
+    // sigset_t apth_sigpending;        // mask of pending signals
+    // sigset_t apth_sigblock;          // mask of signals we block in scheduler
+    // sigset_t apth_sigcatch;          // mask of signals we have to catch
+    // sigset_t apth_sigraised;         // mask of raised signals
     apth_time_t apth_loadticknext;
     float loadval;
 };
@@ -244,8 +257,13 @@ struct ALIGNED(8) apth_st
     struct list event_list; // events the tread is waiting for
 
     /* per-thread signal handling */
-    sigset_t sigpending; // set of pending signals
-    int sigpendcnt;      // number of pending signals
+    sigset_t sigpending;         // set of pending signals
+    int sigpendcnt;              // number of pending signals
+    sigset_t sigmask;            // signal mask of this apth
+    lll_t siglock;               // synchronize access to signal handling of this apth
+    stack_t signalstack;         // stack for signal handling
+    bool sigaltstack_set;        // whether signalstack is set
+    volatile bool in_sighandler; // whether we are now executing signal handler in signal stack
 
     /* machine context */
     apth_cxt_t ctx;              // last saved context of thread

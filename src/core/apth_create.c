@@ -131,6 +131,21 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Signals
     sigemptyset(&t->sigpending);
     t->sigpendcnt = 0;
+    lll_init(&t->siglock);
+    t->in_sighandler = false;
+    t->sigaltstack_set = false;
+
+    // Signal mask: inherit creator's mask or use attribute designated one
+    if (iattr->sigmask_set)
+        t->sigmask = iattr->sigmask;
+    else
+    {
+        apth_t creator = cur_apth();
+        if (!APTH_IS_FAKE_SCHED(creator))
+            t->sigmask = creator->sigmask;
+        else
+            sigemptyset(&t->sigmask);
+    }
 
     // Remember the start routine and arguments
     t->start_func = start_routine;

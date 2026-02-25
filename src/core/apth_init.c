@@ -63,6 +63,9 @@ int apth_init(apth_init_t *initvals)
 
     apth_debug("enter");
 
+    // Initialize signal system
+    apth_signal_system_init();
+
     worker_key_t_init();
     sched_key_t_init();
 
@@ -150,6 +153,11 @@ int apth_drop(void)
     {
         apth_debug("fail to drop global scheduler pool");
         PANIC("fail to drop global scheduler pool");
+    }
+
+    if (apth_signal_system_drop() != 0) {
+        apth_debug("fail to drop global scheduler pool");
+        PANIC("fail to drop global signal system");
     }
 
     if (apth_syscall_system_drop() != 0)

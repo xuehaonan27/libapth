@@ -3,6 +3,7 @@
 
 #define _POSIX_C_SOURCE 200809L // For struct sigaction
 #include <signal.h>
+#include <bits/ss_flags.h> // _SIGNAL_H should defined
 #include <sys/types.h> // for size_t, ssize_t, off_t
 #include <sys/time.h>
 #include <stdarg.h>

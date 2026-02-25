@@ -55,6 +55,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
 
+    /*
     if (apth_syscall_raw(pipe)(sched->apth_sigpipe) != 0)
         return apth_error(false, errno);
     if (apth_fdmode(sched->apth_sigpipe[0], APTH_FDMODE_NONBLOCK) == APTH_FDMODE_ERROR)
@@ -66,6 +67,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sigemptyset(&sched->apth_sigblock);
     sigemptyset(&sched->apth_sigcatch);
     sigemptyset(&sched->apth_sigraised);
+    */
 
     // Initialize load support
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
@@ -170,9 +172,11 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     sigemptyset(&sigs);
     apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
+    /*
     // Remove the internal signal pipe
     apth_syscall_raw(close)(sched->apth_sigpipe[0]);
     apth_syscall_raw(close)(sched->apth_sigpipe[1]);
+    */
 
     // Cancel TLS, no need for set current apth to APTH_NULL
     // since clearing scheduler will do this.
@@ -313,6 +317,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         assert(APTH_IS_VALID(th));
         apth_debug("decided next thread to run: %p (\"%s\")", th, th->name);
 
+        /*
         // Handle signals
         if (th->sigpendcnt > 0)
         {
@@ -325,6 +330,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 }
             }
         }
+        */
+
+        apth_check_process_signals(sched);
 
         // Set running start time for new thread and perform a context switch to it
         apth_debug("switching to thread %p (\"%s\")", th, th->name);
@@ -342,6 +350,10 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Set current thread
         set_cur_apth(th);
+
+        // Before context switch, we should handle signals
+        if (th->sigpendcnt > 0)
+            apth_deliver_pending_signals(th);
         apth_ctx_switch(sched->sched_ctx, th->ctx);
         // Prepare for thread insertion and event management phase
         set_cur_apth(APTH_FAKE_SCHED(sched));
@@ -356,6 +368,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_time_add(&th->running, &running);
         apth_debug("thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
 
+        /*
         // Handle signals
         if (th->sigpendcnt > 0)
         {
@@ -389,6 +402,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 }
             }
         }
+        */
 
         // Check for stack overflow
         if (th->stackguard != NULL)

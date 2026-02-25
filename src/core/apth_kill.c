@@ -6,33 +6,36 @@
 // Raise a signal for an apth
 int apth_kill(apth_t t, int sig)
 {
-    struct sigaction sa;
-
-    apth_t cur = cur_apth();
-
-    // TODO: should t == cur be an error case?
-    if (t == NULL || t == cur || (sig < 0 || sig > APTH_NSIG))
-        return apth_error(EINVAL, EINVAL);
-
+    if (t == NULL || sig < 0 || sig >= APTH_NSIG)
+        return EINVAL;
     if (sig == 0)
-        // Just perform a check
-        return apth_apth_exists(t);
+        return apth_apth_exists(t) ? 0 : ESRCH;
 
-    // Raise signal for t
-    if (sigaction(sig, NULL, &sa) != 0)
-        return apth_error(EINVAL, EINVAL);
-    // Check the global handler of `sig`
+    // Check global action
+    struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
     if (sa.sa_handler == SIG_IGN)
-        return 0; // Fine, nothing to do, sig is globally ignored
+        return 0;
 
-    // TODO: atomicity should ensured, lock the signal system of `t`
+    // Atomically add `sig` to pending set of target apth `t`
+    lll_lock(&t->siglock, "apth_kill");
     if (!sigismember(&t->sigpending, sig))
     {
         sigaddset(&t->sigpending, sig);
         t->sigpendcnt++;
     }
+    lll_unlock(&t->siglock, "apth_kill");
 
-    // NOTE: containing a cancelation point
-    apth_yield();
+    // Allow killing signal to self.
+    // If `t == self`, check delivery immediately
+    apth_t self = cur_apth();
+    if (t == self && !APTH_IS_FAKE_SCHED(self)) {
+        apth_deliver_pending_signals(self);
+    }
+
+    // If `t` is in waiting queue and the signal is not blocked, we could
+    // decide to wake it quickly, letting it handle the signal.
+    // TODO: add a mark to `t`, when event manager detects this mark,
+    // it could move `t` to waked queue.
+
     return 0;
 }

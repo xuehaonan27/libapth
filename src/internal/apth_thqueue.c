@@ -236,6 +236,32 @@ APTH_INTERNAL void transfer_thqueue(apth_thqueue_t queue_1, apth_thqueue_t queue
     // lll_unlock(&queue_1->th_list_lock, "transfer_thqueue");
 }
 
+APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux)
+{
+    assert(queue != NULL);
+
+    apth_t ret_th = APTH_NULL;
+
+    lll_lock(&queue->th_list_lock, "find_first_in_thqueue");
+    FOR_ELEMENT_IN_LIST(queue->th_list, e)
+    {
+        apth_t th = apth_t_list_entry(e);
+
+        assert(APTH_IS_VALID(th));
+        assert(belonging_queue_of(th, "find_first_in_thqueue") != NULL);
+        assert(belonging_queue_of(th, "find_first_in_thqueue") == queue);
+
+        if (fn(th, aux))
+        {
+            ret_th = th;
+            break;
+        }
+    }
+    lll_unlock(&queue->th_list_lock, "find_first_in_thqueue");
+
+    return ret_th;
+}
+
 // // Visit the queue and remove some of it according to return value of `fn`
 APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func fn, void *aux)
 {
