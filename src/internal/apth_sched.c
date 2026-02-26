@@ -55,20 +55,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
 
-    /*
-    if (apth_syscall_raw(pipe)(sched->apth_sigpipe) != 0)
-        return apth_error(false, errno);
-    if (apth_fdmode(sched->apth_sigpipe[0], APTH_FDMODE_NONBLOCK) == APTH_FDMODE_ERROR)
-        return apth_error(false, errno);
-    if (apth_fdmode(sched->apth_sigpipe[1], APTH_FDMODE_NONBLOCK) == APTH_FDMODE_ERROR)
-        return apth_error(false, errno);
-
-    sigemptyset(&sched->apth_sigpending);
-    sigemptyset(&sched->apth_sigblock);
-    sigemptyset(&sched->apth_sigcatch);
-    sigemptyset(&sched->apth_sigraised);
-    */
-
     // Initialize load support
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
     sched->loadval = 1.0;
@@ -158,12 +144,14 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     drain_thqueue(sched->waiting_queue, __drain_free_th);
     drain_thqueue(sched->terminated_queue, __drain_free_th);
     drain_thqueue(sched->waked_queue, __drain_free_th);
+    drain_thqueue(sched->running_queue, __drain_free_th);
 
     free(sched->new_queue);
     free(sched->ready_queue);
     free(sched->waiting_queue);
     free(sched->terminated_queue);
     free(sched->waked_queue);
+    free(sched->running_queue);
 
     // TODO: report scheduler statistics if in debugging mode
 
@@ -171,12 +159,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     sigset_t sigs;
     sigemptyset(&sigs);
     apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
-
-    /*
-    // Remove the internal signal pipe
-    apth_syscall_raw(close)(sched->apth_sigpipe[0]);
-    apth_syscall_raw(close)(sched->apth_sigpipe[1]);
-    */
 
     // Cancel TLS, no need for set current apth to APTH_NULL
     // since clearing scheduler will do this.
@@ -211,7 +193,7 @@ static inline bool worker0_check_end_process(apth_worker_t worker)
             // Rather, although the main exited by calling `apth_exit`,
             // all other apth exited as well. End the process then.
             end_the_process = true;
-        // else: Other threads are also running, we cannot end.
+        // else: Other threads are still running, we cannot end.
     }
     else
         // Main apth exited without calling `apth_exit`, that means
@@ -269,8 +251,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     while (get_MAIN_APTH() == APTH_NULL)
         ;
 
-    // bool end_the_process = false;
-    // while (apth_sched_is_opening(sched))
     for (;;)
     {
         if (!apth_sched_is_opening(sched))
@@ -317,21 +297,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         assert(APTH_IS_VALID(th));
         apth_debug("decided next thread to run: %p (\"%s\")", th, th->name);
 
-        /*
-        // Handle signals
-        if (th->sigpendcnt > 0)
-        {
-            sigpending(&sched->apth_sigpending);
-            for (int sig = 1; sig < APTH_NSIG; sig++)
-            {
-                if (sigismember(&th->sigpending, sig) && !sigismember(&sched->apth_sigpending, sig))
-                {
-                    apth_syscall_raw(pthread_kill)(apth_syscall_raw(pthread_self)(), sig);
-                }
-            }
-        }
-        */
-
         apth_check_process_signals(sched);
 
         // Set running start time for new thread and perform a context switch to it
@@ -368,42 +333,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_time_add(&th->running, &running);
         apth_debug("thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
 
-        /*
-        // Handle signals
-        if (th->sigpendcnt > 0)
-        {
-            sigset_t sigstillpending;
-            sigpending(&sigstillpending);
-            for (int sig = 1; sig < APTH_NSIG; sig++)
-            {
-                if (sigismember(&th->sigpending, sig))
-                {
-                    if (!sigismember(&sigstillpending, sig))
-                    {
-                        // already handled by the apth scheduled just now, remove
-                        sigdelset(&th->sigpending, sig);
-                        th->sigpendcnt--;
-                    }
-                    else if (!sigismember(&sched->apth_sigpending, sig))
-                    {
-                        // The signal is really a signal pending in the worker's pthread
-                        // signal set, and `th` has it, but the scheduler do not have
-                        // knowledge about it.
-                        // A new signal arrives during the apth is scheduled to run
-                        // and it happens to be in the signal pending set of `th`.
-                        // We must re-deliver this signal for `th` the next time
-                        // it is going to be scheduled. Since re-deliver an existing signal
-                        // won't trigger anything, we must first delete the signal at
-                        // pthread level, and later the scheduler will pthread_kill the
-                        // signal according to `th->sigpending` the next time `th` is
-                        // scheduled.
-                        apth_util_sigdelete(sig);
-                    }
-                }
-            }
-        }
-        */
-
         // Check for stack overflow
         if (th->stackguard != NULL)
         {
@@ -429,16 +358,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // Else terminate the thread only and send a SIGSEGV which allows the application
                 // to handle the situation
                 th->join_arg = (void *)APTH_MAGIC;
-                // th->state = APTH_STATE_TERMINATED;
                 // Note that we force set the state to TERMINATED
                 atomic_store_release(&th->state_holder, make_state_uncommitted(APTH_STATE_TERMINATED));
-                // apth_syscall_raw(pthread_kill)(apth_syscall_raw(pthread_self)(), SIGSEGV);
                 apth_kill(th, SIGSEGV);
             }
         }
 
         apth_state_t retired_th_state = state_holder_of(th);
-        // remove_apth_from(sched->running_queue, th);
         switch (make_state_committed(retired_th_state))
         {
         case APTH_STATE_NEW:
@@ -466,8 +392,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // have been executed.
             if (IS_DETACHED(th))
             {
-                // commit_state_of(th, APTH_STATE_TERMINATED);
-                // We should first move `th` from running queue to terminated queue
                 remove_apth_from(sched->running_queue, th);
                 apth_tcb_free(th);
             }
@@ -483,7 +407,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         th = APTH_NULL;
 
         // Manage events in the waiting queue
-        // TODO: checking list empty should be protected if work stealing is implemented
         if (thqueue_size(sched->ready_queue) == 0 && thqueue_size(sched->new_queue) == 0)
         {
             apth_debug("no NEW or READY threads, have to wait for new work");
@@ -506,7 +429,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         lll_lock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
         list_remove(&me->elem);
         lll_unlock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
-        // apth_global_scheduler_pool_drop();
         apth_drop();
     }
 
@@ -514,12 +436,11 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     apth_debug("WORKER %d cleaning self", me->worker_id);
     apth_scheduler_kill();
 
-    // Only worker 0 needs to free itself. Other workers are freed in
-    // `apth_global_scheduler_pool_drop` routine.
+    // Only worker 0 needs to free itself. Other workers are freed in `apth_drop`
+    // routine by worker 0.
     if (is_main_worker(me))
         free(me);
 
     // Now we should be an ordinary pthread.
-    // Not reached
     return NULL;
 }

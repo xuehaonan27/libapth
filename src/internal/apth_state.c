@@ -5,7 +5,6 @@
 
 APTH_INTERNAL apth_state_t queue_state_of(apth_t th)
 {
-    // return atomic_load_acquire(&th->state_holder);
     return belonging_queue_of(th, "queue_state_of")->th_state;
 }
 

@@ -7,9 +7,9 @@
 int apth_kill(apth_t t, int sig)
 {
     if (t == NULL || sig < 0 || sig >= APTH_NSIG)
-        return EINVAL;
+        return apth_error(EINVAL, EINVAL);
     if (sig == 0)
-        return apth_apth_exists(t) ? 0 : ESRCH;
+        return apth_apth_exists(t) ? 0 : apth_error(ESRCH, ESRCH);
 
     // Check global action
     struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
@@ -28,9 +28,8 @@ int apth_kill(apth_t t, int sig)
     // Allow killing signal to self.
     // If `t == self`, check delivery immediately
     apth_t self = cur_apth();
-    if (t == self && !APTH_IS_FAKE_SCHED(self)) {
+    if (t == self && !APTH_IS_FAKE_SCHED(self))
         apth_deliver_pending_signals(self);
-    }
 
     // If `t` is in waiting queue and the signal is not blocked, we could
     // decide to wake it quickly, letting it handle the signal.

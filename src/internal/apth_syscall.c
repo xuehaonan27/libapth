@@ -221,35 +221,6 @@ APTH_DEFINE_SYSCALL(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
     // *sigp should have been set to proper value.
     apth_event_free(ev);
     return 0;
-
-    /*
-    apth_event_t ev;
-    sigset_t pending;
-
-    if (set == NULL || sigp == NULL)
-        return apth_error(EINVAL, EINVAL);
-
-    // Check whether signal is already pending
-    if (sigpending(&pending) < 0)
-        sigemptyset(&pending);
-    for (int sig = 1; sig < APTH_NSIG; sig++)
-    {
-        if (sigismember(set, sig) && sigismember(&pending, sig))
-        {
-            apth_util_sigdelete(sig);
-            *sigp = sig;
-            return 0;
-        }
-    }
-
-    // Create event and wait on it
-    if ((ev = apth_event_sigs(APTH_EVENT_MODE_STATIC, set, sigp)) == NULL)
-        return apth_error(errno, errno);
-    apth_wait_event(ev);
-
-    // nothing to do, scheduler has already set *sigp for us
-    return 0;
-    */
 }
 
 // For signals like SIGKILL, SIGSTOP, SIGSEGV, SIGBUS, SIGFPE, SIGILL, etc,

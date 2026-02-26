@@ -5,22 +5,6 @@
 #include "utils/apth_errno.h"
 #include <malloc.h>
 
-/*
-static void apth_sched_eventmanager_sighandler(int sig, MAYBE_UNUSED siginfo_t *_dummy_info, void *arg)
-{
-    char c;
-    apth_sched_t sched = (struct apth_perpthr_scheduler *)arg;
-    // Remember raised signal
-    sigaddset(&sched->apth_sigraised, sig);
-
-    // Write signal to signal pipe in order to awake the select()
-    c = (int)sig;
-    apth_debug("GOING TO WRITE TO PIPE");
-    apth_syscall_raw(write)(sched->apth_sigpipe[1], &c, sizeof(char));
-    return;
-}
-*/
-
 static bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
 {
     // If the state is not committed, then means it's yet to reach goal.
@@ -61,7 +45,6 @@ struct aux_for_eventmanager
 
 static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
 {
-
     apth_debug("checking in waiting list th=%p", th);
 
     struct aux_for_eventmanager *aux = (struct aux_for_eventmanager *)aux_arg;
@@ -69,19 +52,6 @@ static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
     apth_time_t *now = aux->now;
 
     apth_thqueue_t ret_val = NULL;
-
-    /*
-    // Determine signals we block
-    // If there's any apth that do not block `sig`, then the worker pthread should
-    // not block `sig`.
-    for (int sig = 1; sig < APTH_NSIG; sig++)
-    {
-        // NOTE: check signal mask here
-        sigset_t *th_signal_mask = &CTX_SIGMASK_OF(th->ctx);
-        if (!sigismember(th_signal_mask, sig))
-            sigdelset(&sched->apth_sigblock, sig);
-    }
-    */
 
     // Cancellation support
     if (th->cancelreq == true)
@@ -128,46 +98,6 @@ static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
             if (aux->fdmax < event->ev_args.SELECT.nfd - 1)
                 aux->fdmax = event->ev_args.SELECT.nfd - 1;
             break;
-            /*
-            case APTH_EVENT_TYPE_SIGS:
-                // Signal Set
-                for (int sig = 1; sig < APTH_NSIG; sig++)
-                {
-                    if (sigismember(event->ev_args.SIGS.sigs, sig))
-                    {
-                        // Apth signal handling
-                        if (sigismember(&th->sigpending, sig))
-                        {
-                            // This signal is both in event goal and the apth
-                            // so move the pending signal from apth to event
-                            *(event->ev_args.SIGS.sig) = sig;
-                            sigdelset(&th->sigpending, sig);
-                            th->sigpendcnt--;
-                            this_ev_occurred = true;
-                        }
-
-                        // Pthread signal handling
-                        if (sigismember(&sched->apth_sigpending, sig))
-                        {
-                            // This signal is both in event goal and pthread
-                            // so move the pending signal from pthread to event
-                            if (event->ev_args.SIGS.sig != NULL)
-                                *(event->ev_args.SIGS.sig) = sig;
-                            apth_util_sigdelete(sig);
-                            this_ev_occurred = true;
-                        }
-                        else
-                        {
-                            // This signal is in event goal but not in pthread
-                            // pending set. So allow the signal, and add it to
-                            // catch set.
-                            sigdelset(&sched->apth_sigblock, sig);
-                            sigaddset(&sched->apth_sigcatch, sig);
-                        }
-                    }
-                }
-                break;
-            */
         case APTH_EVENT_TYPE_SIGS:
             // Check apth level sigpending only, instead of pthread level
             for (int sig = 1; sig < APTH_NSIG; sig++)
@@ -380,25 +310,6 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                         }
                     }
                     break;
-                    /*
-                    case APTH_EVENT_TYPE_SIGS:
-                        for (int sig = 1; sig < APTH_NSIG; sig++)
-                        {
-                            if (sigismember(event->ev_args.SIGS.sigs, sig))
-                            {
-                                if (sigismember(&sched->apth_sigraised, sig))
-                                {
-                                    // If sig is in both event and this pthread raised signals
-                                    if (event->ev_args.SIGS.sig != NULL)
-                                        *(event->ev_args.SIGS.sig) = sig;
-                                    apth_debug("[signal] event occurred for apth \"%s\"", th->name);
-                                    sigdelset(&sched->apth_sigraised, sig);
-                                    event->ev_status = APTH_EV_STATUS_OCCURRED;
-                                }
-                            }
-                        }
-                        break;
-                    */
                     // No longer check `sched->apth_sigraised`, because process
                     // level signals should already be delivered to certain
                     // apth's pending set by kernel level catch-all handler.
@@ -478,14 +389,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         FD_ZERO(&aux.wfds);
         FD_ZERO(&aux.efds);
 
-        /*
-        // Initialize signal status
-        sigpending(&sched->apth_sigpending);
-        sigfillset(&sched->apth_sigblock);
-        sigemptyset(&sched->apth_sigcatch);
-        sigemptyset(&sched->apth_sigraised);
-        */
-
         // Initialize next timer
         apth_time_set(&aux.nexttimer_value, APTH_TIME_ZERO);
         aux.nexttimer_th = APTH_NULL;
@@ -540,54 +443,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             // TODO: mark to notify this scheduler to steal work
         }
 
-        /*
-        // Clear pipe and let select() wait for read-part of the pipe.
-        // apth_debug("GOING TO read the read-part of the signal pipe");
-        assert(fcntl(sched->apth_sigpipe[0], F_GETFL, NULL) == APTH_O_NONBLOCKING);
-        char minibuf[128];
-        while (apth_syscall_raw(read)(sched->apth_sigpipe[0], minibuf, sizeof(minibuf)) > 0)
-            ;
-        // apth_debug("HAS read the read-part of the signal pipe");
-
-        // Replace signal actions for signals we have to catch for events
-        struct sigaction sa;
-        struct sigaction osa[1 + APTH_NSIG];
-        bool at_least_one_signal_to_be_catched = false;
-        for (int sig = 1; sig < APTH_NSIG; sig++)
-        {
-            if (sigismember(&sched->apth_sigcatch, sig))
-            {
-                apth_debug("sig=%d is in my `apth_sigcatch`", sig);
-                sa.sa_sigaction = apth_sched_eventmanager_sighandler;
-                sigfillset(&sa.sa_mask);
-                sa.sa_flags = SA_SIGINFO;
-                sigaction(sig, &sa, &osa[sig]);
-                at_least_one_signal_to_be_catched = true;
-            }
-        }
-
-        // If there's at least one signal to catch
-        if (at_least_one_signal_to_be_catched)
-        {
-            FD_SET(sched->apth_sigpipe[0], &aux.rfds);
-            if (aux.fdmax < sched->apth_sigpipe[0])
-            {
-                apth_debug("before fdmax=%d, now should be %d", aux.fdmax, sched->apth_sigpipe[0]);
-                aux.fdmax = sched->apth_sigpipe[0];
-            }
-        }
-
-        // Allow some signals to be delivered: either to our catching handler or directly
-        // to the configured handler for signals not catched by events
-        sigset_t oss;
-        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sched->apth_sigblock, &oss);
-        */
-
-        // Now do the polling for filedescriptor I/O and timers.
-        // When the scheduler sleeps at all, then here.
-        // int rc = -1;
-        // if (!(dopoll && fdmax == -1))
-
         // TODO: Firstly, if scheduler has more apth to schedule, scheduler would not wait here
         // TODO: Then, scheduler should check whether work stealing is available.
         // Then, if the scheduler really really has nothing to do, then could the sched
@@ -602,19 +457,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
             {
                 apth_debug("rc=%d, errno=%d", aux.rc, errno);
             }
-            // apth_debug("HAS select the fd_set");
         }
-
-        /*
-        // Restore signal mask and actions and handle signals
-        // apth_debug("Restore signal mask and actions and handle signals");
-        apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &oss, NULL);
-        for (int sig = 1; sig < APTH_NSIG; sig++)
-        {
-            if (sigismember(&sched->apth_sigcatch, sig))
-                sigaction(sig, &osa[sig], NULL);
-        }
-        */
 
         // If the timer elapsed, handle it
         if (!dopoll && aux.rc == 0 && aux.nexttimer_ev != NULL)
@@ -632,15 +475,6 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                 aux.nexttimer_ev->ev_status = APTH_EV_STATUS_OCCURRED;
             }
         }
-
-        /*
-        // If the internal signal pipe was used, adjust the select() results
-        if (!dopoll && aux.rc > 0 && FD_ISSET(sched->apth_sigpipe[0], &aux.rfds))
-        {
-            FD_CLR(sched->apth_sigpipe[0], &aux.rfds);
-            aux.rc--;
-        }
-        */
 
         // If an error occurred, avoid confusion in the cleaup loop
         if (aux.rc <= 0)
