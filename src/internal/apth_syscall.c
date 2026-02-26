@@ -236,6 +236,8 @@ APTH_DEFINE_SYSCALL(int, sigaction,
                      struct sigaction *restrict oldact),
                     (sig, act, oldact))
 {
+    apth_hook_debug(sigaction);
+
     // Reject invalid signal number
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(-1, EINVAL);
