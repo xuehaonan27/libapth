@@ -210,6 +210,8 @@ APTH_DECLARE_SYSCALL(int, sigaction, int signum, const struct sigaction *restric
                      struct sigaction *restrict oldact)
 typedef void (*sighandler_t)(int);
 APTH_DECLARE_SYSCALL(sighandler_t, signal, int sig, sighandler_t handler)
+APTH_DECLARE_SYSCALL(sighandler_t, __sysv_signal, int sig, sighandler_t handler)
+APTH_DECLARE_SYSCALL(sighandler_t, bsd_signal, int sig, sighandler_t handler)
 APTH_DECLARE_SYSCALL(int, sigpending, sigset_t *set)
 APTH_DECLARE_SYSCALL(int, sigprocmask, int how, const sigset_t *restrict set,
                      sigset_t *restrict oldset);

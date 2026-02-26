@@ -1,4 +1,4 @@
-#include "common.h"
+// #include "common.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/debug.h"
@@ -38,6 +38,8 @@
     X(sigwait)                \
     X(sigaction)              \
     X(signal)                 \
+    X(__sysv_signal)          \
+    X(bsd_signal)             \
     X(sigpending)             \
     X(sigprocmask)            \
     X(sigsuspend)             \
@@ -258,6 +260,8 @@ APTH_DEFINE_SYSCALL(int, sigaction,
 
 APTH_DEFINE_SYSCALL(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {
+    apth_hook_debug(signal);
+
     // Reject invalid signal number
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(SIG_ERR, EINVAL);
@@ -275,6 +279,34 @@ APTH_DEFINE_SYSCALL(sighandler_t, signal, (int sig, sighandler_t handler), (sig,
     APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART;
 
     lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "sigaction");
+    return prev;
+}
+
+APTH_DEFINE_SYSCALL(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (sig, handler))
+{
+    if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
+        return apth_error(SIG_ERR, EINVAL);
+    sighandler_t prev;
+    lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "__sysv_signal");
+    prev = APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler;
+    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = handler;
+    sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
+    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART;
+    lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "__sysv_signal");
+    return prev;
+}
+
+APTH_DEFINE_SYSCALL(sighandler_t, bsd_signal, (int sig, sighandler_t handler), (sig, handler))
+{
+    if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
+        return apth_error(SIG_ERR, EINVAL);
+    sighandler_t prev;
+    lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "bsd_signal");
+    prev = APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler;
+    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = handler;
+    sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
+    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART | SA_NODEFER;
+    lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "bsd_signal");
     return prev;
 }
 
