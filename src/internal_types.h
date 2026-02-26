@@ -416,7 +416,7 @@ struct apth_event_tid_st
     apth_t tid;
 };
 
-typedef int (*apth_event_custom_func_t)(void *);
+typedef bool (*apth_event_custom_func_t)(void *);
 // Waiting on custom functions
 struct apth_event_func_st
 {

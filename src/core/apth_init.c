@@ -59,12 +59,27 @@ int apth_init(apth_init_t *initvals)
         LIBAPTH_INITIALIZED = true;
 
     // Initialize syscall wrapping
-    apth_syscall_system_init();
+    if (apth_syscall_system_init() != 0)
+    {
+        apth_debug("fail to initialize syscall system");
+        return apth_error(-1, errno);
+    }
 
     apth_debug("enter");
 
     // Initialize signal system
-    apth_signal_system_init();
+    if (apth_signal_system_init() != 0)
+    {
+        apth_debug("fail to initialize signal system");
+        return apth_error(-1, errno);
+    }
+
+    // Register process level signal catchers
+    if (apth_install_kernel_signal_catchers() != 0)
+    {
+        apth_debug("fail to register process level signal catchers");
+        return apth_error(-1, errno);
+    }
 
     worker_key_t_init();
     sched_key_t_init();
@@ -155,7 +170,8 @@ int apth_drop(void)
         PANIC("fail to drop global scheduler pool");
     }
 
-    if (apth_signal_system_drop() != 0) {
+    if (apth_signal_system_drop() != 0)
+    {
         apth_debug("fail to drop global scheduler pool");
         PANIC("fail to drop global signal system");
     }

@@ -10,25 +10,27 @@ APTH_INTERNAL int apth_signal_system_init(void)
 {
     lll_init(&APTH_GLOBAL_SIGACTIONS.lock);
 
-    struct sigaction *actions = &APTH_GLOBAL_SIGACTIONS.actions;
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
-        actions[sig].sa_handler = SIG_DFL;
-        sigemptyset(&actions[sig].sa_mask);
-        actions[sig].sa_flags = 0;
+        APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = SIG_DFL;
+        sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
+        APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = 0;
     }
+    
+    return 0;
 }
 
 APTH_INTERNAL int apth_signal_system_drop(void)
 {
     // Clear
-    struct sigaction *actions = &APTH_GLOBAL_SIGACTIONS.actions;
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
-        actions[sig].sa_handler = SIG_DFL;
-        sigemptyset(&actions[sig].sa_mask);
-        actions[sig].sa_flags = 0;
+        APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = SIG_DFL;
+        sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
+        APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = 0;
     }
+
+    return 0;
 }
 
 // Default behaviour of `sig`.
@@ -187,7 +189,6 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         if (sa.sa_handler == SIG_DFL)
         {
             // default behaviour
-            // TODO: implement this
             __apth_sig_default_action(th, sig);
             continue;
         }
@@ -232,7 +233,7 @@ static void apth_route_process_signal(int sig)
     // point.
 
     // sigaddset(&APTH_PROCESS_SIGPENDING, sig);
-    // TODO: we must use atomic operation or sig_atomic_t to set pending bit safely.
+    // NOTE: we must use atomic operation or sig_atomic_t to set pending bit safely.
     if (sig >= 1 && sig < APTH_NSIG)
         atomic_store_release(&APTH_PROCESS_SIGPENDING[sig], 1);
 
@@ -327,6 +328,39 @@ static void apth_kernel_signal_catcher(int sig, siginfo_t *info, void *uctx)
     (void)info;
     (void)uctx;
     apth_route_process_signal(sig);
+}
+
+APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
+{
+    struct sigaction sa;
+    sigset_t all_signals;
+
+    // Block all signals when we are executing signal catcher
+    sigfillset(&all_signals);
+    sa.sa_sigaction = apth_kernel_signal_catcher;
+    sa.sa_mask = all_signals;
+    sa.sa_flags = SA_SIGINFO; // Using sa_sigaction field
+
+    // int max_sig = sysconf(_SC_NSIG);
+    // if (max_sig == -1)
+    // {
+    //     max_sig = 64;
+    // }
+
+    int ret = 0;
+
+    for (int sig = 1; sig < APTH_NSIG; sig++)
+    {
+        if (sig == SIGKILL || sig == SIGSTOP || sig == 32 || sig == 33)
+            continue;
+        if (apth_syscall_raw(sigaction)(sig, &sa, NULL) == -1) {
+            apth_debug("signal %d cound not be set handler with `sigaction`", sig);
+            ret = -1;
+            break;
+        }
+    }
+
+    return ret;
 }
 
 // static void apth_util_sigdelete_sighandler(int sig MAYBE_UNUSED) { /* nop */ return; }

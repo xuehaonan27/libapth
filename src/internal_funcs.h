@@ -103,6 +103,7 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th);
 // APTH_INTERNAL int apth_util_sigdelete(int sig);
 APTH_INTERNAL int apth_attr_setsigmask_internal(apth_attr_t *attr, const sigset_t *sigmask);
 APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched);
+APTH_INTERNAL int apth_install_kernel_signal_catchers(void);
 
 // ============================== TLS ==============================
 APTH_INTERNAL void apth_key_destroydata(apth_t th);
@@ -207,7 +208,11 @@ APTH_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 APTH_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
 APTH_DECLARE_SYSCALL(int, sigaction, int signum, const struct sigaction *restrict act,
                      struct sigaction *restrict oldact)
+typedef void (*sighandler_t)(int);
+APTH_DECLARE_SYSCALL(sighandler_t, signal, int sig, sighandler_t handler)
 APTH_DECLARE_SYSCALL(int, sigpending, sigset_t *set)
+APTH_DECLARE_SYSCALL(int, sigprocmask, int how, const sigset_t *restrict set,
+                     sigset_t *restrict oldset);
 APTH_DECLARE_SYSCALL(int, sigsuspend, const sigset_t *mask)
 APTH_DECLARE_SYSCALL(int, raise, int sig)
 APTH_DECLARE_SYSCALL(int, sigaltstack, const stack_t *restrict ss, stack_t *restrict oss)
