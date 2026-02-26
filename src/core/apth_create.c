@@ -126,7 +126,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     apth_time_set(&t->running, APTH_TIME_ZERO);
 
     // Events
-    list_empty(&t->event_list);
+    list_init(&t->event_list);
 
     // Signals
     sigemptyset(&t->sigpending);

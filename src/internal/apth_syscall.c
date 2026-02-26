@@ -269,7 +269,8 @@ APTH_DEFINE_SYSCALL(sighandler_t, signal, (int sig, sighandler_t handler), (sig,
 
     // Set new action
     APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = handler;
-    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags &= (~SA_SIGINFO);
+    sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
+    APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART;
 
     lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "sigaction");
     return prev;
@@ -310,12 +311,18 @@ APTH_DEFINE_SYSCALL(int, sigpending, (sigset_t * set), (set))
 static bool __apth_sigsuspend_check(void *arg)
 {
     apth_t th = (apth_t)arg;
-
-    bool ret;
     lll_lock(&th->siglock, "__apth_sigsuspend_check");
-    ret = (th->sigpendcnt > 0);
+    bool found = false;
+    for (int sig = 1; sig < APTH_NSIG; sig++)
+    {
+        if (sigismember(&th->sigpending, sig) && !sigismember(&th->sigmask, sig))
+        {
+            found = true;
+            break;
+        }
+    }
     lll_unlock(&th->siglock, "__apth_sigsuspend_check");
-    return ret;
+    return found;
 }
 
 APTH_DEFINE_SYSCALL(int, sigsuspend, (const sigset_t *mask), (mask))

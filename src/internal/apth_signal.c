@@ -16,7 +16,7 @@ APTH_INTERNAL int apth_signal_system_init(void)
         sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
         APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = 0;
     }
-    
+
     return 0;
 }
 
@@ -145,7 +145,21 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
 
     // Execute the handler
     if (sa->sa_flags & SA_SIGINFO)
-        sa->sa_sigaction(sig, NULL, NULL);
+    {
+        // NOTE: in pthread implementation, the siginfo_t * is provided by
+        // kernel, with necessary information. If we want to mimic the kernel
+        // behaviour as much as possible, then we should provide the handler
+        // with enough information. That's a big deal.
+        // TODO: implement above.
+        //
+        // For now, construct a minimal siginfo_t *
+        siginfo_t info;
+        memset(&info, 0, sizeof(info));
+        info.si_signo = sig;
+        info.si_code = SI_USER;
+
+        sa->sa_sigaction(sig, &info, NULL);
+    }
     else
         sa->sa_handler(sig);
 
@@ -157,7 +171,9 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
     if (sa->sa_flags & SA_RESETHAND)
     {
         struct sigaction dfl = {.sa_handler = SIG_DFL};
+        lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "__apth_inject_signal_handler");
         APTH_GLOBAL_SIGACTIONS.actions[sig] = dfl;
+        lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "__apth_inject_signal_handler");
     }
 
     // TODO: implement Plan B and give this function a conditional compilation option
@@ -165,9 +181,7 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
 
 APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
 {
-    // TODO: should the lock for accessing signal be acquired?
-    // NOTE: currently all caller of `apth_deliver_pending_signals` is thread itself or
-    // its scheduler.
+    lll_lock(&th->siglock, "deliver_pending");
 
     // Fetch signals that in `pending & ~sigmask`
     for (int sig = 1; sig < APTH_NSIG; sig++)
@@ -182,7 +196,9 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         th->sigpendcnt--;
 
         // Search handler
+        lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_deliver_pending_signals");
         struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
+        lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_deliver_pending_signals");
 
         if (sa.sa_handler == SIG_IGN)
             continue; // this signal is ignored, skip
@@ -200,6 +216,8 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         // it will jump back to original PC
         __apth_inject_signal_handler(th, sig, &sa);
     }
+
+    lll_unlock(&th->siglock, "deliver_pending");
 }
 
 // Process level pending signals, storing signals when all apths are blocking
@@ -232,7 +250,6 @@ static void apth_route_process_signal(int sig)
     // let schedulers checking them and pick signals they like at scheduling
     // point.
 
-    // sigaddset(&APTH_PROCESS_SIGPENDING, sig);
     // NOTE: we must use atomic operation or sig_atomic_t to set pending bit safely.
     if (sig >= 1 && sig < APTH_NSIG)
         atomic_store_release(&APTH_PROCESS_SIGPENDING[sig], 1);
@@ -257,8 +274,10 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 {
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
-        // if (!sigismember(&APTH_PROCESS_SIGPENDING, sig))
-        //     continue;
+        // NOTE: after CAS fetched and removed the signal and before placing
+        // it back, another scheduler is checking it, the latter would miss
+        // the signal, in extreme situation this might cause high signal delivery
+        // latency. But that's not a big deal though, an acceptable tradeoff.
         int expected = 1;
         if (!atomic_compare_exchange_acquire(&APTH_PROCESS_SIGPENDING[sig], &expected, 0))
             // We fail getting this signal, well continue check next one
@@ -353,7 +372,10 @@ APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
     {
         if (sig == SIGKILL || sig == SIGSTOP || sig == 32 || sig == 33)
             continue;
-        if (apth_syscall_raw(sigaction)(sig, &sa, NULL) == -1) {
+        if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL || sig == SIGTRAP || sig == SIGSYS)
+            continue;
+        if (apth_syscall_raw(sigaction)(sig, &sa, NULL) == -1)
+        {
             apth_debug("signal %d cound not be set handler with `sigaction`", sig);
             ret = -1;
             break;

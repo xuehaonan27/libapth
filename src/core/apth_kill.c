@@ -12,7 +12,10 @@ int apth_kill(apth_t t, int sig)
         return apth_apth_exists(t) ? 0 : apth_error(ESRCH, ESRCH);
 
     // Check global action
+    lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_kill");
     struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
+    lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_kill");
+
     if (sa.sa_handler == SIG_IGN)
         return 0;
 

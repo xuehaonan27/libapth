@@ -553,6 +553,12 @@ APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd
     return ev;
 }
 
+// TODO: sigs will drop const identifier, performing a const-cast.
+// Note that this is error-prone. If caller submits a temporary variable on the
+// stack, and apth_wait_event exceeds scope, then `sigs` and `sig` will become
+// dangling pointers. Currently all invocations, `sigs` and `sig` will still
+// be on the stack of apths while waiting the event. But this could be an
+// error prone situation.
 APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, const sigset_t *sigs, int *sig)
 {
     // Signal set event

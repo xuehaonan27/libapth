@@ -341,7 +341,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 apth_debug("stack overflow detected for thread %p (\"%s\")", th, th->name);
                 // If the application doesn't catch SIGSEGVs, then terminate manually
                 // with a SIGSEGV now
-                if (sigaction(SIGSEGV, NULL, &sa) == 0)
+                if (apth_syscall_raw(sigaction)(SIGSEGV, NULL, &sa) == 0)
                 {
                     if (sa.sa_handler == SIG_DFL)
                     {
