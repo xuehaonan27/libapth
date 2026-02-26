@@ -22,7 +22,7 @@ APTH_INTERNAL void set_DEBUG_USING_HOOKED(int v)
 
 static char str[1024];
 
-_Atomic int dbg_spinl = 0;
+static _Atomic(int) dbg_spinl = 0;
 static void _dbg_spin_lock(void)
 {
     int expected = 0;

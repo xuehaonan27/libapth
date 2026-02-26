@@ -12,8 +12,8 @@ static bool WORKER_POOL_INITIALIZED = false;
 struct apth_global_scheduler_pool GLOBAL_POOL;
 
 // TODO: what about add worker ? how to sync that?
-_Atomic unsigned int WORKER_SPAWNED = 0x7FFFFFFF;
-_Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
+_Atomic(unsigned int) WORKER_SPAWNED = 0x7FFFFFFF;
+_Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
 // TLS implementation selection:
 // - If APTH_CUR_USING_KEYWORD is defined, use _Thread_local/__thread for faster access

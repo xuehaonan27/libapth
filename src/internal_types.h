@@ -17,11 +17,11 @@
 
 extern struct apth_global_scheduler_pool GLOBAL_POOL;
 
-extern _Atomic unsigned int WORKER_SPAWNED;
-extern _Atomic unsigned int SYNC_BEFORE_MAIN_APTH_SPAWN;
+extern _Atomic(unsigned int) WORKER_SPAWNED;
+extern _Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN;
 
-extern _Atomic int MAIN_APTH_EXITED;
-extern _Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
+extern _Atomic(int) MAIN_APTH_EXITED;
+extern _Atomic(int) MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
 // Event status code
 typedef enum
@@ -46,8 +46,6 @@ extern struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 struct apth_cxt_st
 {
     ucontext_t uc;
-    // sigset_t sigs;
-// #define CTX_SIGMASK_OF(CTX) ((CTX)->uc.uc_sigmask)
     int error;
     bool restored;
 };
@@ -70,7 +68,7 @@ struct apth_keytab_st
 {
     // Sequence numbers. Even numbers indicated vacant entries,
     // Note that zero is even.
-    _Atomic uintptr_t seq;
+    _Atomic(uintptr_t) seq;
     // Destructor for the data.
     void (*destructor)(void *);
 };
@@ -194,11 +192,6 @@ struct apth_perpthr_scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH
     volatile _Atomic(bool) opening;  // scheduler is opening
-    // int apth_sigpipe[2];             // internal signal occurrence pipe
-    // sigset_t apth_sigpending;        // mask of pending signals
-    // sigset_t apth_sigblock;          // mask of signals we block in scheduler
-    // sigset_t apth_sigcatch;          // mask of signals we have to catch
-    // sigset_t apth_sigraised;         // mask of raised signals
     apth_time_t apth_loadticknext;
     float loadval;
 };
@@ -275,7 +268,7 @@ struct ALIGNED(8) apth_st
     void *start_arg;             // start argument
 
     /* thread joining */
-    _Atomic apth_t joinid; // Who is joining me? Only one apth can do this, store here
+    _Atomic(apth_t) joinid; // Who is joining me? Only one apth can do this, store here
     // When (pd)->joinid == (pd), then `pd` is marked as DETACHED
 #define IS_DETACHED(pd) ((pd)->joinid == (pd))
     void *join_arg; // joining argument

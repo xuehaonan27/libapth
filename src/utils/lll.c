@@ -20,7 +20,8 @@ APTH_INTERNAL void lll_init(lll_t *lock)
     atomic_init(&lock->inner, LLL_NOT_ACQUIRED);
 }
 
-APTH_INTERNAL uintptr_t lll_peek_val(lll_t *lock) {
+APTH_INTERNAL uintptr_t lll_peek_val(lll_t *lock)
+{
     return atomic_load_acquire(&lock->inner);
 }
 

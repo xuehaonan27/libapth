@@ -9,12 +9,12 @@
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
-_Atomic unsigned int apth_nthreads = 0;
-_Atomic unsigned int apth_alive_nthreads = 0;
+_Atomic(unsigned int) apth_nthreads = 0;
+_Atomic(unsigned int) apth_alive_nthreads = 0;
 
-static _Atomic apth_t MAIN_APTH = APTH_NULL;
-_Atomic int MAIN_APTH_EXITED = 0;
-_Atomic int MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
+static _Atomic(apth_t) MAIN_APTH = APTH_NULL;
+_Atomic(int) MAIN_APTH_EXITED = 0;
+_Atomic(int) MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
 
 APTH_INTERNAL apth_t get_MAIN_APTH(void)
 {
