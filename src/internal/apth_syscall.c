@@ -1400,7 +1400,14 @@ APTH_DEFINE_SYSCALL(ssize_t, recv,
 {
     apth_hook_debug(recv);
     // Here we use hooked syscall
-    return apth_syscall(recvfrom)(sockfd, buf, len, flags, NULL, 0);
+    // According to manual of recv, recvfrom, recvmsg:
+    // The  only  difference  between recv() and read(2) is the presence of flags.
+    // With a zero flags argument, recv() is generally equivalent to read(2)
+    // (but see NOTES).  Also, the following call
+    //        recv(sockfd, buf, len, flags);
+    // is equivalent to
+    //        recvfrom(sockfd, buf, len, flags, NULL, NULL);
+    return apth_syscall(recvfrom)(sockfd, buf, len, flags, NULL, NULL);
 }
 
 APTH_DEFINE_SYSCALL(ssize_t, send,
@@ -1409,6 +1416,15 @@ APTH_DEFINE_SYSCALL(ssize_t, send,
 {
     apth_hook_debug(send);
     // Here we use hooked syscall
+    // According to manual of send, sendto, sendmsg
+    // The  send()  call may be used only when the socket is in a connected state
+    // (so that the intended recipient is known).  The only difference between
+    // send() and write(2) is the presence of flags.  With a zero flags argument,
+    // send() is equivalent to write(2).  Also, the following call
+    //        send(sockfd, buf, len, flags);
+    // is equivalent to
+    //        sendto(sockfd, buf, len, flags, NULL, 0);
+    // The argument sockfd is the file descriptor of the sending socket.
     return apth_syscall(sendto)(sockfd, buf, len, flags, NULL, 0);
 }
 
