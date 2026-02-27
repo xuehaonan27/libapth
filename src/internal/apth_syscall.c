@@ -5,6 +5,7 @@
 #include "utils/apth_errno.h"
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/epoll.h>
 #include <malloc.h> // for malloc
 // #include <sys/uio.h>
 #include <bits/uio_lim.h> // for __IOV_MAX
@@ -559,6 +560,7 @@ APTH_DEFINE_SYSCALL(
             apth_wait_event(ev);
         }
 
+        /*
         // POSIX.1-2001/SUSv3 compliance
         if (rfds != NULL)
             FD_ZERO(rfds);
@@ -566,6 +568,7 @@ APTH_DEFINE_SYSCALL(
             FD_ZERO(wfds);
         if (efds != NULL)
             FD_ZERO(efds);
+        */
         return 0;
     }
 
@@ -576,7 +579,7 @@ APTH_DEFINE_SYSCALL(
     struct timeval delay;
     fd_set rspare, wspare, espare;
     fd_set *rtmp, *wtmp, *etmp;
-    int selected;
+    // int selected;
     int rc;
 
     delay.tv_sec = 0;
@@ -639,13 +642,13 @@ APTH_DEFINE_SYSCALL(
     // Select return code semantics
     if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
         return apth_error(-1, EBADF);
-    selected = false;
-    if (ev_select->ev_status == APTH_EV_STATUS_OCCURRED)
-        selected = true;
-    if (timeout != NULL && ev_timeout->ev_status == APTH_EV_STATUS_OCCURRED)
+
+    // If the select event occurred, then RC should have been set in ev_args.SELECT.n
+    // If timeout occurred and select event did not, return 0 and clear fd_set
+    if (timeout != NULL &&
+        ev_timeout->ev_status == APTH_EV_STATUS_OCCURRED &&
+        ev_select->ev_status != APTH_EV_STATUS_OCCURRED)
     {
-        selected = true;
-        // POSIX.1-2001/SUSv3 compliance
         if (rfds != NULL)
             FD_ZERO(rfds);
         if (wfds != NULL)
@@ -671,7 +674,21 @@ APTH_DEFINE_SYSCALL(int, socket,
                     (domain, type, protocol))
 {
     apth_hook_debug(socket);
-    TODO("unimplemented socket");
+
+    // Invoke libc socket
+    int fd = apth_syscall_raw(socket)(domain, type, protocol);
+    if (fd < 0)
+        return fd;
+
+    // Register this fd in APTH_FD_TABLE
+    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
+    {
+        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
+        APTH_FD_TABLE[fd].managed = 1;
+        APTH_FD_TABLE[fd].refcount = 0;
+    }
+
+    return fd;
 }
 
 APTH_DEFINE_SYSCALL(
@@ -743,7 +760,9 @@ APTH_DEFINE_SYSCALL(int, accept,
     // Poll socket via accept
     apth_event_t ev = APTH_EVENT_NULL;
     int rv;
-    while ((rv = apth_syscall_raw(accept)(fd, addr, addrlen)) == -1 && (errno == EAGAIN || errno == EWOULDBLOCK) && fdmode != APTH_FDMODE_NONBLOCK)
+    while ((rv = apth_syscall_raw(accept)(fd, addr, addrlen)) == -1 &&
+           (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) &&
+           fdmode != APTH_FDMODE_NONBLOCK)
     {
         // Do lazy event allocation
         ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
@@ -768,7 +787,31 @@ APTH_DEFINE_SYSCALL(int, accept,
 APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
 {
     apth_hook_debug(close);
-    TODO("unimplemented close");
+
+    // Clear entry in `APTH_FD_TABLE`
+    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
+    {
+        APTH_FD_TABLE[fd].orig_flags = 0;
+        APTH_FD_TABLE[fd].managed = 0;
+        APTH_FD_TABLE[fd].refcount = 0;
+    }
+
+    // TODO(fd): remove fd from all schedulers epoll instances
+    // epoll will remove fd when fd close, but would not do this if this fd was
+    // ever `dup`ped.
+    // For safety, explicitly invoke EPOLL_CTL_DEL and ignore its error
+
+    // NOTE: if there's apths waiting for this `fd`'s I/O event, event
+    // manager's select / epoll logic will error to this fd.
+    // Then in phase 2 we could handle the situation in `APTH_EV_STATUS_FAILED`
+    // branch.
+    apth_sched_t sched = cur_sched();
+    // Ignore error.
+    int _err = epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+    (void)_err;
+
+    // Invoke libc close
+    return apth_syscall_raw(close)(fd);
 }
 
 APTH_DEFINE_SYSCALL(ssize_t, read,
@@ -796,12 +839,16 @@ APTH_DEFINE_SYSCALL(ssize_t, read,
     //
     // Fix: always force NONBLOCK + use a unified event-based retry loop.
     // Unlike write, a short read is not an error — return it to the caller.
+    /*
     int fdmode;
     if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
         return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
+        return apth_error(-1, EBADF);
 
-    // Fast-path poll: avoid a scheduler context switch when data is already
-    // available.
+    /*
     struct timeval delay;
     apth_event_t ev;
     fd_set fds;
@@ -819,42 +866,75 @@ APTH_DEFINE_SYSCALL(ssize_t, read,
         apth_shield { apth_fdmode(fd, fdmode); }
         return apth_error(-1, errno);
     }
+    */
 
+    ssize_t rv;
     for (;;)
     {
-        /* if filedescriptor is still not readable,
-           let thread sleep until it is or event occurs */
+        apth_debug("TRY READ FAST PATH");
+        // Fast-path : avoid waiting when data is already available.
+        while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
+            ;
+        apth_debug("AFTER TRYED: rv = %d errno = %d", rv, errno);
+
+        if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            // Data not ready, yield CPU to other apths
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+            continue; // Try again after waked
+        }
+
+        // rv >= 0 (succeed / EOF) or rv < 0 (real error)
+        // Either situation we should return
+        break;
+
+        /*
+        // if filedescriptor is still not readable,
+        // let thread sleep until it is or event occurs
         if (n < 1)
         {
             ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
         }
 
-        /* now perform the actual read operation */
+        // now perform the actual read operation
         while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
             ;
 
-        /* EAGAIN / EWOULDBLOCK: fd temporarily not readable (e.g. another
-           thread consumed the data, or race left fd in NONBLOCK mode).
-           POSIX allows either name for this condition (they are the same
-           value on Linux, but a portable implementation must check both).
-           Yield to the scheduler and retry. */
+        // EAGAIN / EWOULDBLOCK: fd temporarily not readable (e.g. another
+        // thread consumed the data, or race left fd in NONBLOCK mode).
+        // POSIX allows either name for this condition (they are the same
+        // value on Linux, but a portable implementation must check both).
+        // Yield to the scheduler and retry.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            n = 0; /* trigger apth_wait_event on next iteration */
+            n = 0; // trigger apth_wait_event on next iteration
             continue;
         }
 
-        /* rv > 0 (data read), rv == 0 (EOF), or rv < 0 (real error):
-           return to caller — a short read is valid POSIX behaviour. */
+        // rv > 0 (data read), rv == 0 (EOF), or rv < 0 (real error):
+        // return to caller — a short read is valid POSIX behaviour.
         break;
+        */
     }
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(fd, fdmode); }
+    // apth_shield { apth_fdmode(fd, fdmode); }
+    apth_fd_release(fd);
 
     apth_debug("apth_syscall_read: leave to thread \"%s\"", cur->name);
     return rv;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, __read_chk,
+                    (int fd, void *buf, size_t nbytes, size_t buflen),
+                    (fd, buf, nbytes, buflen))
+{
+
+    // TODO: perform check
+    apth_hook_debug(__read_chk);
+    return apth_syscall(read)(fd, buf, nbytes);
 }
 
 APTH_DEFINE_SYSCALL(ssize_t, write,
@@ -890,15 +970,20 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
     //
     // Fix: always do the initial writability poll + event-based retry loop, and
     // treat EAGAIN as "fd not yet writable" rather than as an error.
+    /*
     int fdmode;
-    ssize_t rv;
     if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Directly poll filedescriptor for writeability to avoid unnecessary
     // (and resource-consuming because of context switches, etc.) event
     // handling through the scheduler on the common case where the fd is
     // already writable.
+    /*
     struct timeval delay;
     apth_event_t ev;
     fd_set fds;
@@ -916,60 +1001,46 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
         apth_shield { apth_fdmode(fd, fdmode); }
         return apth_error(-1, errno);
     }
+    */
 
-    rv = 0;
+    ssize_t rv = 0;
     for (;;)
     {
-        /* if filedescriptor is still not writeable,
-           let thread sleep until it is or event occurs */
-        if (n < 1)
-        {
-            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-        }
-
-        /* now perform the actual write operation */
+        // Try directly write first
+        ssize_t s;
         while ((s = apth_syscall_raw(write)(fd, buf, nbytes)) < 0 && errno == EINTR)
             ;
+
+        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            // FIXME: event allocated more than once
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+            continue; // try again
+        }
+
         if (s > 0)
             rv += s;
 
-        /* although we're physically now in non-blocking mode,
-           iterate unless all data is written or an error occurs, because
-           we've to mimic the usual blocking I/O behaviour of write(2). */
+        // although we're physically now in non-blocking mode,
+        // iterate unless all data is written or an error occurs, because
+        // we've to mimic the usual blocking I/O behaviour of write(2).
         if (s > 0 && s < (ssize_t)nbytes)
         {
             nbytes -= s;
             buf = (void *)((char *)buf + s);
-            n = 0;
-            continue;
         }
 
-        /* Bug fix: EAGAIN / EWOULDBLOCK means the kernel buffer is
-           temporarily full.  Rather than treating this as a fatal error
-           (which silently drops data), yield back to the scheduler and
-           retry once the fd is writable again.  This covers both:
-             (a) the normal case where a PTY/pipe buffer is momentarily
-                 full due to concurrent writers across multiple workers,
-             (b) the race-condition case where the fd was left in NONBLOCK
-                 mode by a concurrent apth_fdmode() call.
-           POSIX allows either errno name; check both for portability. */
-        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-        {
-            n = 0; /* trigger apth_wait_event on next iteration */
-            continue;
-        }
-
-        /* pass error to caller, but not for partial writes (rv > 0) */
+        // pass error to caller, but not for partial writes (rv > 0)
         if (s < 0 && rv == 0)
             rv = -1;
 
-        /* stop looping */
         break;
     }
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(fd, fdmode); }
+    // apth_shield { apth_fdmode(fd, fdmode); }
+    apth_fd_release(fd);
 
     apth_debug("apth_syscall_write: leave to thread \"%s\"", cur->name);
     return rv;
@@ -997,12 +1068,18 @@ APTH_DEFINE_SYSCALL(ssize_t, readv,
     //
     // Fix: force NONBLOCK + unified event-based retry loop.  A short readv
     // is valid POSIX behaviour; return it to the caller as-is.
+    /*
     int fdmode;
     if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Fast-path poll: avoid a scheduler context switch when data is already
     // available.
+    /*
     struct timeval delay;
     apth_event_t ev;
     fd_set fds;
@@ -1020,17 +1097,11 @@ APTH_DEFINE_SYSCALL(ssize_t, readv,
         apth_shield { apth_fdmode(fd, fdmode); }
         return apth_error(-1, errno);
     }
+    */
 
+    ssize_t rv;
     for (;;)
     {
-        /* if filedescriptor is still not readable,
-           let thread sleep until it is or event occurs */
-        if (n < 1)
-        {
-            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-        }
-
         /* now perform the actual readv operation */
         while ((rv = apth_syscall_raw(readv)(fd, iov, iovcnt)) < 0 && errno == EINTR)
             ;
@@ -1039,17 +1110,19 @@ APTH_DEFINE_SYSCALL(ssize_t, readv,
            POSIX allows either name; check both for portability. */
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            n = 0; /* trigger apth_wait_event on next iteration */
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
             continue;
         }
 
-        /* rv > 0 (data read), rv == 0 (EOF), or rv < 0 (real error):
-           return to caller. */
+        // rv > 0 (data read), rv == 0 (EOF), or rv < 0 (real error)
+        // either situation, we should return to caller
         break;
     }
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(fd, fdmode); }
+    // apth_shield { apth_fdmode(fd, fdmode); }
+    apth_fd_release(fd);
 
     apth_debug("apth_syscall_readv: leave to thread \"%s\"", cur->name);
     return rv;
@@ -1132,8 +1205,13 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
     //
     // Fix: always use the full poll+retry loop and treat EAGAIN as "fd not
     // yet writable" — yield to the scheduler and retry.
+    /*
     int fdmode;
     if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -1141,12 +1219,16 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
     struct iovec *tiov;
     int tiovcnt;
 
-    if (iovcnt > (int)sizeof(tiov_stack))
+#define APTH_WRITEV_TIOV_STACK_SIZE (sizeof(tiov_stack) / sizeof(tiov_stack[0]))
+
+    // if (iovcnt > (int)sizeof(tiov_stack))
+    if (iovcnt > (int)APTH_WRITEV_TIOV_STACK_SIZE)
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
         {
-            apth_shield { apth_fdmode(fd, fdmode); }
+            // apth_shield { apth_fdmode(fd, fdmode); }
+            apth_fd_release(fd);
             return apth_error(-1, errno);
         }
     }
@@ -1166,6 +1248,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
     apth_writev_iov_advance(iov, iovcnt, 0, &liov, &liovcnt, tiov, tiovcnt);
 
     // Fast-path poll: avoid a scheduler context switch when fd is already writable.
+    /*
     struct timeval delay;
     apth_event_t ev;
     fd_set fds;
@@ -1177,20 +1260,21 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
     delay.tv_usec = 0;
     while ((n = apth_syscall_raw(select)(fd + 1, NULL, &fds, NULL, &delay)) < 0 && errno == EINTR)
         ;
+    */
 
     for (;;)
     {
-        // If filedescriptor is still not writeable, let thread sleep until it is
-        if (n < 1)
-        {
-            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-        }
-
-        // Now perform actual write operation
         ssize_t s;
         while ((s = apth_syscall_raw(writev)(fd, liov, liovcnt)) < 0 && errno == EINTR)
             ;
+
+        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            apth_event_t ev = apth_event_fd(
+                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+            continue;
+        }
 
         if (s > 0)
             rv += s;
@@ -1202,16 +1286,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
         {
             nbytes -= s;
             apth_writev_iov_advance(iov, iovcnt, s, &liov, &liovcnt, tiov, tiovcnt);
-            n = 0;
-            continue;
-        }
-
-        // Bug fix: EAGAIN / EWOULDBLOCK means the kernel buffer is temporarily
-        // full.  Yield to the scheduler and retry, same as apth_syscall_write.
-        // POSIX allows either errno name; check both for portability.
-        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-        {
-            n = 0; /* trigger apth_wait_event on next iteration */
+            // n = 0;
             continue;
         }
 
@@ -1219,16 +1294,16 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
         if (s < 0 && rv == 0)
             rv = -1;
 
-        // Stop looping
         break;
     }
 
     // Cleanup
-    if (iovcnt > (int)sizeof(tiov_stack))
+    if (iovcnt > (int)APTH_WRITEV_TIOV_STACK_SIZE)
         free(tiov);
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(fd, fdmode); }
+    // apth_shield { apth_fdmode(fd, fdmode); }
+    apth_fd_release(fd);
 
     apth_debug("apth_syscall_writev: leave to thread \"%s\"", cur->name);
     return rv;
@@ -1263,13 +1338,19 @@ APTH_DEFINE_SYSCALL(
     //
     // Fix: always force NONBLOCK + unified event-based retry loop.
     // A short recv is valid POSIX behaviour; return it to the caller as-is.
+
+    /*
     int fdmode;
     if ((fdmode = apth_fdmode(sockfd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(sockfd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Fast-path poll: avoid a scheduler context switch when data is already
     // available.
-    struct timeval delay;
+    /*struct timeval delay;
     apth_event_t ev;
     fd_set fds;
     int n;
@@ -1286,40 +1367,45 @@ APTH_DEFINE_SYSCALL(
         apth_shield { apth_fdmode(sockfd, fdmode); }
         return apth_error(-1, errno);
     }
+    */
 
+    ssize_t rv;
     for (;;)
     {
-        /* if sockfd is still not readable,
-           let thread sleep until it is or event occurs */
-        if (n < 1)
-        {
-            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, sockfd);
-            apth_wait_event(ev);
-        }
-
-        /* now perform the actual recvfrom operation */
         while ((rv = apth_syscall_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen)) < 0 && errno == EINTR)
             ;
 
-        /* EAGAIN / EWOULDBLOCK: sockfd temporarily not readable (e.g. another
-           thread consumed the data, or race left fd in NONBLOCK mode).
-           POSIX allows either name; check both for portability. */
+        // EAGAIN / EWOULDBLOCK: sockfd temporarily not readable (e.g. another
+        // thread consumed the data, or race left fd in NONBLOCK mode).
+        // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            n = 0; /* trigger apth_wait_event on next iteration */
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, sockfd);
+            apth_wait_event(ev);
             continue;
         }
 
-        /* rv > 0 (data received), rv == 0 (EOF/peer closed), or rv < 0
-           (real error): return to caller — a short recv is valid POSIX. */
+        // rv > 0 (data received), rv == 0 (EOF/peer closed), or rv < 0 (real error)
+        // return to caller, a short recv is valid POSIX
         break;
     }
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(sockfd, fdmode); }
+    // apth_shield { apth_fdmode(sockfd, fdmode); }
+    apth_fd_release(sockfd);
 
     apth_debug("apth_syscall_recvfrom: leave to thread \"%s\"", cur->name);
     return rv;
+}
+
+APTH_DEFINE_SYSCALL(
+    ssize_t, __recvfrom_chk,
+    (int __fd, void *__restrict __buf, size_t __n, size_t __buflen,
+     int __flags, struct sockaddr *__addr, socklen_t *__restrict __addr_len),
+    (__fd, __buf, __n, __buflen, __flags, __addr, __addr_len))
+{
+    // TODO: perform check
+    return apth_syscall(recvfrom)(__fd, __buf, __n, __flags, __addr, __addr_len);
 }
 
 APTH_DEFINE_SYSCALL(
@@ -1352,13 +1438,18 @@ APTH_DEFINE_SYSCALL(
     //
     // Fix: always use the full poll+retry loop, treat EAGAIN/EWOULDBLOCK as
     // "sockfd not yet writable" — yield to the scheduler and retry.
+    /*
     int fdmode;
     if ((fdmode = apth_fdmode(sockfd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+        return apth_error(-1, EBADF);
+    */
+    int orig_mode = apth_fd_acquire(sockfd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Fast-path poll: avoid a scheduler context switch when the socket send
     // buffer already has room.
-    struct timeval delay;
+    /*struct timeval delay;
     apth_event_t ev;
     fd_set fds;
     int n;
@@ -1376,20 +1467,23 @@ APTH_DEFINE_SYSCALL(
         apth_shield { apth_fdmode(sockfd, fdmode); }
         return apth_error(-1, errno);
     }
+    */
 
-    rv = 0;
+    ssize_t rv = 0;
     for (;;)
     {
-        // If sockfd is still not writable, let apth sleep until it is
-        if (n < 1)
-        {
-            ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, sockfd);
-            apth_wait_event(ev);
-        }
-
-        // Now perform the actual send operation
+        ssize_t s;
         while ((s = apth_syscall_raw(sendto)(sockfd, buf, nbytes, flags, dest_addr, dest_len)) < 0 && errno == EINTR)
             ;
+
+        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            // FIXME: event allocated more than once
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, sockfd);
+            apth_wait_event(ev);
+            continue; // try again
+        }
+
         if (s > 0)
             rv += s;
 
@@ -1400,16 +1494,6 @@ APTH_DEFINE_SYSCALL(
         {
             nbytes -= s;
             buf = (void *)((char *)buf + s);
-            n = 0;
-            continue;
-        }
-
-        // Bug fix: EAGAIN / EWOULDBLOCK means the kernel send buffer is
-        // temporarily full.  Yield to the scheduler and retry.
-        // POSIX allows either errno name; check both for portability.
-        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-        {
-            n = 0; /* trigger apth_wait_event on next iteration */
             continue;
         }
 
@@ -1417,12 +1501,12 @@ APTH_DEFINE_SYSCALL(
         if (s < 0 && rv == 0)
             rv = -1;
 
-        // Stop looping
         break;
     }
 
     // Restore filedescriptor mode
-    apth_shield { apth_fdmode(sockfd, fdmode); }
+    // apth_shield { apth_fdmode(sockfd, fdmode); }
+    apth_fd_release(sockfd);
 
     apth_debug("apth_syscall_sendto: leave to thread \"%s\"", cur->name);
     return rv;
@@ -1442,6 +1526,15 @@ APTH_DEFINE_SYSCALL(ssize_t, recv,
     // is equivalent to
     //        recvfrom(sockfd, buf, len, flags, NULL, NULL);
     return apth_syscall(recvfrom)(sockfd, buf, len, flags, NULL, NULL);
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, __recv_chk,
+                    (int sockfd, void *buf, size_t len, size_t buflen, int flags),
+                    (sockfd, buf, len, buflen, flags))
+{
+    // TODO: Perform check here
+    apth_hook_debug(__recv_chk);
+    return apth_syscall(recv)(sockfd, buf, len, flags);
 }
 
 APTH_DEFINE_SYSCALL(ssize_t, send,
@@ -1466,8 +1559,48 @@ APTH_DEFINE_SYSCALL(int, poll,
                     (struct pollfd * fds, nfds_t nfds, int timeout),
                     (fds, nfds, timeout))
 {
-    apth_hook_debug(poll);
-    TODO("unimplemented poll");
+    if (nfds == 0)
+    {
+        if (timeout > 0)
+        {
+            usleep(timeout * 1000);
+        }
+        return 0;
+    }
+
+    // Do 0-timeout detection first
+    int rc;
+    while ((rc = apth_syscall_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR)
+        ;
+    if (rc > 0 || timeout == 0)
+        return rc;
+
+    // Construct event list, one fd event for every pollfd
+    struct list event_list;
+    list_init(&event_list);
+    for (nfds_t i = 0; i < nfds; i++)
+    {
+        unsigned long goal = APTH_EVENT_MODE_STATIC;
+        if (fds[i].events & POLLIN)
+            goal |= APTH_GOAL_UNTIL_FD_READABLE;
+        if (fds[i].events & POLLOUT)
+            goal |= APTH_GOAL_UNTIL_FD_WRITEABLE;
+        apth_event_t ev = apth_event_fd(goal, fds[i].fd);
+        apth_event_list_add(&event_list, ev);
+    }
+    if (timeout > 0)
+    {
+        apth_event_t ev_timeout = apth_event_time(
+            APTH_EVENT_MODE_STATIC,
+            apth_timeout(timeout / 1000, (timeout % 1000) * 1000));
+        apth_event_list_add(&event_list, ev_timeout);
+    }
+    apth_wait_event_list(&event_list);
+
+    // poll again to fetch revents
+    while ((rc = apth_syscall_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR)
+        ;
+    return rc;
 }
 
 APTH_DEFINE_SYSCALL(
@@ -1476,7 +1609,7 @@ APTH_DEFINE_SYSCALL(
     (fd, level, option_name, option_value, option_len))
 {
     apth_hook_debug(setsockopt);
-    TODO("unimplemented setsockopt");
+    return apth_syscall_raw(setsockopt)(fd, level, option_name, option_value, option_len);
 }
 
 // APTH_DEFINE_SYSCALL(int, fcntl, (int fildes, int cmd, ...), (fildes, cmd, __VA_ARGS__))

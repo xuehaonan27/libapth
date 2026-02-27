@@ -37,7 +37,7 @@
 #include <sys/socket.h>
 
 /* ---- tunables ---- */
-#define N_WORKERS   4
+#define N_WORKERS   1
 #define N_PAIRS     8
 #define REQ_LEN     512
 #define N_ROUNDS    32

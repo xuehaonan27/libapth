@@ -84,6 +84,15 @@
 #define atomic_fetch_add_acq_rel(mem, operand) \
     atomic_fetch_add_explicit((mem), (operand), __ATOMIC_ACQ_REL)
 
+#define atomic_fetch_sub_relaxed(mem, operand) \
+    atomic_fetch_sub_explicit((mem), (operand), __ATOMIC_RELAXED)
+#define atomic_fetch_sub_acquire(mem, operand) \
+    atomic_fetch_sub_explicit((mem), (operand), __ATOMIC_ACQUIRE)
+#define atomic_fetch_sub_release(mem, operand) \
+    atomic_fetch_sub_explicit((mem), (operand), __ATOMIC_RELEASE)
+#define atomic_fetch_sub_acq_rel(mem, operand) \
+    atomic_fetch_sub_explicit((mem), (operand), __ATOMIC_ACQ_REL)
+
 #define atomic_fetch_and_relaxed(mem, operand) \
     atomic_fetch_and_explicit((mem), (operand), __ATOMIC_RELAXED)
 #define atomic_fetch_and_acquire(mem, operand) \

@@ -7,6 +7,8 @@
 #include "utils/lll.h"
 #include <stdlib.h>
 
+#include <sys/epoll.h>
+
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
 _Atomic(unsigned int) apth_nthreads = 0;
@@ -58,6 +60,21 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     // Initialize load support
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
     sched->loadval = 1.0;
+    sched->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (sched->epoll_fd < 0)
+        return apth_error(false, errno);
+    // sched->epoll_fd_count = 0;
+    // Initialize fd slot table
+    for (int i = 0; i < APTH_EPOLL_FD_SLOT_TABLE_SIZE; i++)
+    {
+        sched->fd_slot_table[i].fd = i;
+        sched->fd_slot_table[i].aggregate_events = 0;
+        list_init(&sched->fd_slot_table[i].waiters);
+        sched->fd_slot_table[i].waiter_count = 0;
+        sched->fd_slot_table[i].registered = false;
+    }
+    list_init(&sched->active_fd_slots);
+    sched->active_fd_count = 0;
 
     // Store the sched into the worker
     worker->sched = sched;
@@ -154,6 +171,17 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     free(sched->running_queue);
 
     // TODO: report scheduler statistics if in debugging mode
+
+    // Drop epoll
+    if (sched->epoll_fd >= 0)
+    {
+        // Use raw close to avoid recursion
+        apth_syscall_raw(close)(sched->epoll_fd);
+        sched->epoll_fd = -1;
+    }
+
+    // Waiters in active_fd_slots and fd_slot_table should have been cleared
+    // in drain_thqueue process and memory freed. No more clean to do.
 
     // Signal mask restore, allow all signals
     sigset_t sigs;
@@ -289,7 +317,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // There is no more thread to run
             // TODO: steal work
             apth_time_set(&snapshot, APTH_TIME_NOW);
-            apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);
+            apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
             sched_yield();
             continue;
         }
@@ -410,12 +438,12 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         if (thqueue_size(sched->ready_queue) == 0 && thqueue_size(sched->new_queue) == 0)
         {
             apth_debug("no NEW or READY threads, have to wait for new work");
-            apth_sched_eventmanager(sched, &snapshot, false /* dopoll */);
+            apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
         }
         else
         {
             apth_debug("already NEW or READY threads exists, so just poll for even more work");
-            apth_sched_eventmanager(sched, &snapshot, true /* dopoll */);
+            apth_sched_eventmanager_epoll(sched, &snapshot, true /* dopoll */);
         }
     }
 

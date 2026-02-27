@@ -62,6 +62,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg);
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
 APTH_INTERNAL void apth_tcb_free(apth_t t);
 
+// ============================== Filedescriptor ==============================
+APTH_INTERNAL void apth_fd_table_init(void);
+APTH_INTERNAL int apth_fd_acquire(int fd);     // Increment refcount, set NONBLOCK when first acquired
+APTH_INTERNAL void apth_fd_release(int fd);    // Decrement refcount, restore original flag when rc == 0
+APTH_INTERNAL void apth_fd_register(int fd);   // Register when socket/open
+APTH_INTERNAL void apth_fd_unregister(int fd); // Unregister when close
+
 // ============================== Time ==============================
 #define APTH_TIME(sec, usec) {sec, usec}
 
@@ -110,6 +117,7 @@ APTH_INTERNAL void apth_key_destroydata(apth_t th);
 
 // ============================== Event ==============================
 APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
+APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool dopoll);
 APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
 APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
 APTH_INTERNAL int apth_wait_event_list(struct list *el);
@@ -232,6 +240,7 @@ APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, sockl
 APTH_DECLARE_SYSCALL(int, close, int fd)
 APTH_DECLARE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrlen)
 APTH_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
+APTH_DECLARE_SYSCALL(ssize_t, __read_chk, int fd, void *buf, size_t nbytes, size_t buflen)
 APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
 APTH_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
 APTH_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
@@ -240,8 +249,13 @@ APTH_DECLARE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes
                      int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
 APTH_DECLARE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
                      int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+APTH_DECLARE_SYSCALL(ssize_t, __recvfrom_chk, int __fd, void *__restrict __buf, size_t __n,
+                     size_t __buflen, int __flags, struct sockaddr *__addr,
+                     socklen_t *__restrict __addr_len);
 APTH_DECLARE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
 APTH_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
+APTH_DECLARE_SYSCALL(ssize_t, __recv_chk,
+                     int sockfd, void *buf, size_t len, size_t buflen, int flags)
 APTH_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 APTH_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                      const void *option_value, socklen_t option_len)

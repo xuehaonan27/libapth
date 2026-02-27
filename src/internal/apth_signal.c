@@ -36,6 +36,7 @@ APTH_INTERNAL int apth_signal_system_drop(void)
 // Default behaviour of `sig`.
 static void __apth_sig_default_action(apth_t th, int sig)
 {
+    (void)th;
     switch (sig)
     {
     // Signals that will terminate the process

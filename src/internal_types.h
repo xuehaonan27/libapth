@@ -140,7 +140,7 @@ APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
 APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg);
 APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
 
-// ============================== Thread Scheduler ==============================
+// ============================== Scheduler Forward Declaration ==============================
 typedef int sched_id;
 
 // We don't want to expose this struct to public space
@@ -170,6 +170,24 @@ typedef bool find_first_in_thqueue_th_func(apth_t th, void *);
 
 #define APTH_TCB_NAMELEN 31
 
+#define APTH_EPOLL_FD_SLOT_TABLE_SIZE FD_SETSIZE
+#define APTH_FD_TABLE_SIZE FD_SETSIZE
+
+// ============================== Thread Scheduler ==============================
+
+// A fd slot monitored by epoll
+struct apth_epoll_fd_slot
+{
+    int fd;                    // monitored fd
+    uint32_t aggregate_events; // aggregation of all waiter's event mask（EPOLLIN|EPOLLOUT|...）
+    struct list waiters;       // apth list waiting this fd [elem: struct apth_epoll_waiter]
+    int waiter_count;          // number of waiters
+    bool registered;           // already registered to epoll?
+    struct list_elem elem;     // link into scheduler's active_fd_slots list
+#define apth_epoll_fd_slot_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_epoll_fd_slot, elem)
+};
+
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
 // thread but a background role. Besides, since the main thread only runs on
 // one of schedulers, holding a special reference field to the main thread is
@@ -192,8 +210,14 @@ struct apth_perpthr_scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH
     volatile _Atomic(bool) opening;  // scheduler is opening
-    apth_time_t apth_loadticknext;
-    float loadval;
+    apth_time_t apth_loadticknext;   // scheduler load next tick
+    float loadval;                   // scheduler load value
+    
+    int epoll_fd;                    // epoll instance for this scheduler
+    // int epoll_fd_count;              // count of fd currently registered in epoll
+    struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
+    struct list active_fd_slots;                                            // slots with waiters
+    int active_fd_count;
 };
 
 // ============================== Thread Worker ==============================
@@ -441,6 +465,7 @@ struct apth_event_st
     apth_ev_status_t ev_status;
     enum apth_event_type ev_type;
     apth_goal_t ev_goal;
+    bool epoll_registered;
     union
     {
         struct apth_event_fd_st FD;
@@ -501,6 +526,29 @@ enum
     APTH_FDMODE_BLOCK,
     APTH_FDMODE_NONBLOCK
 };
+
+struct apth_fd_entry
+{
+    int orig_flags;        // Original fcntl flags
+    _Atomic(int) managed;  // Whether this filedescriptor is managed by libapth
+    _Atomic(int) refcount; // Concurrent reference count
+};
+
+extern struct apth_fd_entry APTH_FD_TABLE[APTH_FD_TABLE_SIZE];
+
+// ============================== Epoll FD Waiter Map ==============================
+
+// Entry for an apth waiting for a certain fd.
+// This structure should be linked into `epoll_fd_slot`'s waiting list
+struct apth_epoll_waiter
+{
+    apth_t th;             // waiting apth
+    apth_event_t ev;       // corresponding event, for marking the event as OCCURRED
+    struct list_elem elem; // link into epoll_fd_slot.waiters
+#define apth_epoll_waiter_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_epoll_waiter, elem)
+};
+
 #include <fcntl.h>
 // Non-blocking flags
 #define APTH_O_NONBLOCKING O_NONBLOCK

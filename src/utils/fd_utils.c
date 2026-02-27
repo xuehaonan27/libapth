@@ -5,7 +5,7 @@
 
 APTH_INTERNAL bool apth_util_fd_valid(int fd)
 {
-    if (fd < 0 || fd >= FD_SETSIZE)
+    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
         return false;
     if (fcntl(fd, F_GETFL) == -1 && errno == EBADF)
         return false;

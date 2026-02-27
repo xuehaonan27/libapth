@@ -81,6 +81,8 @@ int apth_init(apth_init_t *initvals)
         return apth_error(-1, errno);
     }
 
+    apth_fd_table_init();
+
     worker_key_t_init();
     sched_key_t_init();
 
