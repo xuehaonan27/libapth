@@ -3,6 +3,7 @@
 
 #include "internal_types.h"
 #include "utils/archplattoold.h"
+#include <linux/openat2.h> // for struct open_how
 
 APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg);
 APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q);
@@ -234,6 +235,11 @@ APTH_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
                      fd_set *efds, struct timeval *timeout)
 APTH_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
                      fd_set *efds, const struct timespec *ts, const sigset_t *mask)
+
+APTH_DECLARE_SYSCALL(int, open, const char *pathname, int flags, ... /* mode_t mode */);
+APTH_DECLARE_SYSCALL(int, creat, const char *pathname, mode_t mode);
+APTH_DECLARE_SYSCALL(int, openat, int dirfd, const char *pathname, int flags, ... /* mode_t mode */);
+APTH_DECLARE_SYSCALL(int, openat2, int dirfd, const char *pathname, const struct open_how *how, size_t size);
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
 APTH_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
