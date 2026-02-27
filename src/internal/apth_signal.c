@@ -120,7 +120,7 @@ static void __apth_sig_default_action(apth_t th, int sig)
 // pointing it to a trampoline (e.g. we could call it `signal_trampoline`),
 // and then the `signal_trampoline` will invoke handler(sig). And the
 // trampoline should have its own stack. This is much more like what the OS
-// kernel would do, but is more complicated and a little bad for space locality.
+// kernel would do, but is more complicated and a little bad for spatial locality.
 static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *sa)
 {
     // NOTE: here we first implement Plan A
