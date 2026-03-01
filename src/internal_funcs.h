@@ -236,9 +236,16 @@ APTH_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
 APTH_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
                      fd_set *efds, const struct timespec *ts, const sigset_t *mask)
 
-APTH_DECLARE_SYSCALL(int, open, const char *pathname, int flags, ... /* mode_t mode */);
+// APTH_DECLARE_SYSCALL(int, open, const char *pathname, int flags, ... /* mode_t mode */);
+APTH_DECLARE_FETCH_LIBCFUNC(int, open, const char *pathname, int flags, ... /* mode_t mode */)
+APTH_INTERNAL int apth_syscall_open(const char *pathname, int flags, ...);
+
 APTH_DECLARE_SYSCALL(int, creat, const char *pathname, mode_t mode);
-APTH_DECLARE_SYSCALL(int, openat, int dirfd, const char *pathname, int flags, ... /* mode_t mode */);
+
+// APTH_DECLARE_SYSCALL(int, openat, int dirfd, const char *pathname, int flags, ... /* mode_t mode */);
+APTH_DECLARE_FETCH_LIBCFUNC(int, openat, int dirfd, const char *pathname, int flags, ... /* mode_t mode */)
+APTH_INTERNAL int apth_syscall_openat(int dirfd, const char *pathname, int flags, ...);
+
 APTH_DECLARE_SYSCALL(int, openat2, int dirfd, const char *pathname, const struct open_how *how, size_t size);
 
 APTH_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
@@ -248,6 +255,10 @@ APTH_DECLARE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addr
 APTH_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
 APTH_DECLARE_SYSCALL(ssize_t, __read_chk, int fd, void *buf, size_t nbytes, size_t buflen)
 APTH_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
+APTH_DECLARE_SYSCALL(ssize_t, pread, int fd, void *buf, size_t count,
+                     off_t offset)
+APTH_DECLARE_SYSCALL(ssize_t, __pread_chk, int fd, void *buf, size_t nbytes, off_t offset, size_t buflen)
+APTH_DECLARE_SYSCALL(ssize_t, pwrite, int fd, const void *buf, size_t count, off_t offset)
 APTH_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
 APTH_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
 

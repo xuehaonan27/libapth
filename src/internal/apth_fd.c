@@ -43,7 +43,8 @@ APTH_INTERNAL int apth_fd_acquire(int fd)
         return -1;
 
     struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
-    if (!atomic_load_acquire(&e->managed))
+    // if (!atomic_load_acquire(&e->managed))
+    if (atomic_compare_exchange_strong(&e->managed, &(int){0}, 1))
     {
         // fd meet first time, maybe a fd opened by user outside libapth
         e->orig_flags = fcntl(fd, F_GETFL, 0);

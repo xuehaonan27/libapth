@@ -161,7 +161,6 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
     int waked = 0;
 
     // Tranverse all waiters of this fd, and check satisfied event
-    // 遍历此 fd 的所有 waiter，检查哪些的事件条件被满足
     struct list_elem *e = list_begin(&slot->waiters);
     while (e != list_end(&slot->waiters))
     {
@@ -888,6 +887,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 {
                     apth_t th = wake_batch[i];
                     // Clear other epoll registrations of the apth
+                    // No need for caring about other types of events, just take care of FD events
+                    // we must remove these FD events from scheduler's waiter list
                     FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
                     {
                         apth_event_t event = apth_event_t_list_entry(ev_e);

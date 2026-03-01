@@ -53,6 +53,9 @@
     X(system)                 \
     X(select)                 \
     X(pselect)                \
+    X(open)                   \
+    X(creat)                  \
+    X(openat)                 \
     X(socket)                 \
     X(connect)                \
     X(close)                  \
@@ -70,6 +73,9 @@
     X(setenv)                 \
     X(unsetenv)               \
     X(getenv)
+
+// Linux only
+//     X(openat2)                \
 
 #define X APTH_FETCH_LIBCFUNC
 APTH_LIST_OF_FETCH_ONLY
@@ -694,12 +700,8 @@ static int __variadic_open(const char *pathname, int flags, va_list vargs)
         return fd;
 
     // Register this fd in APTH_FD_TABLE
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
-        APTH_FD_TABLE[fd].managed = 1;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_register(fd);
+
     return fd;
 }
 
@@ -731,12 +733,7 @@ APTH_DEFINE_SYSCALL(int, creat, (const char *pathname, mode_t mode), (pathname, 
         return fd;
 
     // Register this fd in APTH_FD_TABLE
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
-        APTH_FD_TABLE[fd].managed = 1;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_register(fd);
 
     return fd;
 }
@@ -762,12 +759,7 @@ static int __variadic_openat(int dirfd, const char *pathname, int flags, va_list
         return fd;
 
     // Register this fd in APTH_FD_TABLE
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
-        APTH_FD_TABLE[fd].managed = 1;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_register(fd);
     return fd;
 }
 
@@ -802,12 +794,7 @@ APTH_DEFINE_SYSCALL(
         return fd;
 
     // Register this fd in APTH_FD_TABLE
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
-        APTH_FD_TABLE[fd].managed = 1;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_register(fd);
 
     return fd;
 }
@@ -824,12 +811,7 @@ APTH_DEFINE_SYSCALL(int, socket,
         return fd;
 
     // Register this fd in APTH_FD_TABLE
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
-        APTH_FD_TABLE[fd].managed = 1;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_register(fd);
 
     return fd;
 }
@@ -932,12 +914,7 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
     apth_hook_debug(close);
 
     // Clear entry in `APTH_FD_TABLE`
-    if (fd >= 0 && fd < APTH_FD_TABLE_SIZE)
-    {
-        APTH_FD_TABLE[fd].orig_flags = 0;
-        APTH_FD_TABLE[fd].managed = 0;
-        APTH_FD_TABLE[fd].refcount = 0;
-    }
+    apth_fd_unregister(fd);
 
     // TODO(fd): remove fd from all schedulers epoll instances
     // epoll will remove fd when fd close, but would not do this if this fd was
@@ -955,6 +932,14 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
     // Ignore error.
     int _err = epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
     (void)_err;
+
+    // We must clear waiters before invoke libc close. Else there might be race:
+    // someone open another file and have exactly same fd.
+    struct apth_epoll_fd_slot *slot = &sched->fd_slot_table[fd];
+
+    // Mark all events in this slot as FAILED, since no event shall wait for
+    // fd to be closed, so all of them should implicitly expect fd to be still
+    // valid, so marking FAILED is sane.
 
     // Invoke libc close
     return apth_syscall_raw(close)(fd);
@@ -981,12 +966,9 @@ APTH_DEFINE_SYSCALL(ssize_t, read,
     ssize_t rv;
     for (;;)
     {
-        apth_debug("TRY READ FAST PATH");
         // Fast-path : avoid waiting when data is already available.
         while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
             ;
-        apth_debug("AFTER TRYED: rv = %d errno = %d", rv, errno);
-
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
             // Data not ready, yield CPU to other apths
@@ -1061,6 +1043,7 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
         {
             nbytes -= s;
             buf = (void *)((char *)buf + s);
+            continue;
         }
 
         // pass error to caller, but not for partial writes (rv > 0)
@@ -1074,6 +1057,120 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
     apth_fd_release(fd);
 
     apth_debug("apth_syscall_write: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, pread,
+                    (int fd, void *buf, size_t count, off_t offset),
+                    (fd, buf, count, offset))
+{
+    apth_hook_debug(pread);
+
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_pread: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (count == 0)
+        return 0;
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
+        return apth_error(-1, EBADF);
+
+    ssize_t rv;
+    for (;;)
+    {
+        while ((rv = apth_syscall_raw(pread)(fd, buf, count, offset)) < 0 && errno == EINTR)
+            ;
+
+        if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            // Data not ready, yield CPU to other apths
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+            continue; // Try again after waked
+        }
+
+        // rv >= 0 (succeed / EOF) or rv < 0 (real error)
+        // Either situation we should return
+        break;
+    }
+    // Restore filedescriptor mode
+    apth_fd_release(fd);
+
+    apth_debug("apth_syscall_pread: leave to thread \"%s\"", cur->name);
+    return rv;
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, __pread_chk,
+                    (int fd, void *buf, size_t nbytes, off_t offset, size_t buflen),
+                    (fd, buf, nbytes, offset, buflen))
+{
+    // TODO: perform check
+    apth_hook_debug(__pread_chk);
+    return apth_syscall(pread)(fd, buf, nbytes, offset);
+}
+
+APTH_DEFINE_SYSCALL(ssize_t, pwrite,
+                    (int fd, const void *buf, size_t count, off_t offset),
+                    (fd, buf, count, offset))
+{
+    apth_hook_debug(pwrite);
+    apth_t cur = cur_apth();
+    apth_debug("apth_syscall_pwrite: enter from thread \"%s\"", cur->name);
+
+    // POSIX compliance
+    if (count == 0)
+        return 0;
+    if (!apth_util_fd_valid(fd))
+        return apth_error(-1, EBADF);
+
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
+        return apth_error(-1, EBADF);
+
+    ssize_t rv = 0;
+    for (;;)
+    {
+        // Try directly write first
+        ssize_t s;
+        while ((s = apth_syscall_raw(pwrite)(fd, buf, count, offset)) < 0 && errno == EINTR)
+            ;
+
+        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            // FIXME: event allocated more than once
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
+            apth_wait_event(ev);
+            continue; // try again
+        }
+
+        if (s > 0)
+            rv += s;
+
+        // although we're physically now in non-blocking mode,
+        // iterate unless all data is written or an error occurs, because
+        // we've to mimic the usual blocking I/O behaviour of write(2).
+        if (s > 0 && s < (ssize_t)count)
+        {
+            count -= s;
+            buf = (void *)((char *)buf + s);
+            continue;
+        }
+
+        // pass error to caller, but not for partial writes (rv > 0)
+        if (s < 0 && rv == 0)
+            rv = -1;
+
+        break;
+    }
+
+    // Restore filedescriptor mode
+    apth_fd_release(fd);
+
+    apth_debug("apth_syscall_pwrite: leave to thread \"%s\"", cur->name);
     return rv;
 }
 
@@ -1252,7 +1349,6 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
         {
             nbytes -= s;
             apth_writev_iov_advance(iov, iovcnt, s, &liov, &liovcnt, tiov, tiovcnt);
-            // n = 0;
             continue;
         }
 
@@ -1482,6 +1578,15 @@ APTH_DEFINE_SYSCALL(int, poll,
     // poll again to fetch revents
     while ((rc = apth_syscall_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR)
         ;
+
+    // TODO: a more general way for freeing event list
+    while (!list_empty(&event_list))
+    {
+        struct list_elem *e = list_pop_front(&event_list);
+        apth_event_t ev = apth_event_t_list_entry(e);
+        apth_event_free(ev);
+    }
+
     return rc;
 }
 
