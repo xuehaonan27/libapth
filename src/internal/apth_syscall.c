@@ -62,6 +62,8 @@
     X(accept)                 \
     X(read)                   \
     X(write)                  \
+    X(pread)                  \
+    X(pwrite)                 \
     X(readv)                  \
     X(writev)                 \
     X(sendto)                 \
