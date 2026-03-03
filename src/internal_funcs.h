@@ -69,6 +69,7 @@ APTH_INTERNAL int apth_fd_acquire(int fd);     // Increment refcount, set NONBLO
 APTH_INTERNAL void apth_fd_release(int fd);    // Decrement refcount, restore original flag when rc == 0
 APTH_INTERNAL void apth_fd_register(int fd);   // Register when socket/open
 APTH_INTERNAL void apth_fd_unregister(int fd); // Unregister when close
+APTH_INTERNAL void apth_notify_fd_closed(int fd); // Notify all schedulers about fd close
 
 // ============================== Time ==============================
 #define APTH_TIME(sec, usec) {sec, usec}
@@ -119,6 +120,7 @@ APTH_INTERNAL void apth_key_destroydata(apth_t th);
 // ============================== Event ==============================
 APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now, bool dopoll);
 APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool dopoll);
+APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched);
 APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
 APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
 APTH_INTERNAL int apth_wait_event_list(struct list *el);

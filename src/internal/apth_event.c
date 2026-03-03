@@ -3,6 +3,7 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
+#include "utils/atomic_wrapper.h"
 #include <malloc.h>
 #include <sys/epoll.h>
 
@@ -234,6 +235,76 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
     }
 
     return waked;
+}
+
+// Fail ALL waiters for a given fd on this scheduler.
+// Called when processing pending fd close notifications.
+// Must be called from the scheduler's own thread context (event manager).
+static void epoll_map_fail_all_waiters_for_fd(apth_sched_t sched, int fd)
+{
+    if (fd < 0 || fd >= APTH_EPOLL_FD_SLOT_TABLE_SIZE)
+        return;
+
+    struct apth_epoll_fd_slot *slot = &sched->fd_slot_table[fd];
+
+    if (slot->waiter_count == 0)
+        return;
+
+    apth_debug("[fd_close] failing all waiters for fd=%d on sched %d", fd, sched->id);
+
+    // Traverse and fail all waiters
+    struct list_elem *e = list_begin(&slot->waiters);
+    while (e != list_end(&slot->waiters))
+    {
+        struct apth_epoll_waiter *w = apth_epoll_waiter_list_entry(e);
+        struct list_elem *next = list_next(e);
+
+        w->ev->ev_status = APTH_EV_STATUS_FAILED;
+        w->ev->epoll_registered = false;
+
+        apth_debug("[fd_close] fd=%d event FAILED for apth \"%s\"", fd, w->th->name);
+
+        list_remove(&w->elem);
+        free(w);
+
+        e = next;
+    }
+
+    slot->waiter_count = 0;
+    slot->aggregate_events = 0;
+
+    // Remove from active list and epoll if registered
+    if (slot->registered)
+    {
+        epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL); // ignore error, fd may already be closed
+        slot->registered = false;
+        list_remove(&slot->elem);
+        sched->active_fd_count--;
+    }
+}
+
+// Process pending fd close notifications. Called at start of event manager.
+// Drains the pending list and fails all local waiters for each closed fd.
+APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched)
+{
+    if (atomic_load_acquire(&sched->pending_fd_close_count) == 0)
+        return;
+
+    int local_fds[APTH_PENDING_FD_CLOSE_MAX];
+    int local_count;
+
+    lll_lock(&sched->pending_fd_close_lock, "process_pending_fd_closes");
+    local_count = atomic_load_acquire(&sched->pending_fd_close_count);
+    if (local_count > APTH_PENDING_FD_CLOSE_MAX)
+        local_count = APTH_PENDING_FD_CLOSE_MAX;
+    memcpy(local_fds, sched->pending_fd_close_fds, local_count * sizeof(int));
+    atomic_store_release(&sched->pending_fd_close_count, 0);
+    lll_unlock(&sched->pending_fd_close_lock, "process_pending_fd_closes");
+
+    for (int i = 0; i < local_count; i++)
+    {
+        epoll_map_fail_all_waiters_for_fd(sched, local_fds[i]);
+    }
 }
 
 static bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
@@ -606,6 +677,9 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
     {
         bool loop_repeat = false;
 
+        // ==================== Phase 0: process pending fd close notifications ====================
+        apth_sched_process_pending_fd_closes(sched);
+
         // ==================== Phase 1: tranverse waiting queue ====================
         // Handle non-I/O events (timer, signal, tid, func)
         // Register FD events to epoll mapping table
@@ -652,12 +726,15 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 {
                 case APTH_EVENT_TYPE_FD:
                     // Register to epoll mapping table (if not registered yet)
-                    // NOTE: must check whether already registered, avoiding duplicated registration.
-                    // We could add a flag in event marking whether registered or not.
-                    // Or just invoke epoll_map_add_waiter here, and remove duplication internally.
-                    // Here use the latter: check whether this (th, ev) pair already in a certain
-                    // waiter in this fd's slot.
-                    epoll_map_add_waiter(sched, event->ev_args.FD.fd, th, event);
+                    // If registration fails (e.g., fd was closed), mark the event as FAILED
+                    // so the apth doesn't wait forever on a dead fd.
+                    if (epoll_map_add_waiter(sched, event->ev_args.FD.fd, th, event) < 0)
+                    {
+                        event->ev_status = APTH_EV_STATUS_FAILED;
+                        any_occurred = true;
+                        apth_debug("[epoll] fd=%d registration failed for apth \"%s\"",
+                                   event->ev_args.FD.fd, th->name);
+                    }
                     break;
 
                 case APTH_EVENT_TYPE_SELECT:

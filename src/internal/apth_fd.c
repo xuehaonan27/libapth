@@ -1,6 +1,7 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/debug.h"
 #include <fcntl.h>
 #include <string.h>
 
@@ -83,4 +84,39 @@ APTH_INTERNAL void apth_fd_release(int fd)
         if (!(e->orig_flags & O_NONBLOCK))
             fcntl(fd, F_SETFL, e->orig_flags);
     }
+}
+
+// Notify ALL schedulers (including the caller's own) that `fd` has been closed.
+// Each scheduler will process the notification at the start of its next event
+// manager iteration, failing all local waiters for this fd.
+APTH_INTERNAL void apth_notify_fd_closed(int fd)
+{
+    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+        return;
+
+    apth_debug("notifying all schedulers: fd=%d closed", fd);
+
+    lll_lock(&GLOBAL_POOL.pool_lock, "apth_notify_fd_closed");
+    FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
+    {
+        apth_worker_t worker = apth_worker_t_list_entry(e);
+        apth_sched_t sched = worker->sched;
+        if (sched == NULL)
+            continue;
+
+        lll_lock(&sched->pending_fd_close_lock, "notify_fd_closed_per_sched");
+        int idx = atomic_load_acquire(&sched->pending_fd_close_count);
+        if (idx < APTH_PENDING_FD_CLOSE_MAX)
+        {
+            sched->pending_fd_close_fds[idx] = fd;
+            atomic_store_release(&sched->pending_fd_close_count, idx + 1);
+        }
+        else
+        {
+            apth_debug("WARNING: pending_fd_close overflow for sched %d, fd=%d dropped",
+                       sched->id, fd);
+        }
+        lll_unlock(&sched->pending_fd_close_lock, "notify_fd_closed_per_sched");
+    }
+    lll_unlock(&GLOBAL_POOL.pool_lock, "apth_notify_fd_closed");
 }

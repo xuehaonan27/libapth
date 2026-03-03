@@ -218,6 +218,16 @@ struct apth_perpthr_scheduler
     struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
     struct list active_fd_slots;                                            // slots with waiters
     int active_fd_count;
+
+    // Pending fd close notifications from other schedulers (or self).
+    // When an fd is closed, the closing scheduler pushes the fd number into
+    // every scheduler's pending list. Each scheduler drains its list at the
+    // beginning of its event manager loop, failing all local waiters for
+    // those fds.
+#define APTH_PENDING_FD_CLOSE_MAX 128
+    int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
+    _Atomic(int) pending_fd_close_count;
+    lll_t pending_fd_close_lock;
 };
 
 // ============================== Thread Worker ==============================

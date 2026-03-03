@@ -138,6 +138,7 @@ APTH_DEFINE_SYSCALL(
     if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == APTH_EVENT_NULL)
         return apth_error(-1, errno);
     apth_wait_event(ev);
+    apth_event_free(ev);
 
     // Optionally provide amount of slept time
     if (rmtp != NULL)
@@ -171,6 +172,7 @@ APTH_DEFINE_SYSCALL(int, usleep, (unsigned int usec), (usec))
     if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
         return apth_error(-1, errno);
     apth_wait_event(ev);
+    apth_event_free(ev);
 
     return 0;
 }
@@ -194,6 +196,7 @@ APTH_DEFINE_SYSCALL(unsigned int, sleep, (unsigned int sec), (sec))
     if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
         return sec;
     apth_wait_event(ev);
+    apth_event_free(ev);
 
     return 0;
 }
@@ -383,6 +386,7 @@ APTH_DEFINE_SYSCALL(int, sigsuspend, (const sigset_t *mask), (mask))
         self,
         apth_time(0, 50000));
     apth_wait_event(ev);
+    apth_event_free(ev);
 
     // Restore signal mask
     self->sigmask = oldmask;
@@ -451,6 +455,7 @@ APTH_DEFINE_SYSCALL(pid_t, waitpid,
         // Else wait a little bit
         ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
         apth_wait_event(ev);
+        apth_event_free(ev);
     }
 
     apth_debug("apth_waitpid: leave to thread \"%s\"", cur->name);
@@ -566,6 +571,7 @@ APTH_DEFINE_SYSCALL(
             // Larger delays have to go through the scheduler
             ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(timeout->tv_sec, timeout->tv_usec));
             apth_wait_event(ev);
+            apth_event_free(ev);
         }
 
         /*
@@ -649,7 +655,12 @@ APTH_DEFINE_SYSCALL(
 
     // Select return code semantics
     if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
+    {
+        apth_event_free(ev_select);
+        if (ev_timeout != NULL)
+            apth_event_free(ev_timeout);
         return apth_error(-1, EBADF);
+    }
 
     // If the select event occurred, then RC should have been set in ev_args.SELECT.n
     // If timeout occurred and select event did not, return 0 and clear fd_set
@@ -665,6 +676,10 @@ APTH_DEFINE_SYSCALL(
             FD_ZERO(efds);
         rc = 0;
     }
+
+    apth_event_free(ev_select);
+    if (ev_timeout != NULL)
+        apth_event_free(ev_timeout);
 
     return rc;
 }
@@ -850,6 +865,7 @@ APTH_DEFINE_SYSCALL(
         if (ev == NULL)
             return apth_error(-1, errno);
         apth_wait_event(ev);
+        apth_event_free(ev);
 
         int err;
         socklen_t errlen;
@@ -895,6 +911,7 @@ APTH_DEFINE_SYSCALL(int, accept,
             return apth_error(-1, errno);
         // Wait until accept has a chance
         apth_wait_event(ev);
+        apth_event_free(ev);
     }
 
     // Restore filedescriptor mode
@@ -916,30 +933,12 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
     // Clear entry in `APTH_FD_TABLE`
     apth_fd_unregister(fd);
 
-    // TODO(fd): remove fd from all schedulers epoll instances
-    // epoll will remove fd when fd close, but would not do this if this fd was
-    // ever `dup`ped.
-    // For safety, explicitly invoke EPOLL_CTL_DEL and ignore its error
-
-    // NOTE: if there's apths waiting for this `fd`'s I/O event, event
-    // manager's select / epoll logic will error to this fd.
-    // Then in phase 2 we could handle the situation in `APTH_EV_STATUS_FAILED`
-    // branch.
-
-    // Since `close` is a very frequent system call, we must ensure its overhead
-    // is very low. Everything else should be handled in event manager.
-    apth_sched_t sched = cur_sched();
-    // Ignore error.
-    int _err = epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-    (void)_err;
-
-    // We must clear waiters before invoke libc close. Else there might be race:
-    // someone open another file and have exactly same fd.
-    struct apth_epoll_fd_slot *slot = &sched->fd_slot_table[fd];
-
-    // Mark all events in this slot as FAILED, since no event shall wait for
-    // fd to be closed, so all of them should implicitly expect fd to be still
-    // valid, so marking FAILED is sane.
+    // Notify ALL schedulers (including our own) that this fd is being closed.
+    // Each scheduler will process the notification in its next event manager
+    // iteration, failing all local waiters for this fd and cleaning up epoll
+    // registrations. This must happen BEFORE the actual close to avoid fd
+    // number reuse races.
+    apth_notify_fd_closed(fd);
 
     // Invoke libc close
     return apth_syscall_raw(close)(fd);
@@ -974,6 +973,7 @@ APTH_DEFINE_SYSCALL(ssize_t, read,
             // Data not ready, yield CPU to other apths
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue; // Try again after waked
         }
 
@@ -1027,9 +1027,9 @@ APTH_DEFINE_SYSCALL(ssize_t, write,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            // FIXME: event allocated more than once
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue; // try again
         }
 
@@ -1090,6 +1090,7 @@ APTH_DEFINE_SYSCALL(ssize_t, pread,
             // Data not ready, yield CPU to other apths
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue; // Try again after waked
         }
 
@@ -1141,9 +1142,9 @@ APTH_DEFINE_SYSCALL(ssize_t, pwrite,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            // FIXME: event allocated more than once
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue; // try again
         }
 
@@ -1204,6 +1205,7 @@ APTH_DEFINE_SYSCALL(ssize_t, readv,
         {
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue;
         }
 
@@ -1336,6 +1338,7 @@ APTH_DEFINE_SYSCALL(ssize_t, writev,
             apth_event_t ev = apth_event_fd(
                 APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue;
         }
 
@@ -1403,6 +1406,7 @@ APTH_DEFINE_SYSCALL(
         {
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, sockfd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue;
         }
 
@@ -1457,9 +1461,9 @@ APTH_DEFINE_SYSCALL(
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            // FIXME: event allocated more than once
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, sockfd);
             apth_wait_event(ev);
+            apth_event_free(ev);
             continue; // try again
         }
 

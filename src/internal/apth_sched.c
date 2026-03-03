@@ -76,6 +76,10 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     list_init(&sched->active_fd_slots);
     sched->active_fd_count = 0;
 
+    // Initialize pending fd close notification queue
+    atomic_store_release(&sched->pending_fd_close_count, 0);
+    lll_init(&sched->pending_fd_close_lock);
+
     // Store the sched into the worker
     worker->sched = sched;
 
