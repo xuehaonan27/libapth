@@ -279,6 +279,90 @@ static inline bool worker0_check_end_process(apth_worker_t worker)
     return end_the_process;
 }
 
+// Try to steal one thread from another scheduler's ready queue.
+// Returns the stolen apth_t on success, or APTH_NULL if nothing was stolen.
+//
+// Protocol (follows the same lock-unlock-relock-commit pattern as transfer_one_th):
+//   1. Lock victim's ready_queue -> pop_back -> dec size -> unlock
+//   2. submit_desired_state_to(th, APTH_STATE_READY)
+//   3. Lock thief's ready_queue -> push_front -> inc size ->
+//      set_belonging_queue -> commit_state -> unlock
+//   4. Adjust thrcnt for both schedulers
+static apth_t try_steal_work(apth_sched_t thief_sched)
+{
+    int n_workers = GLOBAL_POOL.init_worker_count;
+    if (n_workers <= 1)
+        return APTH_NULL;
+
+    // Vary start offset to distribute steal attempts and avoid thundering herd
+    unsigned int offset = thief_sched->switches;
+
+    for (int i = 0; i < n_workers; i++)
+    {
+        int victim_id = (int)((offset + (unsigned int)i) % (unsigned int)n_workers);
+
+        // Don't steal from ourselves
+        if (victim_id == thief_sched->id)
+            continue;
+
+        apth_worker_t victim_worker = GLOBAL_POOL.worker_ptr_mem_start[victim_id];
+        if (victim_worker == NULL)
+            continue;
+
+        apth_sched_t victim_sched = victim_worker->sched;
+        if (victim_sched == NULL || !apth_sched_is_opening(victim_sched))
+            continue;
+
+        // Speculative lock-free check: skip if victim has 0 or 1 ready threads
+        if (thqueue_size(victim_sched->ready_queue) <= 1)
+            continue;
+
+        // Attempt to steal from the BACK of victim's ready queue
+        apth_thqueue_t victim_rq = victim_sched->ready_queue;
+
+        lll_lock(&victim_rq->th_list_lock, "try_steal_work locking victim");
+
+        // Re-check under lock
+        if (list_empty(&victim_rq->th_list) || atomic_load_acquire(&victim_rq->size) <= 1)
+        {
+            lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim (empty)");
+            continue;
+        }
+
+        // Steal from back (owner dispatches from front, thief steals from back)
+        struct list_elem *e = list_pop_back(&victim_rq->th_list);
+        atomic_fetch_sub_release(&victim_rq->size, 1);
+
+        lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim");
+
+        apth_t th = apth_t_list_entry(e);
+        assert(APTH_IS_VALID(th));
+        assert(belonging_queue_of(th, "try_steal_work") == victim_rq);
+
+        // Submit desired state: marks READY as uncommitted for the transfer
+        submit_desired_state_to(th, APTH_STATE_READY, "try_steal_work");
+
+        // Insert into thief's ready queue at front for immediate dispatch
+        apth_thqueue_t thief_rq = thief_sched->ready_queue;
+
+        lll_lock(&thief_rq->th_list_lock, "try_steal_work locking thief");
+        list_push_front(&thief_rq->th_list, &th->elem);
+        atomic_fetch_add_release(&thief_rq->size, 1);
+        set_belonging_queue_of(th, thief_rq);
+        commit_state_of(th, APTH_STATE_READY);
+        lll_unlock(&thief_rq->th_list_lock, "try_steal_work unlocking thief");
+
+        // Adjust per-scheduler thread counts
+        dec_thrcnt(victim_sched);
+        inc_thrcnt(thief_sched);
+
+        apth_debug("stole thread %p (\"%s\") from sched %d", th, th->name, victim_id);
+        return th;
+    }
+
+    return APTH_NULL;
+}
+
 // Start routine for a scheduler pthread. The prototype of this function matches
 // that required by Pthread.
 APTH_INTERNAL void *scheduler_routine(void *arg)
@@ -363,8 +447,15 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         if (th == APTH_NULL)
         {
-            // There is no more thread to run; block in epoll_wait via the event manager
-            // TODO: steal work
+            // Try to steal work from another scheduler's ready queue
+            apth_t stolen = try_steal_work(sched);
+            if (stolen != APTH_NULL)
+            {
+                // Stolen thread is at front of our ready queue; loop back to dispatch it
+                apth_debug("work stolen, re-entering loop");
+                continue;
+            }
+            // No work to steal; block in epoll_wait via the event manager
             apth_time_set(&snapshot, APTH_TIME_NOW);
             apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
             continue;
@@ -485,8 +576,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Manage events in the waiting queue
         if (thqueue_size(sched->ready_queue) == 0 && thqueue_size(sched->new_queue) == 0)
         {
-            apth_debug("no NEW or READY threads, have to wait for new work");
-            apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
+            // Try stealing before blocking
+            apth_t stolen = try_steal_work(sched);
+            if (stolen == APTH_NULL)
+            {
+                apth_debug("no NEW or READY threads, have to wait for new work");
+                apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
+            }
         }
         else
         {
