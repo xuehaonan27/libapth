@@ -1,6 +1,7 @@
 #ifndef __LIBAPTH_INTERNAL_TYPES_H
 #define __LIBAPTH_INTERNAL_TYPES_H
-#define _GNU_SOURCE
+// _GNU_SOURCE and _POSIX_C_SOURCE are defined via compiler flags in the Makefile
+// so that they take effect before any system header is included.
 #include "apth.h"
 
 #include "utils/list.h"
@@ -10,7 +11,6 @@
 #include <ucontext.h>
 #include <pthread.h>
 
-#define _POSIX_C_SOURCE 200809L // For struct sigaction
 #include <signal.h>
 
 #define _BIT(n) (1 << (n))
@@ -156,7 +156,7 @@ struct apth_thqueue_st
     lll_t th_list_lock;
     apth_sched_t sched;
     apth_state_t th_state; // State that apths belonging to this queue should be
-    size_t size;
+    _Atomic(size_t) size;
 };
 
 typedef struct apth_thqueue_st *apth_thqueue_t;
@@ -214,6 +214,7 @@ struct apth_perpthr_scheduler
     float loadval;                   // scheduler load value
     
     int epoll_fd;                    // epoll instance for this scheduler
+    int wake_eventfd;                // eventfd used to wake the scheduler from epoll_wait
     // int epoll_fd_count;              // count of fd currently registered in epoll
     struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
     struct list active_fd_slots;                                            // slots with waiters

@@ -190,6 +190,9 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // push_apth_to_new(t, sched);
     push_apth_to(sched->new_queue, t);
 
+    // Wake the scheduler in case it's blocked in epoll_wait waiting for work
+    apth_sched_wake(sched);
+
     // Increment scheduler thread count
     inc_thrcnt(sched);
     inc_alive_thrcnt();

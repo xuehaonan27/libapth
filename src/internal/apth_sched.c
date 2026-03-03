@@ -8,6 +8,8 @@
 #include <stdlib.h>
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
@@ -63,6 +65,30 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (sched->epoll_fd < 0)
         return apth_error(false, errno);
+
+    // Create wake eventfd and register it with our epoll so other threads can
+    // interrupt a blocking epoll_wait when new work arrives.
+    sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (sched->wake_eventfd < 0)
+    {
+        apth_syscall_raw(close)(sched->epoll_fd);
+        sched->epoll_fd = -1;
+        return apth_error(false, errno);
+    }
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLET;
+        ev.data.fd = sched->wake_eventfd;
+        if (epoll_ctl(sched->epoll_fd, EPOLL_CTL_ADD, sched->wake_eventfd, &ev) < 0)
+        {
+            apth_syscall_raw(close)(sched->wake_eventfd);
+            sched->wake_eventfd = -1;
+            apth_syscall_raw(close)(sched->epoll_fd);
+            sched->epoll_fd = -1;
+            return apth_error(false, errno);
+        }
+    }
+
     // sched->epoll_fd_count = 0;
     // Initialize fd slot table
     for (int i = 0; i < APTH_EPOLL_FD_SLOT_TABLE_SIZE; i++)
@@ -126,6 +152,18 @@ APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched)
     return atomic_load_acquire(&sched->opening);
 }
 
+// Wake a scheduler that may be blocked in epoll_wait by writing to its eventfd.
+APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
+{
+    if (sched->wake_eventfd >= 0)
+    {
+        uint64_t val = 1;
+        // Ignore errors: the scheduler may already be awake, or shutting down.
+        ssize_t __ignored = write(sched->wake_eventfd, &val, sizeof(val));
+        (void)__ignored;
+    }
+}
+
 static apth_time_t apth_loadtickgap = APTH_TIME(1, 0);
 
 APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
@@ -175,6 +213,13 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     free(sched->running_queue);
 
     // TODO: report scheduler statistics if in debugging mode
+
+    // Drop wake eventfd (before epoll_fd so it's automatically removed from epoll)
+    if (sched->wake_eventfd >= 0)
+    {
+        apth_syscall_raw(close)(sched->wake_eventfd);
+        sched->wake_eventfd = -1;
+    }
 
     // Drop epoll
     if (sched->epoll_fd >= 0)
@@ -318,11 +363,10 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         if (th == APTH_NULL)
         {
-            // There is no more thread to run
+            // There is no more thread to run; block in epoll_wait via the event manager
             // TODO: steal work
             apth_time_set(&snapshot, APTH_TIME_NOW);
             apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
-            sched_yield();
             continue;
         }
 

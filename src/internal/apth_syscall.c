@@ -1160,6 +1160,7 @@ APTH_DEFINE_SYSCALL(ssize_t, pwrite,
         {
             count -= s;
             buf = (void *)((char *)buf + s);
+            offset += s;
             continue;
         }
 
@@ -1616,20 +1617,19 @@ APTH_DEFINE_SYSCALL(int, setenv,
                     (n, value, overwrite))
 {
     apth_hook_debug(setenv);
-    TODO("unimplemented setenv");
+    return apth_syscall_raw(setenv)(n, value, overwrite);
 }
 
 APTH_DEFINE_SYSCALL(int, unsetenv, (const char *n), (n))
 {
     apth_hook_debug(unsetenv);
-    TODO("unimplemented unsetenv");
+    return apth_syscall_raw(unsetenv)(n);
 }
 
 APTH_DEFINE_SYSCALL(char *, getenv, (const char *n), (n))
 {
     apth_hook_debug(getenv);
-    TODO("unimplemented getenv");
-    return NULL;
+    return apth_syscall_raw(getenv)(n);
 }
 
 #undef apth_hook_debug

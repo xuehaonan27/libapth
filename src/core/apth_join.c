@@ -42,9 +42,13 @@ int apth_join(apth_t tid, void **value)
         return apth_error(EDEADLK, EDEADLK);
     // TODO: should the atomicity semantic be weak or strong?
     // TODO: if the caller (self) is cancelled, `tid` should remain joinable
-    else if (apth_unlikely(atomic_compare_exchange_weak_acquire(&tid->joinid, &self, NULL)))
-        // There is already somebody waiting for `tid`
-        return apth_error(EINVAL, EINVAL);
+    else
+    {
+        apth_t expected = NULL;
+        if (apth_unlikely(!atomic_compare_exchange_weak_acquire(&tid->joinid, &expected, self)))
+            // There is already somebody waiting for `tid`
+            return apth_error(EINVAL, EINVAL);
+    }
 
     // If the `tid` is not terminated, then wait it until so
     if (state_holder_of(tid) != APTH_STATE_TERMINATED)

@@ -29,7 +29,7 @@ APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, a
     lll_init(&queue->th_list_lock);
     queue->sched = sched;
     queue->th_state = state;
-    queue->size = 0;
+    atomic_store_release(&queue->size, 0);
 
     *queue_ptr = queue;
 }
@@ -37,11 +37,7 @@ APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, a
 APTH_INTERNAL size_t thqueue_size(apth_thqueue_t queue)
 {
     assert(queue != NULL);
-    size_t s;
-    lll_lock(&queue->th_list_lock, "thqueue_size");
-    s = queue->size;
-    lll_unlock(&queue->th_list_lock, "thqueue_size");
-    return s;
+    return atomic_load_acquire(&queue->size);
 }
 
 APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
@@ -53,7 +49,7 @@ APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
 
     lll_lock(&queue->th_list_lock, "push_apth_to");
     list_push_back(&queue->th_list, &th->elem);
-    queue->size += 1;
+    atomic_fetch_add_release(&queue->size, 1);
     set_belonging_queue_of(th, queue);
     commit_state_of(th, queue->th_state);
     lll_unlock(&queue->th_list_lock, "push_apth_to");
@@ -73,7 +69,7 @@ APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue)
         assert(belonging_queue_of(th, "pop_apth_from") == queue);
         struct list_elem *ee = list_pop_front(&queue->th_list);
         assert(e == ee);
-        queue->size -= 1;
+        atomic_fetch_sub_release(&queue->size, 1);
     }
 
     if (th != APTH_NULL)
@@ -103,7 +99,7 @@ APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th)
                queue, queue->th_state);
     lll_lock(&queue->th_list_lock, "remove_apth_from");
     list_remove(&th->elem);
-    queue->size -= 1;
+    atomic_fetch_sub_release(&queue->size, 1);
     set_belonging_queue_of(th, NULL);
     lll_unlock(&queue->th_list_lock, "remove_apth_from");
 }
@@ -130,7 +126,7 @@ APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn)
         fn(th);
     }
 
-    queue->size = 0;
+    atomic_store_release(&queue->size, 0);
 
     lll_unlock(&queue->th_list_lock, "drain_thqueue");
 }
@@ -202,39 +198,6 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
     lll_unlock(&to->th_list_lock, "transfer_th unlocking to");
 }
 
-// TODO: remove this
-APTH_INTERNAL void transfer_thqueue(apth_thqueue_t queue_1, apth_thqueue_t queue_2)
-{
-    assert(queue_1 != NULL);
-    assert(queue_2 != NULL);
-
-    // // First get all elements from queue 2
-    // lll_lock(&queue_2->th_list_lock, "transfer_thqueue");
-    // struct list tmp_q2 = list_unlink(&queue_2->th_list);
-    // size_t tmp_q2_size = queue_2->size;
-    // queue_2->size = 0;
-    // lll_unlock(&queue_2->th_list_lock, "transfer_thqueue");
-
-    // // Transfer queue
-    // lll_lock(&queue_1->th_list_lock, "transfer_thqueue");
-
-    // struct list_elem *e = list_append(&queue_1->th_list, &tmp_q2);
-    // queue_1->size += tmp_q2_size;
-
-    // // After transferred, then we should modify belonging states
-    // if (e != NULL)
-    // {
-    //     for (; e != list_end(&queue_1->th_list); e = list_next(e))
-    //     {
-    //         apth_t th = apth_t_list_entry(e);
-    //         submit_desired_state_to(th, queue_1->th_state);
-    //         set_belonging_queue_of(th, queue_1);
-    //         commit_state_of(th, queue_1->th_state);
-    //     }
-    // }
-
-    // lll_unlock(&queue_1->th_list_lock, "transfer_thqueue");
-}
 
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux)
 {
@@ -295,11 +258,11 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
                    belonging_queue_of(th_last, "visit_thqueue")->th_state,          \
                    queue, queue->th_state);                                         \
         list_remove(&th_last->elem);                                                \
-        queue->size -= 1;                                                           \
+        atomic_fetch_sub_release(&queue->size, 1);                                                           \
         submit_desired_state_to(th_last, last_to_queue->th_state, "visit_thqueue"); \
         lll_lock(&last_to_queue->th_list_lock, "visit_thqueue");                    \
         list_push_back(&last_to_queue->th_list, &th_last->elem);                    \
-        last_to_queue->size += 1;                                                   \
+        atomic_fetch_add_release(&last_to_queue->size, 1);                                                   \
         set_belonging_queue_of(th_last, last_to_queue);                             \
         commit_state_of(th_last, last_to_queue->th_state);                          \
         lll_unlock(&last_to_queue->th_list_lock, "visit_thqueue");                  \

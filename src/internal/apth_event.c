@@ -6,6 +6,8 @@
 #include "utils/atomic_wrapper.h"
 #include <malloc.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
 // ==================== FD to apths mapping ====================
 
@@ -875,20 +877,57 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1");
 
         // Move apth discovered during phase 1 from waiting queue to waked queue.
-        for (int i = 0; i < wake_count; i++)
-        {
-            apth_t th = wake_batch[i];
-            // Remove ALL fd wait event of this apth from epoll mapping table.
-            FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+        // Loop until we have transferred all of them: if wake_count hit MAX_WAKE_BATCH
+        // on this pass we may have more waiting, so we re-scan after draining.
+        do {
+            for (int i = 0; i < wake_count; i++)
             {
-                apth_event_t event = apth_event_t_list_entry(ev_e);
-                if (event->ev_type == APTH_EVENT_TYPE_FD)
-                    epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
+                apth_t th = wake_batch[i];
+                // Remove ALL fd wait event of this apth from epoll mapping table.
+                FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                {
+                    apth_event_t event = apth_event_t_list_entry(ev_e);
+                    if (event->ev_type == APTH_EVENT_TYPE_FD)
+                        epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
+                }
+                // Move to waked queue
+                submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase1");
+                transfer_th(th, sched->waiting_queue, sched->waked_queue);
             }
-            // Move to waked queue
-            submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase1");
-            transfer_th(th, sched->waiting_queue, sched->waked_queue);
-        }
+
+            // If the batch was full, there may be more apths in the waiting queue
+            // that were skipped. Re-scan to collect and transfer them.
+            if (wake_count == MAX_WAKE_BATCH)
+            {
+                wake_count = 0;
+                lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1_rescan");
+                FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
+                {
+                    apth_t th = apth_t_list_entry(e);
+                    bool any_occurred = th->cancelreq;
+                    if (!any_occurred)
+                    {
+                        FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                        {
+                            apth_event_t event = apth_event_t_list_entry(ev_e);
+                            if (event->ev_status != APTH_EV_STATUS_PENDING)
+                            {
+                                any_occurred = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (any_occurred && wake_count < MAX_WAKE_BATCH)
+                        wake_batch[wake_count++] = th;
+                }
+                lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1_rescan");
+                notified_ths += wake_count;
+            }
+            else
+            {
+                break;
+            }
+        } while (wake_count > 0);
 
         // If there's apth waked during phase 1, then use 0 timeout for epoll_wait
         if (notified_ths > 0)
@@ -914,13 +953,14 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         }
         else
         {
-            // No timer, and no haste, do not block and notify scheduler to steal work
-            // TODO: notify scheduler to steal work
-            timeout_ms = 0;
+            // No timer, no active FDs: block briefly so we don't busy-spin.
+            // The wake_eventfd will interrupt us if new work arrives.
+            timeout_ms = dopoll ? 0 : 10;
         }
 
-        // Only if there's fd need to be checked or there's timer, we should call epoll_wait
-        if (sched->active_fd_count > 0 || (!dopoll && has_timer))
+        // Call epoll_wait whenever we have FDs to watch, a timer to honor,
+        // or we need to block while idle (wake_eventfd is always registered).
+        if (sched->active_fd_count > 0 || has_timer || !dopoll)
         {
             struct epoll_event ep_events[64];
             int nready = epoll_wait(sched->epoll_fd, ep_events, 64, timeout_ms);
@@ -933,49 +973,63 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     int ready_fd = ep_events[i].data.fd;
                     uint32_t revents = ep_events[i].events;
 
+                    // Drain the wake eventfd (used to interrupt idle epoll_wait).
+                    // Just consume the counter; no apth needs to be woken for it.
+                    if (ready_fd == sched->wake_eventfd)
+                    {
+                        // Drain the wake eventfd counter so it becomes non-readable again.
+                        uint64_t val;
+                        ssize_t __ignored = read(sched->wake_eventfd, &val, sizeof(val));
+                        (void)__ignored;
+                        continue;
+                    }
+
                     // wake all waiters
                     epoll_map_wake_fd(sched, ready_fd, revents);
                 }
 
                 // epoll_map_wake_fd already marked event as OCCURRED,
                 // but not move apth to waked_queue yet.
-                // Now tranverse waiting queue and find apth with OCCURRED events, and move them
-                wake_count = 0;
-                lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
-                FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
-                {
-                    apth_t th = apth_t_list_entry(e);
-                    bool should_wake = false;
-                    FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                // Now traverse waiting queue and move apths with OCCURRED events,
+                // looping until all have been transferred (handles >MAX_WAKE_BATCH case).
+                do {
+                    wake_count = 0;
+                    lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
+                    FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
                     {
-                        apth_event_t event = apth_event_t_list_entry(ev_e);
-                        if (event->ev_status != APTH_EV_STATUS_PENDING)
+                        apth_t th = apth_t_list_entry(e);
+                        bool should_wake = false;
+                        FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
                         {
-                            should_wake = true;
-                            break;
+                            apth_event_t event = apth_event_t_list_entry(ev_e);
+                            if (event->ev_status != APTH_EV_STATUS_PENDING)
+                            {
+                                should_wake = true;
+                                break;
+                            }
                         }
+                        if (should_wake && wake_count < MAX_WAKE_BATCH)
+                            wake_batch[wake_count++] = th;
                     }
-                    if (should_wake && wake_count < MAX_WAKE_BATCH)
-                        wake_batch[wake_count++] = th;
-                }
-                lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
+                    lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
 
-                for (int i = 0; i < wake_count; i++)
-                {
-                    apth_t th = wake_batch[i];
-                    // Clear other epoll registrations of the apth
-                    // No need for caring about other types of events, just take care of FD events
-                    // we must remove these FD events from scheduler's waiter list
-                    FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                    for (int i = 0; i < wake_count; i++)
                     {
-                        apth_event_t event = apth_event_t_list_entry(ev_e);
-                        if (event->ev_type == APTH_EVENT_TYPE_FD &&
-                            event->ev_status == APTH_EV_STATUS_PENDING)
-                            epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
+                        apth_t th = wake_batch[i];
+                        // Clear other epoll registrations of the apth
+                        // No need for caring about other types of events, just take care of FD events
+                        // we must remove these FD events from scheduler's waiter list
+                        FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                        {
+                            apth_event_t event = apth_event_t_list_entry(ev_e);
+                            if (event->ev_type == APTH_EVENT_TYPE_FD &&
+                                event->ev_status == APTH_EV_STATUS_PENDING)
+                                epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
+                        }
+                        submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase2");
+                        transfer_th(th, sched->waiting_queue, sched->waked_queue);
                     }
-                    submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase2");
-                    transfer_th(th, sched->waiting_queue, sched->waked_queue);
-                }
+                } while (wake_count == MAX_WAKE_BATCH);
             }
             else if (nready == 0 && !dopoll && has_timer)
             {
