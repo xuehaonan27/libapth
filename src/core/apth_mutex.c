@@ -158,6 +158,94 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     return 0;
 }
 
+int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
+{
+    if (mutex == NULL || *mutex == NULL)
+        return EINVAL;
+    if (abstime == NULL)
+        return EINVAL;
+
+    struct apth_mutex_st *m = *mutex;
+    apth_t self = cur_apth();
+
+    lll_lock(&m->guard, "mutex_timedlock");
+
+    // Fast path: mutex is free
+    if (m->owner == NULL)
+    {
+        m->owner = self;
+        m->lock_count = 1;
+        lll_unlock(&m->guard, "mutex_timedlock");
+        return 0;
+    }
+
+    // Same-owner cases
+    if (m->owner == self)
+    {
+        if (m->type == APTH_MUTEX_RECURSIVE)
+        {
+            m->lock_count++;
+            lll_unlock(&m->guard, "mutex_timedlock");
+            return 0;
+        }
+        if (m->type == APTH_MUTEX_ERRORCHECK)
+        {
+            lll_unlock(&m->guard, "mutex_timedlock");
+            return EDEADLK;
+        }
+    }
+
+    // Slow path: must block with timeout.
+    // Prepare MUTEX event (sync waiter)
+    struct apth_sync_waiter w;
+    w.th = self;
+    w.ev.ev_status = APTH_EV_STATUS_PENDING;
+    w.ev.ev_type = APTH_EVENT_TYPE_MUTEX;
+    w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
+    w.ev.epoll_registered = false;
+
+    // Prepare TIME event (stack-allocated)
+    struct apth_event_st timer_ev;
+    timer_ev.ev_status = APTH_EV_STATUS_PENDING;
+    timer_ev.ev_type = APTH_EVENT_TYPE_TIME;
+    timer_ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
+    timer_ev.epoll_registered = false;
+    timer_ev.ev_args.TIME.tv.tv_sec = abstime->tv_sec;
+    timer_ev.ev_args.TIME.tv.tv_usec = abstime->tv_nsec / 1000;
+
+    // Enqueue waiter
+    list_push_back(&m->waiters, &w.elem);
+
+    // Add BOTH events to the thread's event list
+    apth_event_list_add(&self->event_list, &w.ev);
+    apth_event_list_add(&self->event_list, &timer_ev);
+
+    lll_unlock(&m->guard, "mutex_timedlock_pre_yield");
+
+    submit_desired_state_to(self, APTH_STATE_WAITING, "mutex_timedlock");
+    apth_yield();
+
+    // --- woken up ---
+    // Isolate BOTH events from the event list
+    apth_event_isolate(&w.ev);
+    apth_event_isolate(&timer_ev);
+
+    // Resolve race: did unlock() transfer ownership, or did the timer fire?
+    lll_lock(&m->guard, "mutex_timedlock_post");
+
+    if (w.ev.ev_status == APTH_EV_STATUS_OCCURRED)
+    {
+        // unlock() already dequeued us and transferred ownership
+        lll_unlock(&m->guard, "mutex_timedlock_post");
+        return 0;
+    }
+
+    // Timer fired first; we're still in the waiters list. Remove ourselves.
+    list_remove(&w.elem);
+    lll_unlock(&m->guard, "mutex_timedlock_post");
+    return ETIMEDOUT;
+}
+
 int apth_mutex_trylock(apth_mutex_t *mutex)
 {
     if (mutex == NULL || *mutex == NULL)

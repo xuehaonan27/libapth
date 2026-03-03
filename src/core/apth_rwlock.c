@@ -87,6 +87,33 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     return 0;
 }
 
+int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstime)
+{
+    if (rwlock == NULL || *rwlock == NULL)
+        return EINVAL;
+    if (abstime == NULL)
+        return EINVAL;
+
+    struct apth_rwlock_st *rw = *rwlock;
+
+    apth_mutex_lock(&rw->mtx);
+
+    while (rw->writers > 0 || rw->waiting_writers > 0)
+    {
+        int rc = apth_cond_timedwait(&rw->rd_cv, &rw->mtx, abstime);
+        if (rc == ETIMEDOUT)
+        {
+            apth_mutex_unlock(&rw->mtx);
+            return ETIMEDOUT;
+        }
+    }
+
+    rw->readers++;
+    apth_mutex_unlock(&rw->mtx);
+
+    return 0;
+}
+
 int apth_rwlock_tryrdlock(apth_rwlock_t *rwlock)
 {
     if (rwlock == NULL || *rwlock == NULL)
@@ -120,6 +147,36 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     rw->waiting_writers++;
     while (rw->readers > 0 || rw->writers > 0)
         apth_cond_wait(&rw->wr_cv, &rw->mtx);
+    rw->waiting_writers--;
+    rw->writers = 1;
+
+    apth_mutex_unlock(&rw->mtx);
+
+    return 0;
+}
+
+int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstime)
+{
+    if (rwlock == NULL || *rwlock == NULL)
+        return EINVAL;
+    if (abstime == NULL)
+        return EINVAL;
+
+    struct apth_rwlock_st *rw = *rwlock;
+
+    apth_mutex_lock(&rw->mtx);
+
+    rw->waiting_writers++;
+    while (rw->readers > 0 || rw->writers > 0)
+    {
+        int rc = apth_cond_timedwait(&rw->wr_cv, &rw->mtx, abstime);
+        if (rc == ETIMEDOUT)
+        {
+            rw->waiting_writers--;
+            apth_mutex_unlock(&rw->mtx);
+            return ETIMEDOUT;
+        }
+    }
     rw->waiting_writers--;
     rw->writers = 1;
 

@@ -207,6 +207,7 @@ int apth_mutexattr_settype(apth_mutexattr_t *attr, int type);
 int apth_mutex_init(apth_mutex_t *mutex, const apth_mutexattr_t *attr);
 int apth_mutex_destroy(apth_mutex_t *mutex);
 int apth_mutex_lock(apth_mutex_t *mutex);
+int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime);
 int apth_mutex_trylock(apth_mutex_t *mutex);
 int apth_mutex_unlock(apth_mutex_t *mutex);
 
@@ -224,6 +225,7 @@ int apth_condattr_destroy(apth_condattr_t *attr);
 int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr);
 int apth_cond_destroy(apth_cond_t *cond);
 int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex);
+int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex, const struct timespec *abstime);
 int apth_cond_signal(apth_cond_t *cond);
 int apth_cond_broadcast(apth_cond_t *cond);
 
@@ -246,6 +248,7 @@ struct apth_sem_st;
 int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value);
 int apth_sem_destroy(apth_sem_t *sem);
 int apth_sem_wait(apth_sem_t *sem);
+int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime);
 int apth_sem_trywait(apth_sem_t *sem);
 int apth_sem_post(apth_sem_t *sem);
 int apth_sem_getvalue(apth_sem_t *sem, int *sval);
@@ -258,8 +261,10 @@ struct apth_rwlock_st;
 int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr);
 int apth_rwlock_destroy(apth_rwlock_t *rwlock);
 int apth_rwlock_rdlock(apth_rwlock_t *rwlock);
+int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstime);
 int apth_rwlock_tryrdlock(apth_rwlock_t *rwlock);
 int apth_rwlock_wrlock(apth_rwlock_t *rwlock);
+int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstime);
 int apth_rwlock_trywrlock(apth_rwlock_t *rwlock);
 int apth_rwlock_unlock(apth_rwlock_t *rwlock);
 

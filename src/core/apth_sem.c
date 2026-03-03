@@ -66,6 +66,31 @@ int apth_sem_wait(apth_sem_t *sem)
     return 0;
 }
 
+int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
+{
+    if (sem == NULL || *sem == NULL)
+        return EINVAL;
+    if (abstime == NULL)
+        return EINVAL;
+
+    struct apth_sem_st *s = *sem;
+
+    apth_mutex_lock(&s->mtx);
+    while (s->value == 0)
+    {
+        int rc = apth_cond_timedwait(&s->cv, &s->mtx, abstime);
+        if (rc == ETIMEDOUT)
+        {
+            apth_mutex_unlock(&s->mtx);
+            return ETIMEDOUT;
+        }
+    }
+    s->value--;
+    apth_mutex_unlock(&s->mtx);
+
+    return 0;
+}
+
 int apth_sem_trywait(apth_sem_t *sem)
 {
     if (sem == NULL || *sem == NULL)
