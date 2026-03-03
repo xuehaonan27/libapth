@@ -177,6 +177,92 @@ int apth_attr_setschedpolicy(apth_attr_t *attr, int policy);
 int apth_attr_getschedparam(const apth_attr_t *attr, struct sched_param *param);
 int apth_attr_setschedparam(apth_attr_t *attr, const struct sched_param *param);
 
+// ==================== Synchronization Primitives ====================
+
+// --- Mutex ---
+
+typedef struct apth_mutex_st *apth_mutex_t;
+struct apth_mutex_st;
+
+typedef struct apth_mutexattr_st *apth_mutexattr_t;
+struct apth_mutexattr_st;
+
+enum
+{
+    APTH_MUTEX_NORMAL = 0,
+#define APTH_MUTEX_NORMAL APTH_MUTEX_NORMAL
+    APTH_MUTEX_ERRORCHECK,
+#define APTH_MUTEX_ERRORCHECK APTH_MUTEX_ERRORCHECK
+    APTH_MUTEX_RECURSIVE,
+#define APTH_MUTEX_RECURSIVE APTH_MUTEX_RECURSIVE
+    APTH_MUTEX_DEFAULT = APTH_MUTEX_NORMAL
+#define APTH_MUTEX_DEFAULT APTH_MUTEX_DEFAULT
+};
+
+int apth_mutexattr_init(apth_mutexattr_t *attr);
+int apth_mutexattr_destroy(apth_mutexattr_t *attr);
+int apth_mutexattr_gettype(const apth_mutexattr_t *attr, int *type);
+int apth_mutexattr_settype(apth_mutexattr_t *attr, int type);
+
+int apth_mutex_init(apth_mutex_t *mutex, const apth_mutexattr_t *attr);
+int apth_mutex_destroy(apth_mutex_t *mutex);
+int apth_mutex_lock(apth_mutex_t *mutex);
+int apth_mutex_trylock(apth_mutex_t *mutex);
+int apth_mutex_unlock(apth_mutex_t *mutex);
+
+// --- Condition Variable ---
+
+typedef struct apth_cond_st *apth_cond_t;
+struct apth_cond_st;
+
+typedef struct apth_condattr_st *apth_condattr_t;
+struct apth_condattr_st;
+
+int apth_condattr_init(apth_condattr_t *attr);
+int apth_condattr_destroy(apth_condattr_t *attr);
+
+int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr);
+int apth_cond_destroy(apth_cond_t *cond);
+int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex);
+int apth_cond_signal(apth_cond_t *cond);
+int apth_cond_broadcast(apth_cond_t *cond);
+
+// --- Barrier ---
+
+typedef struct apth_barrier_st *apth_barrier_t;
+struct apth_barrier_st;
+
+#define APTH_BARRIER_SERIAL_THREAD (-1)
+
+int apth_barrier_init(apth_barrier_t *barrier, const void *attr, unsigned int count);
+int apth_barrier_destroy(apth_barrier_t *barrier);
+int apth_barrier_wait(apth_barrier_t *barrier);
+
+// --- Semaphore ---
+
+typedef struct apth_sem_st *apth_sem_t;
+struct apth_sem_st;
+
+int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value);
+int apth_sem_destroy(apth_sem_t *sem);
+int apth_sem_wait(apth_sem_t *sem);
+int apth_sem_trywait(apth_sem_t *sem);
+int apth_sem_post(apth_sem_t *sem);
+int apth_sem_getvalue(apth_sem_t *sem, int *sval);
+
+// --- Read-Write Lock ---
+
+typedef struct apth_rwlock_st *apth_rwlock_t;
+struct apth_rwlock_st;
+
+int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr);
+int apth_rwlock_destroy(apth_rwlock_t *rwlock);
+int apth_rwlock_rdlock(apth_rwlock_t *rwlock);
+int apth_rwlock_tryrdlock(apth_rwlock_t *rwlock);
+int apth_rwlock_wrlock(apth_rwlock_t *rwlock);
+int apth_rwlock_trywrlock(apth_rwlock_t *rwlock);
+int apth_rwlock_unlock(apth_rwlock_t *rwlock);
+
 // ==================== INCLUDE SYS HEADERS ====================
 #include <bits/types/struct_timeval.h>
 typedef struct timeval apth_time_t;

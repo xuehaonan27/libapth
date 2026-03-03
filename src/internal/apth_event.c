@@ -445,10 +445,10 @@ static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
             }
             break;
         case APTH_EVENT_TYPE_MUTEX:
-            // TODO
+            // No polling needed; apth_mutex_unlock directly marks event as OCCURRED.
             break;
         case APTH_EVENT_TYPE_COND:
-            // TODO
+            // No polling needed; apth_cond_signal/broadcast directly marks event as OCCURRED.
             break;
         case APTH_EVENT_TYPE_TID:
             // Thread termination
@@ -648,8 +648,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
             {
                 if (event->ev_type == APTH_EVENT_TYPE_COND)
                 {
-                    // clean signal
-                    // TODO: cond handle implementation
+                    // No-op: cond signal/broadcast marks event directly.
                 }
             }
             // Local to global mapping
@@ -1289,17 +1288,19 @@ APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_mutex(unsigned long spec /* TODO */)
+APTH_INTERNAL apth_event_t apth_event_mutex(unsigned long spec)
 {
     apth_event_t ev = prepare_ev(spec);
-    TODO("apth_event_mutex");
+    ev->ev_type = APTH_EVENT_TYPE_MUTEX;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_cond(unsigned long spec /* TODO */)
+APTH_INTERNAL apth_event_t apth_event_cond(unsigned long spec)
 {
     apth_event_t ev = prepare_ev(spec);
-    TODO("apth_event_cond");
+    ev->ev_type = APTH_EVENT_TYPE_COND;
+    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
     return ev;
 }
 

@@ -426,16 +426,16 @@ struct apth_event_time_st
     apth_time_t tv;
 };
 
-// Waiting on Mutex
+// Waiting on Mutex (no fields needed; wakeup is handled directly by unlock)
 struct apth_event_mutex_st
 {
-    // TODO: mutex
+    char _pad; // C requires non-empty struct
 };
 
-// Waiting on Conditional variables
+// Waiting on Conditional variables (no fields needed; wakeup is handled directly by signal/broadcast)
 struct apth_event_cond_st
 {
-    // TODO: cond
+    char _pad; // C requires non-empty struct
 };
 
 // Waiting on another thread
@@ -566,5 +566,77 @@ struct apth_epoll_waiter
 
 #include <paths.h>
 #define APTH_PATH_BINSH _PATH_BSHELL
+
+// ============================== Synchronization Primitives ==============================
+
+// Waiter node for sync primitives (stack-allocated on the waiting thread).
+// The thread's stack frame is frozen while it is in WAITING state, so
+// this struct persists until the thread is woken.
+struct apth_sync_waiter
+{
+    apth_t th;                 // the blocked apth thread
+    struct apth_event_st ev;   // inline event (no separate allocation)
+    struct list_elem elem;     // link into primitive's waiter queue
+#define apth_sync_waiter_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_sync_waiter, elem)
+};
+
+// Mutex
+struct apth_mutex_st
+{
+    lll_t guard;               // protects internal fields (short-held)
+    apth_t owner;              // current lock owner, or NULL
+    unsigned int lock_count;   // recursion depth for RECURSIVE type
+    int type;                  // APTH_MUTEX_NORMAL, _ERRORCHECK, _RECURSIVE
+    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+};
+
+// Mutex attributes
+struct apth_mutexattr_st
+{
+    int type;
+};
+
+// Condition variable
+struct apth_cond_st
+{
+    lll_t guard;               // protects internal fields
+    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+};
+
+// Condition variable attributes
+struct apth_condattr_st
+{
+    int pshared; // placeholder
+};
+
+// Barrier
+struct apth_barrier_st
+{
+    struct apth_mutex_st *mtx; // internal mutex
+    struct apth_cond_st *cv;   // internal condvar
+    unsigned int threshold;    // number of threads that must arrive
+    unsigned int count;        // number of threads currently waiting
+    unsigned int generation;   // increments each time barrier opens
+};
+
+// Semaphore
+struct apth_sem_st
+{
+    struct apth_mutex_st *mtx; // internal mutex
+    struct apth_cond_st *cv;   // internal condvar
+    unsigned int value;        // current count
+};
+
+// Read-write lock
+struct apth_rwlock_st
+{
+    struct apth_mutex_st *mtx; // internal mutex
+    struct apth_cond_st *rd_cv;  // condvar for readers waiting
+    struct apth_cond_st *wr_cv;  // condvar for writers waiting
+    int readers;               // count of active readers
+    int writers;               // count of active writers (0 or 1)
+    int waiting_writers;       // count of writers waiting
+};
 
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */
