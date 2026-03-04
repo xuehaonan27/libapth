@@ -3,6 +3,7 @@
 #include "hook_process.h"
 #include "internal_types.h"
 #include "internal_funcs.h"
+#include "utils/atomic_wrapper.h"
 #include <sys/stat.h> // For stat
 
 // APTH variant of system(3)
@@ -75,17 +76,59 @@ APTH_DEFINE_HOOK(int, system, (const char *cmd), (cmd))
 
 APTH_DEFINE_HOOK(pid_t, fork, (void), ())
 {
-    TODO("fork");
+    apth_hook_debug(fork);
+
+    // fork() in a userspace threading library is complex
+    // After fork(), only the calling thread exists in the child
+    // All other threads disappear, which can cause issues with locks, etc.
+
+    // For now, we call the raw fork and handle the child process
+    pid_t pid = apth_func_raw(fork)();
+
+    if (pid == 0)
+    {
+        // Child process: stop the APTH scheduler
+        // Only the current apth exists in the child
+        apth_scheduler_kill();
+    }
+
+    return pid;
 }
 
 APTH_DEFINE_HOOK(pid_t, _Fork, (void), ())
 {
-    TODO("fork");
+    apth_hook_debug(_Fork);
+
+    // _Fork() is similar to fork() but doesn't run atfork handlers
+    // For APTH, we implement it the same way as fork()
+    pid_t pid = apth_func_raw(fork)();
+
+    if (pid == 0)
+    {
+        // Child process: stop the APTH scheduler
+        apth_scheduler_kill();
+    }
+
+    return pid;
 }
 
 APTH_DEFINE_HOOK(pid_t, vfork, (void), ())
 {
-    TODO("fork");
+    apth_hook_debug(vfork);
+
+    // vfork() is like fork() but the parent is suspended until child calls exec or exit
+    // The child shares the parent's address space
+    // This is dangerous with userspace threads, so we just use fork()
+
+    pid_t pid = apth_func_raw(vfork)();
+
+    if (pid == 0)
+    {
+        // Child process: stop the APTH scheduler
+        apth_scheduler_kill();
+    }
+
+    return pid;
 }
 
 // APTH variant of waitpid(2)
@@ -120,17 +163,67 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
 
 APTH_DEFINE_HOOK(pid_t, wait, (int *status_ptr), (status_ptr))
 {
-    TODO("wait");
+    apth_hook_debug(wait);
+
+    // wait() is equivalent to waitpid(-1, status_ptr, 0)
+    // Wait for any child process
+    return apth_func(waitpid)(-1, status_ptr, 0);
 }
 
 APTH_DEFINE_HOOK(pid_t, wait4,
                  (pid_t pid, int *status_ptr, int options, struct rusage *usage),
                  (pid, status_ptr, options, usage))
 {
-    TODO("wait4");
+    apth_hook_debug(wait4);
+
+    apth_event_t ev;
+    pid_t result;
+    apth_t cur = cur_apth();
+
+    apth_debug("apth_wait4: called from thread \"%s\"", cur->name);
+    for (;;)
+    {
+        // Do a non-blocking poll using raw LIBC call
+        while ((result = apth_func_raw(wait4)(pid, status_ptr, options | WNOHANG, usage)) < 0 && errno == EINTR)
+            ;
+
+        // If pid was found or caller requested a polling return immediately
+        if (result == -1 || result > 0 || (result == 0 && (options & WNOHANG)))
+            break;
+
+        // Else wait a little bit
+        ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
+        apth_wait_event(ev);
+        apth_event_free(ev);
+    }
+
+    apth_debug("apth_wait4: leave to thread \"%s\"", cur->name);
+    return result;
 }
 
 APTH_DEFINE_HOOK(void, exit, (int status), (status))
 {
-    TODO("exit");
+    apth_hook_debug(exit);
+
+    apth_t cur = cur_apth();
+
+    // If this is the main apth, we should exit the whole process
+    if (cur == get_MAIN_APTH())
+    {
+        // Mark that main apth exited
+        atomic_store_release(&MAIN_APTH_EXITED, 1);
+        atomic_store_release(&MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT, 1);
+
+        // Call the real exit to terminate the process
+        apth_func_raw(exit)(status);
+    }
+    else
+    {
+        // For non-main apths, exit() should terminate the thread
+        // Use apth_exit to properly clean up the thread
+        apth_exit((void *)(long)status);
+    }
+
+    // Should not reach here
+    PANIC("exit() should not return");
 }

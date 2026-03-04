@@ -263,11 +263,37 @@ APTH_DEFINE_HOOK(int, close_range,
                  (unsigned int lowfd, unsigned int maxfd, int flags),
                  (lowfd, maxfd, flags))
 {
-    TODO("close_range");
+    apth_hook_debug(close_range);
+
+    // Unregister and notify for all fds in range before closing
+    for (unsigned int fd = lowfd; fd <= maxfd && fd < APTH_FD_TABLE_SIZE; fd++)
+    {
+        if (apth_util_fd_valid(fd))
+        {
+            apth_fd_unregister(fd);
+            apth_notify_fd_closed(fd);
+        }
+    }
+
+    // Call the real close_range
+    return apth_func_raw(close_range)(lowfd, maxfd, flags);
 }
 
 // TODO: implementation
 APTH_DEFINE_HOOK(void, closefrom, (int lowfd), (lowfd))
 {
-    TODO("closefrom");
+    apth_hook_debug(closefrom);
+
+    // Unregister and notify for all fds from lowfd onwards before closing
+    for (int fd = lowfd; fd < APTH_FD_TABLE_SIZE; fd++)
+    {
+        if (apth_util_fd_valid(fd))
+        {
+            apth_fd_unregister(fd);
+            apth_notify_fd_closed(fd);
+        }
+    }
+
+    // Call the real closefrom
+    apth_func_raw(closefrom)(lowfd);
 }

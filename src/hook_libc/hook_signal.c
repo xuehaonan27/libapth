@@ -178,7 +178,41 @@ static bool __apth_sigsuspend_check(void *arg)
 
 APTH_DEFINE_HOOK(int, pause, (void), ())
 {
-    TODO("pause");
+    apth_hook_debug(pause);
+
+    // pause() suspends execution until any signal is caught
+    // According to POSIX, pause() always returns -1 with errno set to EINTR
+    // We implement this by waiting for any signal to be delivered
+
+    apth_t self = cur_apth();
+
+    // Check if there's already a pending unblocked signal
+    lll_lock(&self->siglock, "pause");
+    for (int sig = 1; sig < APTH_NSIG; sig++)
+    {
+        if (sigismember(&self->sigpending, sig) && !sigismember(&self->sigmask, sig))
+        {
+            lll_unlock(&self->siglock, "pause");
+            // Deliver the signal and return
+            apth_deliver_pending_signals(self);
+            return apth_error(-1, EINTR);
+        }
+    }
+    lll_unlock(&self->siglock, "pause");
+
+    // No signal pending, wait for any signal using a custom check function
+    apth_event_t ev = apth_event_func(
+        APTH_EVENT_MODE_STATIC,
+        __apth_sigsuspend_check,
+        self,
+        apth_time(0, 50000));
+    apth_wait_event(ev);
+    apth_event_free(ev);
+
+    // Deliver pending signal
+    apth_deliver_pending_signals(self);
+
+    return apth_error(-1, EINTR);
 }
 
 APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
@@ -238,5 +272,26 @@ APTH_DEFINE_HOOK(int, sigstack,
                  (struct sigstack * stack, struct sigstack *oldstack),
                  (stack, oldstack))
 {
-    TODO("sigstack");
+    apth_hook_debug(sigstack);
+
+    // sigstack() is obsolete and replaced by sigaltstack()
+    // Convert between sigstack and stack_t structures
+    stack_t ss, oss;
+
+    if (stack != NULL)
+    {
+        ss.ss_sp = stack->ss_sp;
+        ss.ss_size = SIGSTKSZ; // sigstack doesn't specify size, use default
+        ss.ss_flags = stack->ss_onstack ? 0 : SS_DISABLE;
+    }
+
+    int result = apth_func(sigaltstack)(stack ? &ss : NULL, oldstack ? &oss : NULL);
+
+    if (result == 0 && oldstack != NULL)
+    {
+        oldstack->ss_sp = oss.ss_sp;
+        oldstack->ss_onstack = (oss.ss_flags & SS_ONSTACK) ? 1 : 0;
+    }
+
+    return result;
 }

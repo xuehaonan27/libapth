@@ -152,7 +152,7 @@ APTH_DECLARE_HOOK(ssize_t, pwritev64v2, int fd, const struct iovec *iov, int iov
 // ==================== 13.7 Copying data between two files ====================
 // TODO: implementation
 APTH_DECLARE_HOOK(ssize_t, copy_file_range, int inputfd, off64_t *inputpos, int outputfd,
-                  off64_t *outputpos, ssize_t length, unsigned int flags /* must be zero */)
+                  off64_t *outputpos, size_t length, unsigned int flags /* must be zero */)
 
 // ==================== 13.13 Duplicating Descriptors ====================
 APTH_DECLARE_HOOK(int, dup, int old)

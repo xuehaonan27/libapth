@@ -21,14 +21,30 @@ APTH_DEFINE_HOOK(int, socket,
 
 APTH_DEFINE_HOOK(int, shutdown, (int sockfd, int how), (sockfd, how))
 {
-    TODO("shutdown");
+    apth_hook_debug(shutdown);
+
+    // shutdown() doesn't close the fd, it just shuts down the connection
+    // No need for fd acquire/release or event handling
+    // Just call the raw function directly
+    return apth_func_raw(shutdown)(sockfd, how);
 }
 
 APTH_DEFINE_HOOK(int, socketpair,
                  (int domain, int style, int protocol, int filedes[2]),
                  (domain, style, protocol, filedes))
 {
-    TODO("socketpair");
+    apth_hook_debug(socketpair);
+
+    // Call the real socketpair
+    int result = apth_func_raw(socketpair)(domain, style, protocol, filedes);
+    if (result < 0)
+        return result;
+
+    // Register both file descriptors
+    apth_fd_register(filedes[0]);
+    apth_fd_register(filedes[1]);
+
+    return result;
 }
 
 APTH_DEFINE_HOOK(
