@@ -24,6 +24,12 @@ SHARED_LIB := $(LIB_DIR)/lib$(LIB_NAME).so
 # Include paths
 INCLUDES := -I$(SRC_DIR)
 
+# Installation directories
+PREFIX ?= /usr/local
+LIBDIR ?= $(PREFIX)/lib
+INCLUDEDIR ?= $(PREFIX)/include
+DESTDIR ?=
+
 # ==================== Source Files ====================
 # Find all .c files in src directory
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f)
@@ -77,6 +83,7 @@ ALL_TEST_BINS := $(IO_APTH_BINS) $(IO_PTHREAD_BINS) \
 .PHONY: all static shared tests
 .PHONY: run-tests run-io-apth-tests run-io-pthread-tests run-tcp-test run-io-tests
 .PHONY: test-% clean distclean help info
+.PHONY: install uninstall 
 
 # Default target
 all: static shared
@@ -252,6 +259,30 @@ distclean: clean
 	rm -f *~ $(SRC_DIR)/*~ $(TEST_DIR)/*~
 	@echo "Distribution clean complete!"
 
+# ==================== Installation ====================
+# Headers to install (all .h files directly under src/)
+PUBLIC_HEADERS := $(SRC_DIR)/apth.h
+
+install: static shared
+	@echo "Installing libraries to $(DESTDIR)$(LIBDIR)"
+	install -d $(DESTDIR)$(LIBDIR)
+	install -m 755 $(SHARED_LIB) $(DESTDIR)$(LIBDIR)/
+	install -m 644 $(STATIC_LIB) $(DESTDIR)$(LIBDIR)/
+	@echo "Installing headers to $(DESTDIR)$(INCLUDEDIR)"
+	install -d $(DESTDIR)$(INCLUDEDIR)
+	install -m 644 $(PUBLIC_HEADERS) $(DESTDIR)$(INCLUDEDIR)/
+	@echo "Installation complete."
+	@echo "Note: If you installed the shared library to a system directory,"
+	@echo "      you may need to run 'ldconfig' as root."
+
+uninstall:
+	@echo "Removing libraries from $(DESTDIR)$(LIBDIR)"
+	rm -f $(DESTDIR)$(LIBDIR)/lib$(LIB_NAME).a
+	rm -f $(DESTDIR)$(LIBDIR)/lib$(LIB_NAME).so
+	@echo "Removing headers from $(DESTDIR)$(INCLUDEDIR)"
+	cd $(DESTDIR)$(INCLUDEDIR) && rm -f $(notdir $(PUBLIC_HEADERS))
+	@echo "Uninstall complete."
+
 # ==================== Help ====================
 help:
 	@echo "Libapth Makefile Targets"
@@ -281,6 +312,8 @@ help:
 	@echo "  clean            Remove all build artifacts"
 	@echo "  distclean        Remove all build artifacts and backup files"
 	@echo "  info             Show source/test file counts"
+	@echo "  install          Install libraries and headers to \$${PREFIX} (default /usr/local)"
+	@echo "  uninstall        Remove installed files"
 	@echo "  help             Display this help message"
 	@echo ""
 	@echo "Build directories:"
