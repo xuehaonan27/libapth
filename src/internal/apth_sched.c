@@ -5,11 +5,10 @@
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.h"
+#include "utils/apth_getpid.h"
 #include <stdlib.h>
-
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-// #include <unistd.h>
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
@@ -514,7 +513,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                     {
                         apth_debug("APTH STACK OVERFLOW: thread pid_t=0x%lx, name=\"%s\"",
                                    (unsigned long)th, th->name);
-                        kill(getpid(), SIGSEGV); // Kill to all threads in the whole process
+                        kill(__apth_getpid(), SIGSEGV); // Kill to all threads in the whole process
                         sigfillset(&ss);
                         sigdelset(&ss, SIGSEGV);
                         sigsuspend(&ss);

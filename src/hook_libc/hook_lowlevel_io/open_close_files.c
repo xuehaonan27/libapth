@@ -175,6 +175,7 @@ APTH_API int openat64(int dirfd, const char *pathname, int flags, ...)
 //     (int dirfd, const char *pathname, const struct open_how *how, size_t size),
 //     (dirfd, pathname, how, size))
 
+/*
 MAYBE_UNUSED APTH_INTERNAL apth_func_pfn_t(openat2) apth_func_raw(openat2) = NULL;
 APTH_INTERNAL int __FALLBACK_syscall_openat2(int dirfd, const char *pathname, const struct open_how *how, size_t size)
 {
@@ -210,6 +211,7 @@ APTH_INTERNAL int apth_func(openat2)(int dirfd, const char *pathname, const stru
 
     return fd;
 }
+*/
 
 APTH_DEFINE_HOOK(int, creat, (const char *pathname, mode_t mode), (pathname, mode))
 {

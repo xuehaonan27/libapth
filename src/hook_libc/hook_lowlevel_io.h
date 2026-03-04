@@ -10,7 +10,7 @@
 #define __USE_LARGEFILE64
 #include <sys/types.h>     // For off64_t
 #endif
-#include <linux/openat2.h> // For struct open_how
+// #include <linux/openat2.h> // For struct open_how
 #include <sys/uio.h>
 #include <poll.h>
 
@@ -39,7 +39,6 @@
     X(open64)                         \
     X(openat)                         \
     X(openat64)                       \
-    X(openat2)                        \
     X(creat)                          \
     X(creat64)                        \
     X(close)                          \
@@ -94,7 +93,7 @@ APTH_INTERNAL int apth_func(openat)(int dirfd, const char *pathname, int flags, 
 APTH_DECLARE_FETCH_LIBCFUNC(int, openat64, int filedes, const char *filename, int flags, ... /* mode_t mode */)
 APTH_INTERNAL int apth_func(openat64)(int dirfd, const char *pathname, int flags, ... /* mode_t mode */);
 
-APTH_DECLARE_HOOK(int, openat2, int dirfd, const char *pathname, const struct open_how *how, size_t size)
+// APTH_DECLARE_HOOK(int, openat2, int dirfd, const char *pathname, const struct open_how *how, size_t size)
 
 APTH_DECLARE_HOOK(int, creat, const char *pathname, mode_t mode)
 // TODO: implementation
