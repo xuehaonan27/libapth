@@ -7,7 +7,7 @@ APTH_INTERNAL int get_DEBUG_USING_HOOKED(void);
 APTH_INTERNAL void set_DEBUG_USING_HOOKED(int b);
 
 // To make compiler happy
-MAYBE_UNUSED static void __dummy_holder__(void *, ...) { /* NOP*/ }
+MAYBE_UNUSED static void __dummy_holder__(void *_dummy, ...) { (void)_dummy; /* NOP*/ }
 
 #ifndef APTH_DEBUG
 #define apth_debug(...) __dummy_holder__(NULL, __VA_ARGS__)
