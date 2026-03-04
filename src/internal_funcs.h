@@ -127,6 +127,7 @@ APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid);
 APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func,
                                            void *arg, apth_time_t tv);
 APTH_INTERNAL bool apth_event_free(apth_event_t ev);
+APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal);
 
 // ============================== Utility ==============================
 APTH_INTERNAL bool apth_util_fd_valid(int fd);
