@@ -54,7 +54,7 @@ uintptr_t expected = oldval;
 if (!atomic_compare_exchange_strong(inner, &expected, LLL_NOT_ACQUIRED))
 {
     PANIC("Scheduler unlock: lock state changed unexpectedly");
-    apth_syscall_raw(exit)(127);
+    apth_func_raw(exit)(127);
 }
 
 // Scheduler unlock ROBBED 路径
@@ -62,7 +62,7 @@ uintptr_t expected = oldval;
 if (!atomic_compare_exchange_strong(inner, &expected, (uintptr_t)owner))
 {
     PANIC("Scheduler unlock (robbed): lock state changed unexpectedly");
-    apth_syscall_raw(exit)(127);
+    apth_func_raw(exit)(127);
 }
 
 // Apth unlock 路径
@@ -70,7 +70,7 @@ uintptr_t expected = oldval;
 if (!atomic_compare_exchange_strong(inner, &expected, LLL_NOT_ACQUIRED))
 {
     PANIC("Apth unlock: lock state changed unexpectedly");
-    apth_syscall_raw(exit)(127);
+    apth_func_raw(exit)(127);
 }
 ```
 
@@ -143,7 +143,7 @@ APTH_INTERNAL apth_sched_t cur_sched(void)
 #ifdef APTH_CUR_USING_KEYWORD
     return __cur_sched_tls;  // 直接访问，约 1-2 个 CPU 周期
 #else
-    return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
+    return (apth_sched_t)apth_func_raw(pthread_getspecific)(__CUR_SCHED_KEY);
 #endif
 }
 ```

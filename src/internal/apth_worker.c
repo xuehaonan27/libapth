@@ -47,7 +47,7 @@ void worker_key_t_init(void)
     // No initialization needed for thread-local storage keywords
     __cur_worker_tls = NULL;
 #else
-    int result = apth_syscall_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
+    int result = apth_func_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
     assert_msg(result == 0, "fail pthread_key_create");
 #endif
 }
@@ -57,7 +57,7 @@ void worker_key_t_drop(void)
 #ifdef APTH_CUR_USING_KEYWORD
     __cur_worker_tls = NULL;
 #else
-    int result = apth_syscall_raw(pthread_key_delete)(__CUR_WORKER_KEY);
+    int result = apth_func_raw(pthread_key_delete)(__CUR_WORKER_KEY);
     assert_msg(result == 0, "fail pthread_key_delete");
 #endif
 }
@@ -68,7 +68,7 @@ void sched_key_t_init(void)
     // No initialization needed for thread-local storage keywords
     __cur_sched_tls = NULL;
 #else
-    int result = apth_syscall_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
+    int result = apth_func_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
     assert_msg(result == 0, "fail pthread_key_create");
 #endif
 }
@@ -78,7 +78,7 @@ void sched_key_t_drop(void)
 #ifdef APTH_CUR_USING_KEYWORD
     __cur_sched_tls = NULL;
 #else
-    int result = apth_syscall_raw(pthread_key_delete)(__CUR_SCHED_KEY);
+    int result = apth_func_raw(pthread_key_delete)(__CUR_SCHED_KEY);
     assert_msg(result == 0, "fail pthread_key_delete");
 #endif
 }
@@ -88,7 +88,7 @@ APTH_INTERNAL apth_worker_t cur_worker(void)
 #ifdef APTH_CUR_USING_KEYWORD
     return __cur_worker_tls;
 #else
-    return (apth_worker_t)apth_syscall_raw(pthread_getspecific)(__CUR_WORKER_KEY);
+    return (apth_worker_t)apth_func_raw(pthread_getspecific)(__CUR_WORKER_KEY);
 #endif
 }
 
@@ -97,7 +97,7 @@ APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
 #ifdef APTH_CUR_USING_KEYWORD
     __cur_worker_tls = worker;
 #else
-    int result = apth_syscall_raw(pthread_setspecific)(__CUR_WORKER_KEY, worker);
+    int result = apth_func_raw(pthread_setspecific)(__CUR_WORKER_KEY, worker);
     assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
 #endif
 }
@@ -107,7 +107,7 @@ APTH_INTERNAL apth_sched_t cur_sched(void)
 #ifdef APTH_CUR_USING_KEYWORD
     return __cur_sched_tls;
 #else
-    return (apth_sched_t)apth_syscall_raw(pthread_getspecific)(__CUR_SCHED_KEY);
+    return (apth_sched_t)apth_func_raw(pthread_getspecific)(__CUR_SCHED_KEY);
 #endif
 }
 
@@ -116,7 +116,7 @@ APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
 #ifdef APTH_CUR_USING_KEYWORD
     __cur_sched_tls = sched;
 #else
-    int result = apth_syscall_raw(pthread_setspecific)(__CUR_SCHED_KEY, sched);
+    int result = apth_func_raw(pthread_setspecific)(__CUR_SCHED_KEY, sched);
     assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
 #endif
 }
@@ -181,7 +181,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     worker->worker_id = worker_id;
 
     // Set detached and CPU affinity
-    if ((result = apth_syscall_raw(pthread_attr_init)(&worker->attr)) != 0)
+    if ((result = apth_func_raw(pthread_attr_init)(&worker->attr)) != 0)
     {
         apth_debug("fail pthread_attr_init");
         return apth_error(-1, EINVAL);
@@ -197,7 +197,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     else
         spawn_detach_state = PTHREAD_CREATE_JOINABLE;
 
-    if ((result = apth_syscall_raw(pthread_attr_setdetachstate)(&worker->attr, spawn_detach_state)) != 0)
+    if ((result = apth_func_raw(pthread_attr_setdetachstate)(&worker->attr, spawn_detach_state)) != 0)
     {
         apth_debug("fail pthread_attr_setdetachstate");
         return apth_error(-1, EINVAL);
@@ -206,7 +206,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     CPU_ZERO(&cpuset);
     assert(0 <= worker_id && worker_id < cpu_cores());
     CPU_SET(worker_id, &cpuset);
-    if ((result = apth_syscall_raw(pthread_attr_setaffinity_np)(&worker->attr, sizeof(cpu_set_t), &cpuset)) != 0)
+    if ((result = apth_func_raw(pthread_attr_setaffinity_np)(&worker->attr, sizeof(cpu_set_t), &cpuset)) != 0)
     {
         apth_debug("fail pthread_attr_setaffinity_np");
         return apth_error(-1, EINVAL);
@@ -220,7 +220,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     arg->self = worker;
 
     // Spawn the worker
-    result = apth_syscall_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
+    result = apth_func_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
     return result;
 }
 
@@ -232,7 +232,7 @@ static int apth_worker_drop(apth_worker_t worker)
     atomic_store_release(&worker->sched->opening, false);
 
     void *pthr_rslt;
-    apth_syscall_raw(pthread_join)(worker->tid, &pthr_rslt);
+    apth_func_raw(pthread_join)(worker->tid, &pthr_rslt);
     apth_debug("MAIN WORKER %d joined WORKER %d", cur_worker()->worker_id, target_worker_id);
     assert(pthr_rslt == NULL);
 

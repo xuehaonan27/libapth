@@ -170,7 +170,7 @@ APTH_MAIN_BEGIN(argc, argv)
      *   apth_fd_unregister(pipefd[1])      – clears APTH_FD_TABLE entry
      *   apth_notify_fd_closed(pipefd[1])   – pushes pipefd[1] into every
      *                                         scheduler's pending_fd_close queue
-     *   apth_syscall_raw(close)(pipefd[1]) – actual kernel close
+     *   apth_func_raw(close)(pipefd[1]) – actual kernel close
      *
      * After the kernel close the pipe's read-end becomes EOF-readable.
      * Each scheduler's event manager drains its pending_fd_close queue and

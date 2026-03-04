@@ -7,6 +7,7 @@
 #include "internal_funcs.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 
 static _Atomic(int) DEBUG_USING_HOOKED = 0;
 
@@ -81,7 +82,7 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
         n = strlen(str);
         str[n++] = '\n';
         str[n++] = '\0';
-        apth_syscall_raw(write)(STDERR_FILENO, str, n);
+        apth_func_raw(write)(STDERR_FILENO, str, n);
 
         _dbg_spin_unlock();
     }
@@ -131,7 +132,7 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         n = strlen(str);
         str[n++] = '\n';
         str[n++] = '\0';
-        apth_syscall_raw(write)(STDERR_FILENO, str, n);
+        apth_func_raw(write)(STDERR_FILENO, str, n);
 
         _dbg_spin_unlock();
     }

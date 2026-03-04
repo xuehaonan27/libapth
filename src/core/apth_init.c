@@ -59,7 +59,7 @@ int apth_init(apth_init_t *initvals)
         LIBAPTH_INITIALIZED = true;
 
     // Initialize syscall wrapping
-    if (apth_syscall_system_init() != 0)
+    if (apth_func_system_init() != 0)
     {
         apth_debug("fail to initialize syscall system");
         return apth_error(-1, errno);
@@ -93,7 +93,7 @@ int apth_init(apth_init_t *initvals)
     {
         apth_shield
         {
-            apth_syscall_system_drop();
+            apth_func_system_drop();
             return apth_error(EAGAIN, EAGAIN);
         }
     }
@@ -142,7 +142,7 @@ int apth_init(apth_init_t *initvals)
     // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
     void *worker0_rslt;
-    apth_syscall_raw(pthread_join)(worker0->tid, &worker0_rslt);
+    apth_func_raw(pthread_join)(worker0->tid, &worker0_rslt);
     if (worker0_rslt != NULL)
         apth_debug("worker0_rslt should be NULL, but is %p", worker0_rslt);
     apth_debug("LIBAPTH INITIALIZER JOINED WORKER 0...");
@@ -153,7 +153,7 @@ int apth_init(apth_init_t *initvals)
 
     // Call `pthread_exit`, the initializer pthread should exit but others
     // should continue to run
-    apth_syscall_raw(pthread_exit)(NULL);
+    apth_func_raw(pthread_exit)(NULL);
     return 0;
 }
 
@@ -178,7 +178,7 @@ int apth_drop(void)
         PANIC("fail to drop global signal system");
     }
 
-    if (apth_syscall_system_drop() != 0)
+    if (apth_func_system_drop() != 0)
     {
         apth_debug("fail to drop LIBAPTH syscall system");
         PANIC("fail to drop LIBAPTH syscall system");

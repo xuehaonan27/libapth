@@ -35,9 +35,9 @@ internally, this can crash at any time. The fix is trivial - just pass through
 to the raw libc functions:
 
 ```c
-APTH_DEFINE_SYSCALL(char *, getenv, (const char *n), (n))
+APTH_DEFINE_HOOK(char *, getenv, (const char *n), (n))
 {
-    return apth_syscall_raw(getenv)(n);
+    return apth_func_raw(getenv)(n);
 }
 ```
 

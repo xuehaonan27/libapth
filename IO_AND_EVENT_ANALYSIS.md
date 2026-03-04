@@ -45,7 +45,7 @@ selected = false;  // 声明为 int，但 false 只是 0，后续未对 selected
 
 #### Bug 3: `accept` 未正确处理 EINTR
 ```c
-while ((rv = apth_syscall_raw(accept)(fd, addr, addrlen)) == -1 
+while ((rv = apth_func_raw(accept)(fd, addr, addrlen)) == -1 
        && (errno == EAGAIN || errno == EWOULDBLOCK) ...)
 ```
 缺少对 `EINTR` 的处理。应为：
@@ -61,7 +61,7 @@ while ((rv = ...) == -1 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == 
 #### Bug 5: 快速路径中使用 `select` 做单 fd 可读/可写探测效率低
 ```c
 FD_ZERO(&fds); FD_SET(fd, &fds);
-apth_syscall_raw(select)(fd + 1, &fds, NULL, NULL, &delay);
+apth_func_raw(select)(fd + 1, &fds, NULL, NULL, &delay);
 ```
 对单个 fd 来说，`select` 需要初始化整个 `fd_set`（128 字节）+ 一次系统调用。更好的方式：
 - 使用 `poll(&(struct pollfd){fd, POLLIN, 0}, 1, 0)` — 一次系统调用，无需初始化大结构
@@ -198,7 +198,7 @@ void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool do
 | 锁持有时间 | 两遍完整遍历 waiting_queue | 只处理就绪的 apth |
 
 **D. SELECT 类型事件的兼容方案**
-对于 `APTH_EVENT_TYPE_SELECT` 类型的事件（用户调用了 hooked `select`），可以将其中的 fd_set 拆解为多个 epoll 监控项，或者作为 fallback 仍使用 `apth_syscall_raw(select)` 单独检查这一个事件的 fd_set。
+对于 `APTH_EVENT_TYPE_SELECT` 类型的事件（用户调用了 hooked `select`），可以将其中的 fd_set 拆解为多个 epoll 监控项，或者作为 fallback 仍使用 `apth_func_raw(select)` 单独检查这一个事件的 fd_set。
 
 ### 3. Event Manager 中的其他问题
 
@@ -211,7 +211,7 @@ else if (aux->rc < 0) {
     // re-check particular filedescriptor
     int rc2;
     ...
-    while ((rc2 = apth_syscall_raw(select)(...)) < 0 && errno == EINTR);
+    while ((rc2 = apth_func_raw(select)(...)) < 0 && errno == EINTR);
 ```
 当全局 select 出错时，为每个 fd 事件单独再做一次 select。如果有 N 个 fd 事件，就是 N 次额外的系统调用。使用 epoll 后此问题不存在。
 
@@ -297,14 +297,14 @@ __涉及文件__：`src/internal/apth_syscall.c`
 __实现__：
 
 ```c
-APTH_DEFINE_SYSCALL(int, socket,
+APTH_DEFINE_HOOK(int, socket,
                     (int domain, int type, int protocol),
                     (domain, type, protocol))
 {
     apth_hook_debug(socket);
 
     // 直接调用 libc 的 socket
-    int fd = apth_syscall_raw(socket)(domain, type, protocol);
+    int fd = apth_func_raw(socket)(domain, type, protocol);
     if (fd < 0)
         return fd;
 
@@ -336,7 +336,7 @@ __涉及文件__：`src/internal/apth_syscall.c`
 __实现__：
 
 ```c
-APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
+APTH_DEFINE_HOOK(int, close, (int fd), (fd))
 {
     apth_hook_debug(close);
 
@@ -353,7 +353,7 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
     // 安全起见可以显式 EPOLL_CTL_DEL（忽略错误）。
 
     // 调用 libc 的 close
-    return apth_syscall_raw(close)(fd);
+    return apth_func_raw(close)(fd);
 }
 ```
 
@@ -373,13 +373,13 @@ __涉及文件__：`src/internal/apth_syscall.c`
 __实现__：
 
 ```c
-APTH_DEFINE_SYSCALL(
+APTH_DEFINE_HOOK(
     int, setsockopt,
     (int fd, int level, int option_name, const void *option_value, socklen_t option_len),
     (fd, level, option_name, option_value, option_len))
 {
     apth_hook_debug(setsockopt);
-    return apth_syscall_raw(setsockopt)(fd, level, option_name, option_value, option_len);
+    return apth_func_raw(setsockopt)(fd, level, option_name, option_value, option_len);
 }
 ```
 
@@ -453,7 +453,7 @@ __改造模板（以 `read` 为例）__：
 改造后：
 
 ```c
-APTH_DEFINE_SYSCALL(ssize_t, read,
+APTH_DEFINE_HOOK(ssize_t, read,
                     (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
     if (nbytes == 0) return 0;
@@ -467,7 +467,7 @@ APTH_DEFINE_SYSCALL(ssize_t, read,
     for (;;)
     {
         // 直接尝试非阻塞 read — 如果数据已就绪，一次系统调用搞定
-        while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
+        while ((rv = apth_func_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR)
             ;
 
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
@@ -687,7 +687,7 @@ sched->epoll_fd_count = 0;
 ```c
 if (sched->epoll_fd >= 0)
 {
-    apth_syscall_raw(close)(sched->epoll_fd);  // 用 raw close 避免递归
+    apth_func_raw(close)(sched->epoll_fd);  // 用 raw close 避免递归
     sched->epoll_fd = -1;
 }
 ```
@@ -941,11 +941,11 @@ if (iovcnt > (int)(sizeof(tiov_stack)/sizeof(tiov_stack[0])))
 ### 0.2 实现 `socket` 钩子
 
 ```c
-APTH_DEFINE_SYSCALL(int, socket,
+APTH_DEFINE_HOOK(int, socket,
                     (int domain, int type, int protocol),
                     (domain, type, protocol))
 {
-    int fd = apth_syscall_raw(socket)(domain, type, protocol);
+    int fd = apth_func_raw(socket)(domain, type, protocol);
     if (fd >= 0 && fd < FD_SETSIZE) {
         APTH_FD_TABLE[fd].orig_flags = fcntl(fd, F_GETFL, 0);
         APTH_FD_TABLE[fd].managed = 1;
@@ -962,7 +962,7 @@ APTH_DEFINE_SYSCALL(int, socket,
 ### 0.3 实现 `close` 钩子
 
 ```c
-APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
+APTH_DEFINE_HOOK(int, close, (int fd), (fd))
 {
     if (fd >= 0 && fd < FD_SETSIZE) {
         APTH_FD_TABLE[fd].orig_flags = 0;
@@ -970,7 +970,7 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
         APTH_FD_TABLE[fd].refcount = 0;
     }
     // 未来用 epoll 时：epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL); (忽略错误)
-    return apth_syscall_raw(close)(fd);
+    return apth_func_raw(close)(fd);
 }
 ```
 
@@ -981,11 +981,11 @@ APTH_DEFINE_SYSCALL(int, close, (int fd), (fd))
 直接透传：
 
 ```c
-APTH_DEFINE_SYSCALL(int, setsockopt,
+APTH_DEFINE_HOOK(int, setsockopt,
     (int fd, int level, int option_name, const void *option_value, socklen_t option_len),
     (fd, level, option_name, option_value, option_len))
 {
-    return apth_syscall_raw(setsockopt)(fd, level, option_name, option_value, option_len);
+    return apth_func_raw(setsockopt)(fd, level, option_name, option_value, option_len);
 }
 ```
 
@@ -1031,7 +1031,7 @@ return rc;
 __改造模板（以 read 为例）__：去掉 `FD_ZERO+FD_SET+select` 快速探测，直接尝试非阻塞 I/O：
 
 ```c
-APTH_DEFINE_SYSCALL(ssize_t, read, (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
+APTH_DEFINE_HOOK(ssize_t, read, (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
     if (nbytes == 0) return 0;
     if (!apth_util_fd_valid(fd)) return apth_error(-1, EBADF);
@@ -1042,7 +1042,7 @@ APTH_DEFINE_SYSCALL(ssize_t, read, (int fd, void *buf, size_t nbytes), (fd, buf,
 
     ssize_t rv;
     for (;;) {
-        while ((rv = apth_syscall_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR) ;
+        while ((rv = apth_func_raw(read)(fd, buf, nbytes)) < 0 && errno == EINTR) ;
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
             apth_wait_event(ev);
@@ -1131,7 +1131,7 @@ __同一 fd 多个 apth 等待__：用 `EPOLLONESHOT` + 唤醒后重新注册。
 
 #### 步骤 4：SELECT 类型事件兼容
 
-用户调用 hooked `select` 产生的 `APTH_EVENT_TYPE_SELECT` 事件，拆解为多个 epoll fd 注册项。或者对这种事件单独用一次 `apth_syscall_raw(select)` 检查（仅作为 fallback）。
+用户调用 hooked `select` 产生的 `APTH_EVENT_TYPE_SELECT` 事件，拆解为多个 epoll fd 注册项。或者对这种事件单独用一次 `apth_func_raw(select)` 检查（仅作为 fallback）。
 
 ---
 
@@ -1140,7 +1140,7 @@ __同一 fd 多个 apth 等待__：用 `EPOLLONESHOT` + 唤醒后重新注册。
 ### 2.1 实现 `poll` 钩子
 
 ```c
-APTH_DEFINE_SYSCALL(int, poll, (struct pollfd *fds, nfds_t nfds, int timeout), (fds, nfds, timeout))
+APTH_DEFINE_HOOK(int, poll, (struct pollfd *fds, nfds_t nfds, int timeout), (fds, nfds, timeout))
 {
     if (nfds == 0) {
         if (timeout > 0) { usleep(timeout * 1000); }
@@ -1148,7 +1148,7 @@ APTH_DEFINE_SYSCALL(int, poll, (struct pollfd *fds, nfds_t nfds, int timeout), (
     }
     // 先做 0-timeout 探测
     int rc;
-    while ((rc = apth_syscall_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR) ;
+    while ((rc = apth_func_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR) ;
     if (rc > 0 || timeout == 0) return rc;
 
     // 构建事件列表：每个 pollfd 一个 FD 事件
@@ -1169,7 +1169,7 @@ APTH_DEFINE_SYSCALL(int, poll, (struct pollfd *fds, nfds_t nfds, int timeout), (
     apth_wait_event_list(&event_list);
 
     // 重新 poll 以获取 revents
-    while ((rc = apth_syscall_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR) ;
+    while ((rc = apth_func_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR) ;
     return rc;
 }
 ```
@@ -1281,7 +1281,7 @@ sched->active_fd_count = 0;
 apth_scheduler_kill 中添加：
 
 if (sched->epoll_fd >= 0) {
-    apth_syscall_raw(close)(sched->epoll_fd);
+    apth_func_raw(close)(sched->epoll_fd);
     sched->epoll_fd = -1;
 }
 // active_fd_slots 和 fd_slot_table 内的 waiters 在 drain_thqueue 过程中
@@ -1557,7 +1557,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
                         if (event->ev_args.SELECT.efds) { memcpy(&tefds, event->ev_args.SELECT.efds, sizeof(fd_set)); pefds = &tefds; }
 
                         int rc;
-                        while ((rc = apth_syscall_raw(select)(event->ev_args.SELECT.nfd, prfds, pwfds, pefds, &zero_tv)) < 0 && errno == EINTR)
+                        while ((rc = apth_func_raw(select)(event->ev_args.SELECT.nfd, prfds, pwfds, pefds, &zero_tv)) < 0 && errno == EINTR)
                             ;
                         if (rc > 0) {
                             // 有 fd 就绪
@@ -1920,7 +1920,7 @@ FOR_ELEMENT_IN_LIST_REF(&event_list, e2) {
 return count;
 这样 APTH_EVENT_TYPE_SELECT 可以逐步废弃，所有 fd 事件统一用 APTH_EVENT_TYPE_FD 走 epoll 路径。
 
-或者保留 SELECT fallback：如上面阶段 1 代码中所示，对 SELECT 类型事件用 apth_syscall_raw(select) 做 zero-timeout 探测。这种方式改动较小，但效率不如拆解方案。
+或者保留 SELECT fallback：如上面阶段 1 代码中所示，对 SELECT 类型事件用 apth_func_raw(select) 做 zero-timeout 探测。这种方式改动较小，但效率不如拆解方案。
 
 总结：方案 B 的完整数据流
 

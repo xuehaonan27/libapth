@@ -9,7 +9,7 @@
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-#include <unistd.h>
+// #include <unistd.h>
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
@@ -71,7 +71,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (sched->wake_eventfd < 0)
     {
-        apth_syscall_raw(close)(sched->epoll_fd);
+        apth_func_raw(close)(sched->epoll_fd);
         sched->epoll_fd = -1;
         return apth_error(false, errno);
     }
@@ -81,9 +81,9 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
         ev.data.fd = sched->wake_eventfd;
         if (epoll_ctl(sched->epoll_fd, EPOLL_CTL_ADD, sched->wake_eventfd, &ev) < 0)
         {
-            apth_syscall_raw(close)(sched->wake_eventfd);
+            apth_func_raw(close)(sched->wake_eventfd);
             sched->wake_eventfd = -1;
-            apth_syscall_raw(close)(sched->epoll_fd);
+            apth_func_raw(close)(sched->epoll_fd);
             sched->epoll_fd = -1;
             return apth_error(false, errno);
         }
@@ -217,7 +217,7 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // Drop wake eventfd (before epoll_fd so it's automatically removed from epoll)
     if (sched->wake_eventfd >= 0)
     {
-        apth_syscall_raw(close)(sched->wake_eventfd);
+        apth_func_raw(close)(sched->wake_eventfd);
         sched->wake_eventfd = -1;
     }
 
@@ -225,7 +225,7 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     if (sched->epoll_fd >= 0)
     {
         // Use raw close to avoid recursion
-        apth_syscall_raw(close)(sched->epoll_fd);
+        apth_func_raw(close)(sched->epoll_fd);
         sched->epoll_fd = -1;
     }
 
@@ -235,7 +235,7 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // Signal mask restore, allow all signals
     sigset_t sigs;
     sigemptyset(&sigs);
-    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
+    apth_func_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
     // Cancel TLS, no need for set current apth to APTH_NULL
     // since clearing scheduler will do this.
@@ -398,7 +398,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     // block all signals in the scheduler thread
     sigfillset(&sigs);
-    apth_syscall_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
+    apth_func_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
     // initialize the snapshot time for bootstrapping the loop
     apth_time_set(&snapshot, APTH_TIME_NOW);
@@ -508,7 +508,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 apth_debug("stack overflow detected for thread %p (\"%s\")", th, th->name);
                 // If the application doesn't catch SIGSEGVs, then terminate manually
                 // with a SIGSEGV now
-                if (apth_syscall_raw(sigaction)(SIGSEGV, NULL, &sa) == 0)
+                if (apth_func_raw(sigaction)(SIGSEGV, NULL, &sa) == 0)
                 {
                     if (sa.sa_handler == SIG_DFL)
                     {

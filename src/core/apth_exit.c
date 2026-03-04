@@ -15,6 +15,5 @@ void apth_exit(void *retval)
     // TODO: unwind?
     apth_do_cancel(retval);
 
-    perror("Should not reach here");
-    abort();
+    PANIC("Should not reach here");
 }

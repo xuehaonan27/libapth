@@ -7,7 +7,7 @@
 #include <malloc.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-#include <unistd.h>
+// #include <unistd.h>
 
 // ==================== FD to apths mapping ====================
 
@@ -542,7 +542,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                             FD_SET(event->ev_args.FD.fd, &aux->efds);
 
                         apth_time_set(&aux->delay, APTH_TIME_ZERO);
-                        while ((rc2 = apth_syscall_raw(select)(event->ev_args.FD.fd + 1, &aux->rfds, &aux->wfds, &aux->efds, &aux->delay)) < 0 && errno == EINTR)
+                        while ((rc2 = apth_func_raw(select)(event->ev_args.FD.fd + 1, &aux->rfds, &aux->wfds, &aux->efds, &aux->delay)) < 0 && errno == EINTR)
                             ;
 
                         if (rc2 > 0)
@@ -605,7 +605,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                             pefds = &tefds;
                         }
                         apth_time_set(&aux->delay, APTH_TIME_ZERO);
-                        while ((rc2 = apth_syscall_raw(select)(event->ev_args.SELECT.nfd + 1, prfds, pwfds, pefds, &aux->delay)) < 0 && errno == EINTR)
+                        while ((rc2 = apth_func_raw(select)(event->ev_args.SELECT.nfd + 1, prfds, pwfds, pefds, &aux->delay)) < 0 && errno == EINTR)
                             ;
                         if (rc2 < 0)
                         {
@@ -764,7 +764,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         }
 
                         int rc;
-                        while ((rc = apth_syscall_raw(select)(event->ev_args.SELECT.nfd, prfds, pwfds, pefds, &zero_tv)) < 0 && errno == EINTR)
+                        while ((rc = apth_func_raw(select)(event->ev_args.SELECT.nfd, prfds, pwfds, pefds, &zero_tv)) < 0 && errno == EINTR)
                             ;
                         if (rc > 0)
                         {
@@ -1160,7 +1160,7 @@ APTH_INTERNAL void apth_sched_eventmanager(apth_sched_t sched, apth_time_t *now,
         {
             apth_debug("GOING TO select the fd_set, fdmax=%d", aux.fdmax);
             while (
-                (aux.rc = apth_syscall_raw(select)(aux.fdmax + 1, &aux.rfds, &aux.wfds, &aux.efds, aux.pdelay)) < 0 && errno == EINTR)
+                (aux.rc = apth_func_raw(select)(aux.fdmax + 1, &aux.rfds, &aux.wfds, &aux.efds, aux.pdelay)) < 0 && errno == EINTR)
             {
                 apth_debug("rc=%d, errno=%d", aux.rc, errno);
             }

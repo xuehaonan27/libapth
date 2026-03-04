@@ -3,7 +3,6 @@
 
 #include "debug.h"
 #include "apth_errno.h"
-#include <unistd.h>
 
 // Get number of online CPU cores
 long cpu_cores(void);

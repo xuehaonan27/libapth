@@ -3,17 +3,18 @@
 // _GNU_SOURCE and _POSIX_C_SOURCE are defined via compiler flags in the Makefile
 // so that they take effect before any system header is included.
 #include "apth.h"
+// #include "common.h"
+#include "hook_libc/hooked_funcs.h"
 
 #include "utils/list.h"
 #include "utils/ring.h"
 #include "utils/lll.h"
-#include <sys/time.h>
 #include <ucontext.h>
 #include <pthread.h>
 
-#include <signal.h>
-
 #define _BIT(n) (1 << (n))
+
+#define APTH_NSIG 65
 
 extern struct apth_global_scheduler_pool GLOBAL_POOL;
 
@@ -31,8 +32,8 @@ typedef enum
     APTH_EV_STATUS_FAILED,
 } apth_ev_status_t;
 
-//  ============================== Thread Context ==============================
-#define APTH_NSIG 65
+//  ============================== Global actions==============================
+
 // Process level gloabl signal configure table
 struct apth_global_sigaction
 {

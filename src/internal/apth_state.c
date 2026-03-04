@@ -84,6 +84,6 @@ APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
         // Thread state changed unexpectedly, meaning someone else
         // changed it. This is a programming fault.
         PANIC("Apth %p state changed unexpectedly");
-        apth_syscall_raw(exit)(127);
+        apth_func_raw(exit)(127);
     }
 }

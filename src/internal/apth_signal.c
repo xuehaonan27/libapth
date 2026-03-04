@@ -54,8 +54,8 @@ static void __apth_sig_default_action(apth_t th, int sig)
         // signal.
         {
             struct sigaction dfl = {.sa_handler = SIG_DFL};
-            apth_syscall_raw(sigaction)(sig, &dfl, NULL);
-            apth_syscall_raw(raise)(sig);
+            apth_func_raw(sigaction)(sig, &dfl, NULL);
+            apth_func_raw(raise)(sig);
         }
         break;
 
@@ -72,8 +72,8 @@ static void __apth_sig_default_action(apth_t th, int sig)
     case SIGXFSZ:
     {
         struct sigaction dfl = {.sa_handler = SIG_DFL};
-        apth_syscall_raw(sigaction)(sig, &dfl, NULL);
-        apth_syscall_raw(raise)(sig);
+        apth_func_raw(sigaction)(sig, &dfl, NULL);
+        apth_func_raw(raise)(sig);
     }
     break;
 
@@ -90,7 +90,7 @@ static void __apth_sig_default_action(apth_t th, int sig)
     case SIGTTIN:
     case SIGTTOU:
         // Stop the process
-        apth_syscall_raw(raise)(sig);
+        apth_func_raw(raise)(sig);
         break;
 
     // Signal telling us to continue
@@ -375,7 +375,7 @@ APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
             continue;
         if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL || sig == SIGTRAP || sig == SIGSYS)
             continue;
-        if (apth_syscall_raw(sigaction)(sig, &sa, NULL) == -1)
+        if (apth_func_raw(sigaction)(sig, &sa, NULL) == -1)
         {
             apth_debug("signal %d cound not be set handler with `sigaction`", sig);
             ret = -1;

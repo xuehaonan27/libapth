@@ -16,7 +16,7 @@ if (th->sigpendcnt > 0) {
     sigpending(&sched->apth_sigpending);
     for (int sig = 1; sig < APTH_NSIG; sig++) {
         if (sigismember(&th->sigpending, sig) && !sigismember(&sched->apth_sigpending, sig))
-            apth_syscall_raw(pthread_kill)(apth_syscall_raw(pthread_self)(), sig);
+            apth_func_raw(pthread_kill)(apth_func_raw(pthread_self)(), sig);
     }
 }
 ```
@@ -215,7 +215,7 @@ struct apth_st {
 **1. `sigaction` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, sigaction,
+APTH_DEFINE_HOOK(int, sigaction,
     (int sig, const struct sigaction *act, struct sigaction *oact),
     (sig, act, oact))
 {
@@ -237,12 +237,12 @@ APTH_DEFINE_SYSCALL(int, sigaction,
 }
 ```
 
-**注意**：对于 `SIGKILL`、`SIGSTOP`、`SIGSEGV`、`SIGBUS`、`SIGFPE`、`SIGILL` 等硬件/不可忽略信号，应当将 `sigaction` 同时注册到**内核级**（通过 `apth_syscall_raw(sigaction)`），因为这些信号是硬件产生、不可纯软件模拟的。对于这些信号，libapth 在内核级注册一个 **trampoline handler**，在其中设置 apth 的 pending bit，然后从 handler 返回（而非直接执行用户 handler）。
+**注意**：对于 `SIGKILL`、`SIGSTOP`、`SIGSEGV`、`SIGBUS`、`SIGFPE`、`SIGILL` 等硬件/不可忽略信号，应当将 `sigaction` 同时注册到**内核级**（通过 `apth_func_raw(sigaction)`），因为这些信号是硬件产生、不可纯软件模拟的。对于这些信号，libapth 在内核级注册一个 **trampoline handler**，在其中设置 apth 的 pending bit，然后从 handler 返回（而非直接执行用户 handler）。
 
 **2. `signal` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
+APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {
     struct sigaction act, oact;
     act.sa_handler = handler;
@@ -257,7 +257,7 @@ APTH_DEFINE_SYSCALL(sighandler_t, signal, (int sig, sighandler_t handler), (sig,
 **3. `pthread_sigmask` / `sigprocmask` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, pthread_sigmask,
+APTH_DEFINE_HOOK(int, pthread_sigmask,
     (int how, const sigset_t *set, sigset_t *oset),
     (how, set, oset))
 {
@@ -265,7 +265,7 @@ APTH_DEFINE_SYSCALL(int, pthread_sigmask,
     return apth_sigmask(how, set, oset);
 }
 
-APTH_DEFINE_SYSCALL(int, sigprocmask,
+APTH_DEFINE_HOOK(int, sigprocmask,
     (int how, const sigset_t *set, sigset_t *oset),
     (how, set, oset))
 {
@@ -278,12 +278,12 @@ APTH_DEFINE_SYSCALL(int, sigprocmask,
 **4. `sigpending` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, sigpending, (sigset_t *set), (set))
+APTH_DEFINE_HOOK(int, sigpending, (sigset_t *set), (set))
 {
     if (set == NULL) return apth_error(-1, EFAULT);
     apth_t cur = cur_apth();
     if (APTH_IS_FAKE_SCHED(cur))
-        return apth_syscall_raw(sigpending)(set);
+        return apth_func_raw(sigpending)(set);
 
     lll_lock(&cur->siglock, "sigpending");
     *set = cur->sigpending;
@@ -295,7 +295,7 @@ APTH_DEFINE_SYSCALL(int, sigpending, (sigset_t *set), (set))
 **5. `sigsuspend` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, sigsuspend, (const sigset_t *mask), (mask))
+APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 {
     apth_t self = cur_apth();
     // 临时替换信号掩码
@@ -323,11 +323,11 @@ APTH_DEFINE_SYSCALL(int, sigsuspend, (const sigset_t *mask), (mask))
 **6. `raise` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, raise, (int sig), (sig))
+APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 {
     apth_t self = cur_apth();
     if (APTH_IS_FAKE_SCHED(self))
-        return apth_syscall_raw(raise)(sig);
+        return apth_func_raw(raise)(sig);
     return apth_kill(self, sig);  // 需要先修复 apth_kill 允许自发信号
 }
 ```
@@ -335,7 +335,7 @@ APTH_DEFINE_SYSCALL(int, raise, (int sig), (sig))
 **7. `sigaltstack` 钩子**
 
 ```c
-APTH_DEFINE_SYSCALL(int, sigaltstack,
+APTH_DEFINE_HOOK(int, sigaltstack,
     (const stack_t *ss, stack_t *oss),
     (ss, oss))
 {
@@ -536,7 +536,7 @@ static void apth_kernel_signal_catcher(int sig, siginfo_t *info, void *uctx)
 当前的 `sigwait` 实现大致正确，但需要修改为只查看 apth 级别的 pending：
 
 ```c
-APTH_DEFINE_SYSCALL(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
+APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
     apth_t self = cur_apth();
     if (set == NULL || sigp == NULL)
@@ -670,8 +670,8 @@ static void __apth_sig_default_action(apth_t th, int sig)
         // 恢复内核默认处理并重新发送信号
         {
             struct sigaction dfl = { .sa_handler = SIG_DFL };
-            apth_syscall_raw(sigaction)(sig, &dfl, NULL);
-            apth_syscall_raw(raise)(sig);
+            apth_func_raw(sigaction)(sig, &dfl, NULL);
+            apth_func_raw(raise)(sig);
         }
         break;
 
@@ -688,8 +688,8 @@ static void __apth_sig_default_action(apth_t th, int sig)
     case SIGXFSZ:
         {
             struct sigaction dfl = { .sa_handler = SIG_DFL };
-            apth_syscall_raw(sigaction)(sig, &dfl, NULL);
-            apth_syscall_raw(raise)(sig);
+            apth_func_raw(sigaction)(sig, &dfl, NULL);
+            apth_func_raw(raise)(sig);
         }
         break;
 
@@ -706,7 +706,7 @@ static void __apth_sig_default_action(apth_t th, int sig)
     case SIGTTIN:
     case SIGTTOU:
         // 停止进程
-        apth_syscall_raw(raise)(sig);
+        apth_func_raw(raise)(sig);
         break;
 
     // 继续信号
@@ -796,7 +796,7 @@ int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 
     // 如果是 scheduler 上下文，直接操作 pthread 级掩码
     if (APTH_IS_FAKE_SCHED(cur))
-        return apth_syscall_raw(pthread_sigmask)(how, set, oldset);
+        return apth_func_raw(pthread_sigmask)(how, set, oldset);
 
     if (oldset != NULL)
         *oldset = cur->sigmask;

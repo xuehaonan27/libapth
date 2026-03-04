@@ -103,7 +103,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                     // NOTE: this is a spurious situation. We are a scheduler and
                     // holding the lock by ourself. LLL is not reentrant lock.
                     PANIC("NOT REENTRANT LLL");
-                    apth_syscall_raw(exit)(127);
+                    apth_func_raw(exit)(127);
                 }
                 else
                 {
@@ -160,7 +160,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             // not in `cur_apth`. It's not possible but we place a check
             // here though.
             PANIC("What???");
-            apth_syscall_raw(exit)(127);
+            apth_func_raw(exit)(127);
         }
         else
         {
@@ -199,7 +199,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                     // NOTE: this is a spurious situation. The scheduler is holding a
                     // lock while letting the control moved to us, an apth!
                     PANIC("SCHEDULER WRONG");
-                    apth_syscall_raw(exit)(127);
+                    apth_func_raw(exit)(127);
                 }
                 else
                 {
@@ -270,7 +270,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             if (decoded_sched != owner)
             {
                 lll_debug("decoded_sched=%p owner=%p", decoded_sched, owner);
-                apth_syscall_raw(exit)(127);
+                apth_func_raw(exit)(127);
             }
             assert(decoded_sched == owner);
             // FIX: Use CAS to ensure atomicity
@@ -279,7 +279,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             {
                 // Lock state changed unexpectedly
                 PANIC("Scheduler unlock: lock state changed unexpectedly");
-                apth_syscall_raw(exit)(127);
+                apth_func_raw(exit)(127);
             }
         }
         else if (APTH_LLL_IS_ROBBED(oldval))
@@ -298,7 +298,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             {
                 // Lock state changed unexpectedly
                 PANIC("Scheduler unlock (robbed): lock state changed unexpectedly");
-                apth_syscall_raw(exit)(127);
+                apth_func_raw(exit)(127);
             }
         }
         else
@@ -306,7 +306,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             // The owner is an apth, but we are unlocker as a scheduler.
             // Programmed wrong.
             PANIC("Fail lll_unlock");
-            apth_syscall_raw(exit)(127);
+            apth_func_raw(exit)(127);
         }
     }
     else if (APTH_LLL_IS_ROBBED(self))
@@ -315,7 +315,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
         // not in `cur_apth`. It's not possible but we place a check
         // here though.
         PANIC("What???");
-        apth_syscall_raw(exit)(127);
+        apth_func_raw(exit)(127);
     }
     else
     {
@@ -327,7 +327,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             // We should not see this. Since scheduler should release its locks
             // before passing control to an apth.
             PANIC("Apth trying to unlock a scheduler's lll");
-            apth_syscall_raw(exit)(127);
+            apth_func_raw(exit)(127);
         }
         else if (APTH_LLL_IS_ROBBED(oldval))
         {
@@ -335,7 +335,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             // But the robber should release its lock before passing control to
             // an apth.
             PANIC("Apth trying to unlock a robber's lll");
-            apth_syscall_raw(exit)(127);
+            apth_func_raw(exit)(127);
         }
         else
         {
@@ -349,7 +349,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             {
                 // Lock state changed unexpectedly
                 PANIC("Apth unlock: lock state changed unexpectedly");
-                apth_syscall_raw(exit)(127);
+                apth_func_raw(exit)(127);
             }
         }
     }

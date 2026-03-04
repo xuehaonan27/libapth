@@ -1,5 +1,6 @@
 #include "apth_sysutils.h"
 #include "apth_errno.h"
+#include <unistd.h>
 
 long cpu_cores(void)
 {
