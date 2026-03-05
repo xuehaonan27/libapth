@@ -10,39 +10,38 @@ int apth_mutexattr_init(apth_mutexattr_t *attr)
 {
     if (attr == NULL)
         return EINVAL;
-    *attr = (apth_mutexattr_t)malloc(sizeof(struct apth_mutexattr_st));
-    if (*attr == NULL)
-        return ENOMEM;
-    (*attr)->type = APTH_MUTEX_DEFAULT;
+    struct apth_mutexattr_st *a = APTH_MUTEXATTR_CAST(attr);
+    a->type = APTH_MUTEX_DEFAULT;
     return 0;
 }
 
 int apth_mutexattr_destroy(apth_mutexattr_t *attr)
 {
-    if (attr == NULL || *attr == NULL)
+    if (attr == NULL)
         return EINVAL;
-    free(*attr);
-    *attr = NULL;
+    // No-op for stack-allocated opaque union
     return 0;
 }
 
 int apth_mutexattr_gettype(const apth_mutexattr_t *attr, int *type)
 {
-    if (attr == NULL || *attr == NULL || type == NULL)
+    if (attr == NULL || type == NULL)
         return EINVAL;
-    *type = (*attr)->type;
+    const struct apth_mutexattr_st *a = APTH_MUTEXATTR_CONST_CAST(attr);
+    *type = a->type;
     return 0;
 }
 
 int apth_mutexattr_settype(apth_mutexattr_t *attr, int type)
 {
-    if (attr == NULL || *attr == NULL)
+    if (attr == NULL)
         return EINVAL;
     if (type != APTH_MUTEX_NORMAL &&
         type != APTH_MUTEX_ERRORCHECK &&
         type != APTH_MUTEX_RECURSIVE)
         return EINVAL;
-    (*attr)->type = type;
+    struct apth_mutexattr_st *a = APTH_MUTEXATTR_CAST(attr);
+    a->type = type;
     return 0;
 }
 
@@ -53,25 +52,22 @@ int apth_mutex_init(apth_mutex_t *mutex, const apth_mutexattr_t *attr)
     if (mutex == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = (struct apth_mutex_st *)malloc(sizeof(struct apth_mutex_st));
-    if (m == NULL)
-        return ENOMEM;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
 
     lll_init(&m->guard);
     m->owner = NULL;
     m->lock_count = 0;
-    m->type = (attr != NULL && *attr != NULL) ? (*attr)->type : APTH_MUTEX_DEFAULT;
+    m->type = (attr != NULL) ? APTH_MUTEXATTR_CONST_CAST(attr)->type : APTH_MUTEX_DEFAULT;
     list_init(&m->waiters);
-    *mutex = m;
     return 0;
 }
 
 int apth_mutex_destroy(apth_mutex_t *mutex)
 {
-    if (mutex == NULL || *mutex == NULL)
+    if (mutex == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = *mutex;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
 
     lll_lock(&m->guard, "mutex_destroy");
     if (!list_empty(&m->waiters))
@@ -86,17 +82,16 @@ int apth_mutex_destroy(apth_mutex_t *mutex)
     }
     lll_unlock(&m->guard, "mutex_destroy");
 
-    free(m);
-    *mutex = NULL;
+    // No free() needed - mutex is stack-allocated
     return 0;
 }
 
 int apth_mutex_lock(apth_mutex_t *mutex)
 {
-    if (mutex == NULL || *mutex == NULL)
+    if (mutex == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = *mutex;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
     lll_lock(&m->guard, "mutex_lock");
@@ -160,12 +155,12 @@ int apth_mutex_lock(apth_mutex_t *mutex)
 
 int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
 {
-    if (mutex == NULL || *mutex == NULL)
+    if (mutex == NULL)
         return EINVAL;
     if (abstime == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = *mutex;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
     lll_lock(&m->guard, "mutex_timedlock");
@@ -248,10 +243,10 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
 
 int apth_mutex_trylock(apth_mutex_t *mutex)
 {
-    if (mutex == NULL || *mutex == NULL)
+    if (mutex == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = *mutex;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
     lll_lock(&m->guard, "mutex_trylock");
@@ -277,10 +272,10 @@ int apth_mutex_trylock(apth_mutex_t *mutex)
 
 int apth_mutex_unlock(apth_mutex_t *mutex)
 {
-    if (mutex == NULL || *mutex == NULL)
+    if (mutex == NULL)
         return EINVAL;
 
-    struct apth_mutex_st *m = *mutex;
+    struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
     lll_lock(&m->guard, "mutex_unlock");

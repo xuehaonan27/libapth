@@ -30,7 +30,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
                          void *(*start_routine)(void *), void *arg)
 {
     apth_t t;
-    apth_attr_t iattr = NULL;
+    apth_attr_t default_attr;
+    const struct apth_attr_st *iattr;
     apth_time_t ts;
     // apth_t cur;
     apth_sched_t sched = NULL;
@@ -42,13 +43,13 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     if (attr != NULL)
     {
-        iattr = *attr;
-        if (iattr == NULL)
-            return apth_error(EINVAL, EINVAL);
+        iattr = APTH_ATTR_CONST_CAST(attr);
     }
     else
-        apth_attr_init(&iattr);
-    assert(iattr != NULL);
+    {
+        apth_attr_init(&default_attr);
+        iattr = APTH_ATTR_CONST_CAST(&default_attr);
+    }
 
     // if (newthr == get_addr_of_MAIN_APTH())
     // {

@@ -4,7 +4,11 @@
 # ==================== Configuration ====================
 CC := gcc
 AR := ar
-CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -DAPTH_CUR_USING_KEYWORD -DAPTH_DEBUG_SYSCALL_INIT_DBG
+CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
+	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
+	-DAPTH_CUR_USING_KEYWORD \
+	-DAPTH_DEBUG_SYSCALL_INIT_DBG \
+	-DAPTH_HOLD_INITIALIZER_PTHREAD
 LDFLAGS := -pthread
 ARFLAGS := rcs
 

@@ -6,7 +6,7 @@
 
 int apth_attr_setscope(apth_attr_t *attr, int scope)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     switch (scope)
     {

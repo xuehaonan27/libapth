@@ -514,6 +514,9 @@ struct apth_attr_st
     bool sigmask_set;  // Whether `sigmask` should be used
 };
 
+#define APTH_ATTR_CAST(attr_ptr) ((struct apth_attr_st *)(attr_ptr))
+#define APTH_ATTR_CONST_CAST(attr_ptr) ((const struct apth_attr_st *)(attr_ptr))
+
 #define ATTR_FLAG_DETACHSTATE 0x0001
 #define ATTR_FLAG_NOTINHERITSCHED 0x0002
 #define ATTR_FLAG_SCOPEPROCESS 0x0004 // TODO: not supported in libapth
@@ -582,7 +585,7 @@ struct apth_sync_waiter
     list_entry(LIST_ELEM, struct apth_sync_waiter, elem)
 };
 
-// Mutex
+// Mutex internal structure
 struct apth_mutex_st
 {
     lll_t guard;               // protects internal fields (short-held)
@@ -592,52 +595,74 @@ struct apth_mutex_st
     struct list waiters;       // FIFO queue of struct apth_sync_waiter
 };
 
-// Mutex attributes
+// Helper macros to cast between opaque union and internal struct
+#define APTH_MUTEX_CAST(mutex_ptr) ((struct apth_mutex_st *)(mutex_ptr))
+#define APTH_MUTEX_CONST_CAST(mutex_ptr) ((const struct apth_mutex_st *)(mutex_ptr))
+
+// Mutex attributes internal structure
 struct apth_mutexattr_st
 {
     int type;
 };
 
-// Condition variable
+#define APTH_MUTEXATTR_CAST(attr_ptr) ((struct apth_mutexattr_st *)(attr_ptr))
+#define APTH_MUTEXATTR_CONST_CAST(attr_ptr) ((const struct apth_mutexattr_st *)(attr_ptr))
+
+// Condition variable internal structure
 struct apth_cond_st
 {
     lll_t guard;               // protects internal fields
     struct list waiters;       // FIFO queue of struct apth_sync_waiter
 };
 
-// Condition variable attributes
+#define APTH_COND_CAST(cond_ptr) ((struct apth_cond_st *)(cond_ptr))
+#define APTH_COND_CONST_CAST(cond_ptr) ((const struct apth_cond_st *)(cond_ptr))
+
+// Condition variable attributes internal structure
 struct apth_condattr_st
 {
     int pshared; // placeholder
 };
 
-// Barrier
+#define APTH_CONDATTR_CAST(attr_ptr) ((struct apth_condattr_st *)(attr_ptr))
+#define APTH_CONDATTR_CONST_CAST(attr_ptr) ((const struct apth_condattr_st *)(attr_ptr))
+
+// Barrier internal structure
 struct apth_barrier_st
 {
-    struct apth_mutex_st *mtx; // internal mutex
-    struct apth_cond_st *cv;   // internal condvar
+    lll_t guard;               // protects internal fields (short-held)
     unsigned int threshold;    // number of threads that must arrive
     unsigned int count;        // number of threads currently waiting
     unsigned int generation;   // increments each time barrier opens
+    struct list waiters;       // FIFO queue of struct apth_sync_waiter
 };
 
-// Semaphore
+#define APTH_BARRIER_CAST(barrier_ptr) ((struct apth_barrier_st *)(barrier_ptr))
+#define APTH_BARRIER_CONST_CAST(barrier_ptr) ((const struct apth_barrier_st *)(barrier_ptr))
+
+// Semaphore internal structure
 struct apth_sem_st
 {
-    struct apth_mutex_st *mtx; // internal mutex
-    struct apth_cond_st *cv;   // internal condvar
+    lll_t guard;               // protects internal fields (short-held)
     unsigned int value;        // current count
+    struct list waiters;       // FIFO queue of struct apth_sync_waiter
 };
 
-// Read-write lock
+#define APTH_SEM_CAST(sem_ptr) ((struct apth_sem_st *)(sem_ptr))
+#define APTH_SEM_CONST_CAST(sem_ptr) ((const struct apth_sem_st *)(sem_ptr))
+
+// Read-write lock internal structure
 struct apth_rwlock_st
 {
-    struct apth_mutex_st *mtx; // internal mutex
-    struct apth_cond_st *rd_cv;  // condvar for readers waiting
-    struct apth_cond_st *wr_cv;  // condvar for writers waiting
+    lll_t guard;               // protects internal fields (short-held)
     int readers;               // count of active readers
     int writers;               // count of active writers (0 or 1)
     int waiting_writers;       // count of writers waiting
+    struct list rd_waiters;    // FIFO queue of reader struct apth_sync_waiter
+    struct list wr_waiters;    // FIFO queue of writer struct apth_sync_waiter
 };
+
+#define APTH_RWLOCK_CAST(rwlock_ptr) ((struct apth_rwlock_st *)(rwlock_ptr))
+#define APTH_RWLOCK_CONST_CAST(rwlock_ptr) ((const struct apth_rwlock_st *)(rwlock_ptr))
 
 #endif /* __LIBAPTH_INTERNAL_TYPES_H */

@@ -189,11 +189,11 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 
     int spawn_detach_state;
     if (is_main_worker(worker))
-#ifdef APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+#ifdef APTH_HOLD_INITIALIZER_PTHREAD
         spawn_detach_state = PTHREAD_CREATE_JOINABLE;
 #else
         spawn_detach_state = PTHREAD_CREATE_DETACHED;
-#endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+#endif // APTH_HOLD_INITIALIZER_PTHREAD
     else
         spawn_detach_state = PTHREAD_CREATE_JOINABLE;
 

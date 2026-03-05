@@ -6,7 +6,7 @@
 
 int apth_attr_setstack(apth_attr_t *attr, void *stackaddr, size_t stacksize)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // Catch invalid sizes
     int ret = check_stacksize_attr(stacksize);

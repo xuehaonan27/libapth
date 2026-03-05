@@ -6,7 +6,7 @@
 
 int apth_attr_getstack(const apth_attr_t *attr, void **stackaddr, size_t *stacksize)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // Store the result
 #if APTH_STACKGROWTH < 0 // _STACK_GROWS_DOWN

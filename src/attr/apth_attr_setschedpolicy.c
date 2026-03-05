@@ -6,7 +6,7 @@
 
 int apth_attr_setschedpolicy(apth_attr_t *attr, int policy)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // Catch invalid values.
     // int ret = check_sched_policy_attr(policy);

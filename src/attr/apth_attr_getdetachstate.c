@@ -5,7 +5,7 @@
 
 int apth_attr_getdetachstate(const apth_attr_t *attr, int *detachstate)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     *detachstate = (iattr->flags & ATTR_FLAG_DETACHSTATE
                         ? APTH_CREATE_DETACHED

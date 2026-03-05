@@ -6,7 +6,7 @@
 
 int apth_attr_setschedparam(apth_attr_t *attr, const struct sched_param *param)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // int ret = check_sched_priority_attr(param->sched_priority,
     //                                     iattr->schedpolicy);

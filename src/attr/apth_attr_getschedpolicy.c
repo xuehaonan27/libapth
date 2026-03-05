@@ -6,7 +6,7 @@
 
 int apth_attr_getschedpolicy(const apth_attr_t *attr, int *policy)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
     
     // Store the current values
     *policy = iattr->schedpolicy;

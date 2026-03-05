@@ -6,7 +6,7 @@
 
 int apth_attr_getscope(const apth_attr_t *attr, int *scope)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
     /* Store the current values.  */
     *scope = (iattr->flags & ATTR_FLAG_SCOPEPROCESS
                   ? APTH_SCOPE_PROCESS

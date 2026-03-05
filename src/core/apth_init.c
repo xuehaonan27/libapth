@@ -8,7 +8,8 @@
 static bool LIBAPTH_INITIALIZED = false;
 
 int apth_initvals_init(apth_init_t *initvals, int workers,
-                       void *(*main_apth)(void *), void *main_args)
+                       void *(*main_apth)(void *), void *main_args,
+                       apth_attr_t *main_attr)
 {
     if (workers <= 0 || main_apth == NULL)
     {
@@ -17,6 +18,7 @@ int apth_initvals_init(apth_init_t *initvals, int workers,
     initvals->workers = workers;
     initvals->main_apth = main_apth;
     initvals->main_args = main_args;
+    initvals->main_attr = main_attr;
     return 0;
 }
 
@@ -123,13 +125,20 @@ int apth_init(apth_init_t *initvals)
     apth_debug("worker0 = %p", worker0);
     apth_debug("sched = %p", sched);
 
+    apth_attr_t *pmain_attr = NULL;
     apth_attr_t main_attr;
-    apth_attr_init(&main_attr);
-    apth_attr_setname_np(&main_attr, "main apth");
+
+    if (initvals->main_attr != NULL)
+        pmain_attr = initvals->main_attr;
+    else
+    {
+        apth_attr_init(&main_attr);
+        pmain_attr = &main_attr;
+    }
+    apth_attr_setname_np(pmain_attr, "main apth");
 
     apth_t main_th;
-    apth_create(&main_th, &main_attr, initvals->main_apth, initvals->main_args);
-    apth_attr_destroy(&main_attr);
+    apth_create(&main_th, pmain_attr, initvals->main_apth, initvals->main_args);
 
     // Setting MAIN_APTH meaning all workers could start to dive into loop.
     // Before that, do more things ...
@@ -140,13 +149,13 @@ int apth_init(apth_init_t *initvals)
 
     // NOTE: debug here, remove this
     // We must hold MAIN PTHREAD here to receive Ctrl-C for debugging...
-#if defined(APTH_DEBUG) && defined(APTH_DEBUG_HOLD_INITIALIZER_PTHREAD)
+#ifdef APTH_HOLD_INITIALIZER_PTHREAD
     void *worker0_rslt;
     apth_func_raw(pthread_join)(worker0->tid, &worker0_rslt);
     if (worker0_rslt != NULL)
         apth_debug("worker0_rslt should be NULL, but is %p", worker0_rslt);
     apth_debug("LIBAPTH INITIALIZER JOINED WORKER 0...");
-#endif // APTH_DEBUG_HOLD_INITIALIZER_PTHREAD
+#endif // APTH_HOLD_INITIALIZER_PTHREAD
 
     set_cur_sched(NULL);
     set_cur_worker(NULL);

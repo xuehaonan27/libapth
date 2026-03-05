@@ -5,7 +5,7 @@
 
 int apth_attr_setaffinity_np(apth_attr_t *attr, size_t cpusetsize, const cpu_set_t *cpuset)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     if (cpuset == NULL || cpusetsize == 0)
     {

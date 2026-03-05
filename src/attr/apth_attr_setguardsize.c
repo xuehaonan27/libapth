@@ -6,7 +6,7 @@
 
 int apth_attr_setguardsize(apth_attr_t *attr, size_t guardsize)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // GNU NPTL says here:
     /* Note that we don't round the value here.  The standard requires

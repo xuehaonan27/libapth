@@ -6,7 +6,7 @@
 
 int apth_attr_getguardsize(const apth_attr_t *attr, size_t *guardsize)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     *guardsize = iattr->guardsize;
 

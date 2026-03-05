@@ -6,7 +6,7 @@
 
 int apth_attr_getname_np(apth_attr_t *attr, char *buf, size_t len)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
     if (iattr == NULL || buf == NULL)
     {
         return apth_error(EINVAL, EINVAL);

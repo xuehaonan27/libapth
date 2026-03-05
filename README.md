@@ -3,9 +3,17 @@
 + A userspace thread (M:N) library. Userspace threads in `libapth` are called `apth`s.
 + Provides API mimicking GNU NPTL (pthread). Theoratically, just open your favorite editor, replace each `pthread_` with `apth_`, `PTHREAD_` with `APTH_`, and of course `pthread.h` with `apth.h`, and the program will still compile and run, with an improved performance. Uh, of course, **THEORATICALLY**. You will never know how much dirty things' there, especially when you are hacking LIBC.
 + **NOT A COROUTINE OR ASYNCHRONOUS I/O LIBRARY**. If you are looking for a coroutine or asynchronous I/O library, `libapth` might not be your choice.
-+ Aiming at transforming `pthread` based program into a user space scheduled one with improved performance. That is to say, `libapth` will cover up I/O wait time as much as it could. But that could hardly to be said as "asynchronous I/O", since `libapth` will still provide a synchronous I/O illusion to program depending on it. 
++ Aiming at transforming `pthread` based program into a user space scheduled one with improved performance. That is to say, `libapth` will cover up I/O wait time as much as it could. But that could hardly to be said as "asynchronous I/O", since `libapth` will still provide a synchronous I/O illusion to program depending on it.
 + Besides, since all threads are scheduled in user space, a lot of kernel-user context switches are mitigated. To achieve this aim, workers (OS-threads, meaning `pthread`s on POSIX platform) that carries workloads (`apth`s) are 1 to 1 bound to CPU cores.
 + There's plan to add time slicing option to `libapth`.
+
+## API Compatibility
+
+LIBAPTH now uses opaque union types for synchronization primitives, matching glibc's pthread implementation:
++ Synchronization types (`apth_mutex_t`, `apth_cond_t`, `apth_sem_t`, `apth_barrier_t`, `apth_rwlock_t`) can be stack-allocated
++ Static initializers are provided: `APTH_MUTEX_INITIALIZER`, `APTH_COND_INITIALIZER`, etc.
++ Binary layout is designed for x86-64 Linux GNU platform (with room for future platform support)
++ This improves pthread compatibility and eliminates the need for dynamic allocation of these types
 
 ## Notice
 Since `libapth` provides improved performance mainly by modifying how workloads are scheduled, so POSIX thread APIs related to scheduling policy, parameters and resource competition are actually not functional.
@@ -20,7 +28,7 @@ NOTE: only for developers. You do not want to compile the library with these deb
 0. APTH_DEBUG: Control whether debug is enabled
 1. APTH_DEBUG_LLL: low level lock debug
     1.1: APTH_DEBUG_LLL_USING_FPRINTF
-2. APTH_DEBUG_HOLD_INITIALIZER_PTHREAD: hold initializer pthread by a dead loop
+2. APTH_HOLD_INITIALIZER_PTHREAD: hold initializer pthread by a dead loop
 3. APTH_DEBUG_SYSCALL_INIT_DBG: initializing syscall hook debug
 
 ## TODO
@@ -39,3 +47,7 @@ them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
 20. Self-make allocator
 22. On Linux platform, mechanisms like signalfd, eventfd should also be considered, hooked.
+23. apth_get_minstack
+24. apth_getcpulockid
+25. apth_getattr_np
+26. apth_condattr_setclock

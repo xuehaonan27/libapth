@@ -2,7 +2,6 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
-#include <malloc.h>
 
 // ==================== Condition Variable Attributes ====================
 
@@ -10,19 +9,16 @@ int apth_condattr_init(apth_condattr_t *attr)
 {
     if (attr == NULL)
         return EINVAL;
-    *attr = (apth_condattr_t)malloc(sizeof(struct apth_condattr_st));
-    if (*attr == NULL)
-        return ENOMEM;
-    (*attr)->pshared = 0;
+    struct apth_condattr_st *a = APTH_CONDATTR_CAST(attr);
+    a->pshared = 0;
     return 0;
 }
 
 int apth_condattr_destroy(apth_condattr_t *attr)
 {
-    if (attr == NULL || *attr == NULL)
+    if (attr == NULL)
         return EINVAL;
-    free(*attr);
-    *attr = NULL;
+    // No-op for stack-allocated opaque union
     return 0;
 }
 
@@ -34,22 +30,19 @@ int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr)
     if (cond == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = (struct apth_cond_st *)malloc(sizeof(struct apth_cond_st));
-    if (c == NULL)
-        return ENOMEM;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
 
     lll_init(&c->guard);
     list_init(&c->waiters);
-    *cond = c;
     return 0;
 }
 
 int apth_cond_destroy(apth_cond_t *cond)
 {
-    if (cond == NULL || *cond == NULL)
+    if (cond == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = *cond;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
 
     lll_lock(&c->guard, "cond_destroy");
     if (!list_empty(&c->waiters))
@@ -59,17 +52,16 @@ int apth_cond_destroy(apth_cond_t *cond)
     }
     lll_unlock(&c->guard, "cond_destroy");
 
-    free(c);
-    *cond = NULL;
+    // No free() needed - cond is stack-allocated
     return 0;
 }
 
 int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
 {
-    if (cond == NULL || *cond == NULL || mutex == NULL || *mutex == NULL)
+    if (cond == NULL || mutex == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = *cond;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
     apth_t self = cur_apth();
 
     // Prepare stack-allocated waiter and event
@@ -108,12 +100,12 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
 int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
                         const struct timespec *abstime)
 {
-    if (cond == NULL || *cond == NULL || mutex == NULL || *mutex == NULL)
+    if (cond == NULL || mutex == NULL)
         return EINVAL;
     if (abstime == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = *cond;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
     apth_t self = cur_apth();
 
     // Prepare COND event (sync waiter)
@@ -174,10 +166,10 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
 
 int apth_cond_signal(apth_cond_t *cond)
 {
-    if (cond == NULL || *cond == NULL)
+    if (cond == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = *cond;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
 
     lll_lock(&c->guard, "cond_signal");
 
@@ -201,10 +193,10 @@ int apth_cond_signal(apth_cond_t *cond)
 
 int apth_cond_broadcast(apth_cond_t *cond)
 {
-    if (cond == NULL || *cond == NULL)
+    if (cond == NULL)
         return EINVAL;
 
-    struct apth_cond_st *c = *cond;
+    struct apth_cond_st *c = APTH_COND_CAST(cond);
 
     lll_lock(&c->guard, "cond_broadcast");
 

@@ -6,7 +6,7 @@
 
 int apth_attr_getstacksize(const apth_attr_t *attr, size_t *stacksize)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     size_t size = iattr->stacksize;
 

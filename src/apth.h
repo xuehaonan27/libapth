@@ -1,15 +1,38 @@
 #ifndef __LIBAPTH_H
 #define __LIBAPTH_H
 
+// Size definitions for x86-64 Linux GNU (leave room for other platforms)
+#if defined(__x86_64__) && defined(__linux__)
+#define __SIZEOF_APTH_ATTR_T 256
+#define __SIZEOF_APTH_MUTEX_T 64
+#define __SIZEOF_APTH_MUTEXATTR_T 4
+#define __SIZEOF_APTH_COND_T 48
+#define __SIZEOF_APTH_CONDATTR_T 4
+#define __SIZEOF_APTH_BARRIER_T 56
+#define __SIZEOF_APTH_SEM_T 48
+#define __SIZEOF_APTH_RWLOCK_T 88
+#else
+#error "Unsupported platform - please define sizes for your architecture"
+#endif
+
+// Thread attributes (forward declaration needed for apth_init_t)
+typedef union
+{
+    char __size[__SIZEOF_APTH_ATTR_T];
+    long int __align;
+} apth_attr_t;
+
 typedef struct
 {
     int workers;
     void *(*main_apth)(void *);
     void *main_args;
+    apth_attr_t *main_attr;
 } apth_init_t;
 
 int apth_initvals_init(apth_init_t *initvals, int workers,
-                       void *(*main_apth)(void *), void *main_args);
+                       void *(*main_apth)(void *), void *main_args,
+                       apth_attr_t *main_attr);
 int apth_init(apth_init_t *initvals);
 int apth_drop(void);
 
@@ -24,9 +47,6 @@ struct apth_st;
 #define APTH_ATTR_NO_SIGMASK_NP (-1)
 
 // ==================== Thread Attributes ====================
-
-struct apth_attr_st;
-typedef struct apth_attr_st *apth_attr_t;
 
 enum
 {
@@ -181,11 +201,17 @@ int apth_attr_setschedparam(apth_attr_t *attr, const struct sched_param *param);
 
 // --- Mutex ---
 
-typedef struct apth_mutex_st *apth_mutex_t;
-struct apth_mutex_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_MUTEX_T];
+    long int __align;
+} apth_mutex_t;
 
-typedef struct apth_mutexattr_st *apth_mutexattr_t;
-struct apth_mutexattr_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_MUTEXATTR_T];
+    int __align;
+} apth_mutexattr_t;
 
 enum
 {
@@ -198,6 +224,12 @@ enum
     APTH_MUTEX_DEFAULT = APTH_MUTEX_NORMAL
 #define APTH_MUTEX_DEFAULT APTH_MUTEX_DEFAULT
 };
+
+// Mutex static initializers
+#define APTH_MUTEX_INITIALIZER {{0}}
+#define APTH_RECURSIVE_MUTEX_INITIALIZER_NP {{0}}
+#define APTH_ERRORCHECK_MUTEX_INITIALIZER_NP {{0}}
+#define APTH_ADAPTIVE_MUTEX_INITIALIZER_NP {{0}}
 
 int apth_mutexattr_init(apth_mutexattr_t *attr);
 int apth_mutexattr_destroy(apth_mutexattr_t *attr);
@@ -213,11 +245,20 @@ int apth_mutex_unlock(apth_mutex_t *mutex);
 
 // --- Condition Variable ---
 
-typedef struct apth_cond_st *apth_cond_t;
-struct apth_cond_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_COND_T];
+    long long int __align;
+} apth_cond_t;
 
-typedef struct apth_condattr_st *apth_condattr_t;
-struct apth_condattr_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_CONDATTR_T];
+    int __align;
+} apth_condattr_t;
+
+// Condition variable static initializer
+#define APTH_COND_INITIALIZER {{0}}
 
 int apth_condattr_init(apth_condattr_t *attr);
 int apth_condattr_destroy(apth_condattr_t *attr);
@@ -231,10 +272,16 @@ int apth_cond_broadcast(apth_cond_t *cond);
 
 // --- Barrier ---
 
-typedef struct apth_barrier_st *apth_barrier_t;
-struct apth_barrier_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_BARRIER_T];
+    long int __align;
+} apth_barrier_t;
 
 #define APTH_BARRIER_SERIAL_THREAD (-1)
+
+// Barrier static initializer (note: barriers typically require init with count)
+#define APTH_BARRIER_INITIALIZER {{0}}
 
 int apth_barrier_init(apth_barrier_t *barrier, const void *attr, unsigned int count);
 int apth_barrier_destroy(apth_barrier_t *barrier);
@@ -242,8 +289,14 @@ int apth_barrier_wait(apth_barrier_t *barrier);
 
 // --- Semaphore ---
 
-typedef struct apth_sem_st *apth_sem_t;
-struct apth_sem_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_SEM_T];
+    long int __align;
+} apth_sem_t;
+
+// Semaphore static initializer (note: semaphores typically require init with value)
+#define APTH_SEM_INITIALIZER {{0}}
 
 int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value);
 int apth_sem_destroy(apth_sem_t *sem);
@@ -255,8 +308,14 @@ int apth_sem_getvalue(apth_sem_t *sem, int *sval);
 
 // --- Read-Write Lock ---
 
-typedef struct apth_rwlock_st *apth_rwlock_t;
-struct apth_rwlock_st;
+typedef union
+{
+    char __size[__SIZEOF_APTH_RWLOCK_T];
+    long int __align;
+} apth_rwlock_t;
+
+// Read-write lock static initializer
+#define APTH_RWLOCK_INITIALIZER {{0}}
 
 int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr);
 int apth_rwlock_destroy(apth_rwlock_t *rwlock);

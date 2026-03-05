@@ -18,14 +18,14 @@ APTH_API int apth_attr_setsigmask_np(apth_attr_t *attr, const sigset_t *sigmask)
         return ret;
 
     // Filter out internal signals
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
     clear_internal_signals(&iattr->sigmask);
     return 0;
 }
 
 APTH_INTERNAL int apth_attr_setsigmask_internal(apth_attr_t *attr, const sigset_t *sigmask)
 {
-    apth_attr_t iattr = *attr;
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     if (sigmask == NULL)
     {

@@ -7,7 +7,7 @@
 
 int apth_attr_getsigmask_np(const apth_attr_t *attr, sigset_t *sigmask)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     if (!iattr->sigmask_set)
     {

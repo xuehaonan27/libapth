@@ -6,7 +6,7 @@
 
 int apth_attr_getstackaddr(const apth_attr_t *attr, void **stackaddr)
 {
-    const apth_attr_t iattr = *attr;
+    const struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     /* Some code assumes this function to work even if no stack address
      has been set.  Let them figure it out for themselves what the

@@ -3,16 +3,14 @@
 #include "internal_funcs.h"
 #include "utils/apth_sysutils.h"
 #include "utils/apth_errno.h"
-#include <malloc.h>
 #include <string.h>
 
 int apth_attr_init(apth_attr_t *attr)
 {
-    apth_attr_t iattr = (apth_attr_t)malloc(sizeof(struct apth_attr_st));
-    if (iattr == NULL)
-    {
-        return apth_error(ENOMEM, ENOMEM);
-    }
+    if (attr == NULL)
+        return apth_error(EINVAL, EINVAL);
+
+    struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);
 
     // Many elements are initialized to zero so let us do it all at once.
     memset(iattr, '\0', sizeof(struct apth_attr_st));
@@ -22,6 +20,5 @@ int apth_attr_init(apth_attr_t *attr)
     iattr->stackaddr = NULL;
     iattr->stacksize = APTH_STACK_SIZE_DEFAULT;
 
-    *attr = iattr;
     return 0;
 }
