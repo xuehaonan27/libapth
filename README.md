@@ -41,9 +41,7 @@ NOTE: only for developers. You do not want to compile the library with these deb
 14. Check all passed in arguments to API functions (e.g. `th`) is valid.
 15. Hook STDIO (e.g. printf, fprintf...) *
 16. Better handling of cancelling (e.g. now we have way too many fields for cancellation)
-18. Should consider the CPU affinity of the apth,
-and the type of the apth (e.g. for GC Worker threads, it's better to distribute
-them evenly across all schedulers, accompanying mutator threads)
+18. Should consider the type of the apth (e.g. for GC Worker threads, it's better to distribute them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
 20. Self-make allocator
 22. On Linux platform, mechanisms like signalfd, eventfd should also be considered, hooked.
