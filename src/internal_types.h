@@ -621,7 +621,8 @@ struct apth_cond_st
 // Condition variable attributes internal structure
 struct apth_condattr_st
 {
-    int pshared; // placeholder
+    int pshared;  // placeholder
+    clockid_t clock_id; // clock for timed waits (CLOCK_REALTIME, CLOCK_MONOTONIC, etc.)
 };
 
 #define APTH_CONDATTR_CAST(attr_ptr) ((struct apth_condattr_st *)(attr_ptr))

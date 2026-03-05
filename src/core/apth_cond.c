@@ -11,6 +11,7 @@ int apth_condattr_init(apth_condattr_t *attr)
         return EINVAL;
     struct apth_condattr_st *a = APTH_CONDATTR_CAST(attr);
     a->pshared = 0;
+    a->clock_id = CLOCK_REALTIME; // Default clock
     return 0;
 }
 
@@ -19,6 +20,30 @@ int apth_condattr_destroy(apth_condattr_t *attr)
     if (attr == NULL)
         return EINVAL;
     // No-op for stack-allocated opaque union
+    return 0;
+}
+
+int apth_condattr_setclock(apth_condattr_t *attr, clockid_t clock_id)
+{
+    if (attr == NULL)
+        return EINVAL;
+
+    // Validate clock_id - only support CLOCK_REALTIME and CLOCK_MONOTONIC
+    if (clock_id != CLOCK_REALTIME && clock_id != CLOCK_MONOTONIC)
+        return EINVAL;
+
+    struct apth_condattr_st *a = APTH_CONDATTR_CAST(attr);
+    a->clock_id = clock_id;
+    return 0;
+}
+
+int apth_condattr_getclock(const apth_condattr_t *attr, clockid_t *clock_id)
+{
+    if (attr == NULL || clock_id == NULL)
+        return EINVAL;
+
+    const struct apth_condattr_st *a = APTH_CONDATTR_CONST_CAST(attr);
+    *clock_id = a->clock_id;
     return 0;
 }
 

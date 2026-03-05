@@ -147,6 +147,7 @@ APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
 #include <stdbool.h>
 #include <stdlib.h> /* malloc, free — needed by APTH_MAIN_BEGIN */
 #include <sched.h>  // For cpu_set_t
+#include <time.h>   // For clockid_t
 
 int apth_cancel(apth_t th);
 void apth_cleanup_push(void (*func)(void *), void *arg);
@@ -170,6 +171,9 @@ int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);
 void apth_testcancel(void);
 int apth_once(apth_once_t *once_control, void (*init_routine)(void));
+size_t apth_get_minstack(const apth_attr_t *attr);
+int apth_getcpuclockid(apth_t th, clockid_t *clock_id);
+int apth_getattr_np(apth_t th, apth_attr_t *attr);
 
 int apth_attr_init(apth_attr_t *attr);
 int apth_attr_destroy(apth_attr_t *attr);
@@ -262,6 +266,8 @@ typedef union
 
 int apth_condattr_init(apth_condattr_t *attr);
 int apth_condattr_destroy(apth_condattr_t *attr);
+int apth_condattr_setclock(apth_condattr_t *attr, clockid_t clock_id);
+int apth_condattr_getclock(const apth_condattr_t *attr, clockid_t *clock_id);
 
 int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr);
 int apth_cond_destroy(apth_cond_t *cond);

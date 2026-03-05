@@ -47,7 +47,3 @@ them evenly across all schedulers, accompanying mutator threads)
 19. apth_sigmask test
 20. Self-make allocator
 22. On Linux platform, mechanisms like signalfd, eventfd should also be considered, hooked.
-23. apth_get_minstack
-24. apth_getcpulockid
-25. apth_getattr_np
-26. apth_condattr_setclock
