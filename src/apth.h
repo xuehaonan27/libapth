@@ -173,6 +173,7 @@ void apth_testcancel(void);
 int apth_once(apth_once_t *once_control, void (*init_routine)(void));
 size_t apth_get_minstack(const apth_attr_t *attr);
 int apth_getcpuclockid(apth_t th, clockid_t *clock_id);
+int apth_setcpuclockid(apth_t th, clockid_t clock_id);
 int apth_getattr_np(apth_t th, apth_attr_t *attr);
 
 int apth_attr_init(apth_attr_t *attr);

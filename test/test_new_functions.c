@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <errno.h>
 
 void *worker_thread(void *arg)
 {
@@ -73,6 +74,19 @@ APTH_MAIN_BEGIN(argc, argv)
     } else {
         printf("  apth_getcpuclockid returned error: %d\n", ret);
         printf("  (This is expected if the thread hasn't been scheduled yet)\n");
+    }
+    printf("\n");
+
+    // Test 3b: apth_setcpuclockid (should return ENOTSUP)
+    printf("Test 3b: apth_setcpuclockid\n");
+    ret = apth_setcpuclockid(th, CLOCK_MONOTONIC);
+    printf("  apth_setcpuclockid returned: %d\n", ret);
+    if (ret == ENOTSUP) {
+        printf("  Correctly returns ENOTSUP (not supported)\n");
+        printf("  PASS\n");
+    } else {
+        printf("  ERROR: Expected ENOTSUP (%d), got %d\n", ENOTSUP, ret);
+        assert(0);
     }
     printf("\n");
 
