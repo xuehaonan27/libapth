@@ -187,6 +187,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                 switch (event->ev_type)
                 {
                 case APTH_EVENT_TYPE_FD:
+                {
                     bool read_condition =
                         (event->ev_goal & APTH_GOAL_UNTIL_FD_READABLE) &&
                         FD_ISSET(event->ev_args.FD.fd, &aux->rfds);
@@ -236,7 +237,8 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
                             apth_debug("[I/O] event failed for thread \"%s\"", th->name);
                         }
                     }
-                    break;
+                }
+                break;
                 case APTH_EVENT_TYPE_SELECT:
                     // Filedescriptor Set I/O
                     if (apth_util_fds_test(event->ev_args.SELECT.nfd,
