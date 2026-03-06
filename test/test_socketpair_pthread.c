@@ -3,7 +3,9 @@
  *
  * Pthread baseline for test_socketpair_apth.c.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

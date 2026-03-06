@@ -3,7 +3,9 @@
  *
  * Test socketpair() under libapth.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <stdlib.h>
 #include <string.h>

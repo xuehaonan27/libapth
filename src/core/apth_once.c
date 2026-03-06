@@ -4,10 +4,6 @@
 #include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
 
-/*
-typedef _Atomic(int) apth_once_t;
-*/
-
 static void clear_once_control(void *arg)
 {
     apth_once_t *once_control = (apth_once_t *)arg;

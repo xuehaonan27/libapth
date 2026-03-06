@@ -1,5 +1,6 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
+#include "utils/atomic_wrapper.h"
 
 struct aux_for_eventmanager
 {
@@ -32,7 +33,7 @@ static apth_thqueue_t __first_loop(apth_t th, void *aux_arg)
     apth_thqueue_t ret_val = NULL;
 
     // Cancellation support
-    if (th->cancelreq == true)
+    if (atomic_load_acquire(&th->cancelreq))
         ret_val = APTH_DONT_MOVE_BUT_COUNT;
 
     // If this apth do not have any event, then go ahead
@@ -334,7 +335,7 @@ static apth_thqueue_t __second_loop(apth_t th, void *aux_arg)
     }
 
     // Cancellation support
-    if (th->cancelreq == true)
+    if (atomic_load_acquire(&th->cancelreq))
     {
         apth_debug("cancellation request pending for apth \"%s\"", th->name);
         any_occurred = true;

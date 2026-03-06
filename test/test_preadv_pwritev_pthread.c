@@ -4,7 +4,9 @@
  * Pthread baseline for test_preadv_pwritev_apth.c.
  * Tests preadv() and pwritev() scatter-gather I/O.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

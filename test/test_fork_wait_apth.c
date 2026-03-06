@@ -6,7 +6,9 @@
  * calling thread exists in the child, and the APTH scheduler is stopped.
  * The child should use syscalls directly or exec immediately.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <signal.h>
 #include <stdio.h>

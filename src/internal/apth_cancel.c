@@ -9,10 +9,10 @@ APTH_INTERNAL void apth_cancel_point(void)
     apth_t cur = cur_apth();
     assert(!APTH_IS_FAKE_SCHED(cur));
 
-    if (cur->cancelreq == true && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
+    if (atomic_load_acquire(&cur->cancelreq) && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
     {
         // avoid looping if cleanup handlers contain cancellation points
-        cur->cancelreq = false;
+        atomic_store_release(&cur->cancelreq, false);
         apth_debug("apth_cancel_point: terminating cancelled thread \"%s\"", cur->name);
         // apth_exit(APTH_CANCELED);
         apth_do_cancel(APTH_CANCELED);
@@ -27,8 +27,8 @@ APTH_INTERNAL void apth_do_cancel(void *result)
     apth_t self = sched->cur;
     apth_debug("apth_do_cancel: cancelling thread \"%s\"", self->name);
 
+    // Main apth exited
     if (self == get_MAIN_APTH())
-        // Main apth exited
         atomic_store_release(&MAIN_APTH_EXITED, 1);
 
     // TODO: atomically set the thread as cancelled.
@@ -42,10 +42,8 @@ APTH_INTERNAL void apth_do_cancel(void *result)
     // and let it reap the current apth. We cannot free it here.
     {
         self->join_arg = result;
-        // self->state = APTH_STATE_TERMINATED;
         submit_desired_state_to(self, APTH_STATE_TERMINATED, "apth_do_cancel");
         apth_debug("apth_do_cancel: switching from thread \"%s\" to scheduler", self->name);
-        // apth_ctx_switch(self->ctx, sched->sched_ctx);
         apth_yield();
     }
 

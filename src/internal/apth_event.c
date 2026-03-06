@@ -364,7 +364,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             bool any_occurred = false;
 
             // Check cancelation request
-            if (th->cancelreq)
+            if (atomic_load_acquire(&th->cancelreq))
                 any_occurred = true;
 
             if (list_empty(&th->event_list))
@@ -560,7 +560,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
                 {
                     apth_t th = apth_t_list_entry(e);
-                    bool any_occurred = th->cancelreq;
+                    bool any_occurred = atomic_load_acquire(&th->cancelreq);
                     if (!any_occurred)
                     {
                         FOR_ELEMENT_IN_LIST(th->event_list, ev_e)

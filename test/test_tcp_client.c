@@ -20,7 +20,9 @@
  * ---------
  *   0 on success, 1 on failure.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

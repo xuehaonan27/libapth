@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <sched.h>
 
 #include "apth.h"
@@ -22,7 +24,7 @@
 static void *
 thread_func(void *arg)
 {
-    int id = (int)arg;
+    int id = (int)(intptr_t)arg;
     char child_msg_buffer[1024];
 
     apth_snprintf(child_msg_buffer, sizeof(child_msg_buffer), "CHILD APTH %d", id);
@@ -32,7 +34,7 @@ thread_func(void *arg)
         child_msg_buffer, sizeof(child_msg_buffer),
         "Hi from child apth %d\n\0", id);
     write(2, child_msg_buffer, retlen);
-    return (void *)id;
+    return (void *)(intptr_t)id;
 }
 
 APTH_CONFIG(cfg,
@@ -58,7 +60,7 @@ APTH_MAIN_BEGIN(argc, argv)
 
         apth_attr_setstacksize(&child_attr, 2048);
 
-        apth_create(&tids[i], &child_attr, thread_func, (void *)i);
+        apth_create(&tids[i], &child_attr, thread_func, (void *)(intptr_t)i);
         apth_attr_destroy(&child_attr);
     }
 
@@ -68,7 +70,7 @@ APTH_MAIN_BEGIN(argc, argv)
     }
     for (int i = 0; i < N_CHILDREN; i++)
     {
-        if ((int)cdatas[i] != i)
+        if ((int)(intptr_t)cdatas[i] != i)
         {
 
             static char err_other_msg[] = "child apth should yield identity, but not\n";

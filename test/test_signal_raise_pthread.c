@@ -7,7 +7,9 @@
  * Pass criteria: USR1 handler runs once, USR2 handler runs once,
  *                SA_RESETHAND correctly resets to SIG_DFL.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>

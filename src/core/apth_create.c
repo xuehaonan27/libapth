@@ -159,7 +159,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->joinid = iattr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL;
 
     // Initialize cancellation stuff
-    t->cancelreq = false;
+    atomic_store_release(&t->cancelreq, false);
     t->cancelhandling = 0; // TODO: is this right? we should only clear enable bit
     t->cleanups = NULL;
 

@@ -24,7 +24,7 @@ int apth_setcancelstate(int state, int *oldstate)
 
         if (atomic_compare_exchange_weak_acquire(&self->cancelhandling, &oldval, newval))
         {
-            if (self->cancelreq && (newval & CANCELTYPE_BITMASK) != 0)
+            if (atomic_load_acquire(&self->cancelreq) && (newval & CANCELTYPE_BITMASK) != 0)
             // if (apth_cancel_enabled_and_canceled_and_async(newval))
                 apth_do_cancel(APTH_CANCELED);
             break;

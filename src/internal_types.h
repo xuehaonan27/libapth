@@ -310,7 +310,7 @@ struct ALIGNED(8) apth_st
     void *join_arg; // joining argument
 
     /* cancellation support */
-    bool cancelreq;                       // cancellation request is pending
+    _Atomic(bool) cancelreq;                       // cancellation request is pending
     _Atomic(unsigned int) cancelhandling; // cancellation state of thread
 
     // Bit set if cancellation is disabled

@@ -26,7 +26,9 @@
  *   g_total_read == N_WRITERS × BYTES_PER_WRITER after all readers return.
  *   Process exits 0 on pass, 1 on fail.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <stdlib.h>
 #include <string.h>

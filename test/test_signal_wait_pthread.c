@@ -6,7 +6,9 @@
  *
  * Pass criteria: sigwait returns both SIGUSR1 and SIGUSR2 exactly once each.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>

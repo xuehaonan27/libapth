@@ -9,7 +9,9 @@
  *   All N_PAIRS × N_ROUNDS request/response cycles complete without error
  *   or data corruption.  Process exits 0 on pass, 1 on fail.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

@@ -26,7 +26,9 @@
  *   so the client knows it is safe to connect.  The Makefile run target
  *   uses this to synchronise the two processes.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

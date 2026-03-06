@@ -4,7 +4,9 @@
  * Pthread baseline for test_pread_pwrite64_apth.c.
  * Tests pread64() and pwrite64() with large file offsets.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

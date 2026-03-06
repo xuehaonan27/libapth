@@ -31,7 +31,9 @@
  *   Every byte pread back matches the fill byte written by the corresponding
  *   pwrite.  Process exits 0 on pass, 1 on fail.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <fcntl.h>
 #include <stdlib.h>

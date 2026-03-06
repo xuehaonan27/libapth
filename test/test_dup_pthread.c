@@ -4,7 +4,9 @@
  * Pthread baseline for test_dup_apth.c.
  * Tests dup(), dup2(), and dup3() file descriptor duplication.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>

@@ -18,7 +18,9 @@
  * Pass criteria: handler runs once, sigsuspend returns -1 with EINTR,
  *                original mask is restored after sigsuspend.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <signal.h>
 #include <stdio.h>

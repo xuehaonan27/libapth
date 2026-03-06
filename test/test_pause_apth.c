@@ -4,7 +4,9 @@
  * Test pause() under libapth.
  * pause() suspends execution until a signal is caught.
  */
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif // _GNU_SOURCE
 #include "apth.h"
 #include <signal.h>
 #include <stdio.h>
