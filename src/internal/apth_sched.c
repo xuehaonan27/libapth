@@ -440,8 +440,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     sigset_t sigs;
     apth_time_t snapshot;
     apth_time_t running;
-    struct sigaction sa;
-    sigset_t ss;
 
     // block all signals in the scheduler thread
     sigfillset(&sigs);
@@ -569,36 +567,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_time_add(&th->running, &running);
         apth_debug("thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
 
-        // Check for stack overflow
-        if (th->stackguard != NULL)
-        {
-            if (*th->stackguard != APTH_MAGIC)
-            {
-                apth_debug("stack overflow detected for thread %p (\"%s\")", th, th->name);
-                // If the application doesn't catch SIGSEGVs, then terminate manually
-                // with a SIGSEGV now
-                if (apth_func_raw(sigaction)(SIGSEGV, NULL, &sa) == 0)
-                {
-                    if (sa.sa_handler == SIG_DFL)
-                    {
-                        apth_debug("APTH STACK OVERFLOW: thread pid_t=0x%lx, name=\"%s\"",
-                                   (unsigned long)th, th->name);
-                        kill(__apth_getpid(), SIGSEGV); // Kill to all threads in the whole process
-                        sigfillset(&ss);
-                        sigdelset(&ss, SIGSEGV);
-                        sigsuspend(&ss);
-                        abort();
-                    }
-                }
-
-                // Else terminate the thread only and send a SIGSEGV which allows the application
-                // to handle the situation
-                th->join_arg = (void *)APTH_MAGIC;
-                // Note that we force set the state to TERMINATED
-                atomic_store_release(&th->state_holder, make_state_uncommitted(APTH_STATE_TERMINATED));
-                apth_kill(th, SIGSEGV);
-            }
-        }
+        // Note: Stack overflow detection is now handled by guard pages.
+        // If a thread overflows its stack, it will trigger a SIGSEGV when
+        // accessing the protected guard page, which is handled by the OS.
 
         apth_state_t retired_th_state = state_holder_of(th);
         switch (make_state_committed(retired_th_state))

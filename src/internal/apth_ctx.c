@@ -63,6 +63,9 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 }
 
 // Initialize a context into `ctx`.
+// Note: stack_mem_start should point to the beginning of the usable stack area
+// (after the guard page if present), and stacksize should be the usable stack size
+// (excluding the guard page).
 APTH_INTERNAL bool apth_ctx_set(apth_cxt_t ctx, void (*func)(void),
                                 char *stack_mem_start, size_t stacksize)
 {

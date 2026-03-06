@@ -303,9 +303,10 @@ struct ALIGNED(8) apth_st
 
     /* machine context */
     apth_cxt_t ctx;              // last saved context of thread
-    char *stack_mem_start;       // pointer to thread stack
-    size_t stacksize;            // size of thread stack
-    uint32_t *stackguard;        // stack overflow guard
+    char *stack_mem_start;       // pointer to thread stack memory (including guard page if any)
+    size_t stacksize;            // size of thread stack (excluding guard page)
+    size_t guardsize;            // size of guard page
+    uint32_t magic;              // magic number for validation (replaces stackguard)
     bool stackloan;              // stack type
     void *(*start_func)(void *); // start routine
     void *start_arg;             // start argument
@@ -388,7 +389,7 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 // high (> 0). On most systems this should usually be the former.
 #define APTH_STACKGROWTH (-1)
 #define APTH_MAGIC 0xCAFEBABE
-#define APTH_TH_MAGIC_IS_GOOD(th) (*(uint32_t *)((th)->stackguard) == APTH_MAGIC)
+#define APTH_TH_MAGIC_IS_GOOD(th) ((th)->magic == APTH_MAGIC)
 
 // Apth is with a valid tid. Note that even apth is terminated, its tid
 // is still valid, until `apth_tcb_free` reaps it.

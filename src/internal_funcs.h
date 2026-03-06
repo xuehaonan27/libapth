@@ -59,8 +59,9 @@ APTH_INTERNAL void apth_sched_wake(apth_sched_t sched);
 APTH_INTERNAL void *scheduler_routine(void *arg);
 
 // ============================== TCB ==============================
-APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr);
+APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t guardsize);
 APTH_INTERNAL void apth_tcb_free(apth_t t);
+APTH_INTERNAL char *apth_tcb_get_usable_stack_start(apth_t t);
 
 // ============================== Filedescriptor ==============================
 APTH_INTERNAL void apth_fd_table_init(void);

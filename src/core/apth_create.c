@@ -51,19 +51,6 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         iattr = APTH_ATTR_CONST_CAST(&default_attr);
     }
 
-    // if (newthr == get_addr_of_MAIN_APTH())
-    // {
-    //     // We are spawning main thread. `apth_init` should have prepared proper
-    //     // worker TLS for us.
-    //     worker = cur_worker();
-    //     sched = cur_sched();
-    //     assert(sched != NULL);
-    //     assert(sched == worker->sched);
-    //     assert(worker == sched->worker);
-    //     cur = sched->cur;
-    //     assert(APTH_IS_FAKE_SCHED(cur));
-    // }
-    // else
     {
         // We are spawning other threads. TLS should have been set. The scheduler
         // to spawn to new apth to, should be determined first from CPU affinity.
@@ -91,7 +78,6 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         {
             worker = get_worker_by_id(cpu_favored);
             sched = worker->sched;
-            // cur = sched->cur;
         }
         else
         {
@@ -101,8 +87,6 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
             assert(sched != NULL);
             assert(sched == worker->sched);
             assert(worker == sched->worker);
-            // cur = sched->cur;
-            // assert(APTH_IS_FAKE_SCHED(cur));
         }
     }
 
@@ -111,7 +95,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Allocate a new thread control block, do all the allocations
 
     void *stackaddr = iattr->flags & ATTR_FLAG_STACKADDR ? iattr->stackaddr : NULL;
-    if ((t = apth_tcb_alloc(iattr->stacksize, stackaddr)) == NULL)
+    if ((t = apth_tcb_alloc(iattr->stacksize, stackaddr, iattr->guardsize)) == NULL)
         return apth_error(errno, errno);
 
     // Standard TCB ingredients
@@ -119,7 +103,6 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
-    // t->state = APTH_STATE_NEW;
     submit_desired_state_to(t, APTH_STATE_NEW, "apth_create");
 
     // Timing: initialize the time points and ranges
@@ -163,23 +146,23 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->cancelhandling = 0; // TODO: is this right? we should only clear enable bit
     t->cleanups = NULL;
 
-    // TODO: Initialize sync stuff
-
     // TODO: exception stuff
 
     // Initialize thread specific storage
     t->specific[0] = t->specific_1stblock;
     t->specific_used = false;
 
-    // Scheduler list handling
-    /*set_sched_of(t, sched);
-    set_belonging_list_of(t, NULL);
-    set_belonging_list_lock_of(t, NULL);*/
+    // Yield information
+    t->last_yield_tick = cpu_tick();
+    t->yield_timeslice = 10; // TODO: should passed from attr
+    t->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
 
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);
 
-    if (!apth_ctx_set(t->ctx, apth_create_trampoline, t->stack_mem_start, t->stacksize))
+    // Get the usable stack start (after guard page if present)
+    char *usable_stack_start = apth_tcb_get_usable_stack_start(t);
+    if (!apth_ctx_set(t->ctx, apth_create_trampoline, usable_stack_start, t->stacksize))
     {
         apth_shield
         {

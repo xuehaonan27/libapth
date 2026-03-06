@@ -24,7 +24,7 @@ APTH_MAIN_BEGIN(argc, argv)
     printf("Test 1: apth_get_minstack\n");
     size_t minstack = apth_get_minstack(NULL);
     printf("  Minimum stack size: %zu bytes\n", minstack);
-    assert(minstack == 16384); // APTH_STACK_SIZE_DEFAULT
+    assert(minstack == 16384); // APTH_MIN_STACK
     printf("  PASS\n\n");
 
     // Test 2: apth_condattr_setclock and apth_condattr_getclock
