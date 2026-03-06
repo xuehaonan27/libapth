@@ -648,11 +648,11 @@ struct apth_condattr_st
 // Barrier internal structure
 struct apth_barrier_st
 {
-    lll_t guard;             // protects internal fields (short-held)
-    unsigned int threshold;  // number of threads that must arrive
-    unsigned int count;      // number of threads currently waiting
-    unsigned int generation; // increments each time barrier opens
-    struct list waiters;     // FIFO queue of struct apth_sync_waiter
+    struct list waiters; // FIFO queue of struct apth_sync_waiter
+    lll_t guard;         // protects internal fields (short-held)
+    uint32_t threshold;  // number of threads that must arrive
+    uint32_t count;      // number of threads currently waiting
+    uint32_t generation; // increments each time barrier opens
 };
 
 #define APTH_BARRIER_CAST(barrier_ptr) ((struct apth_barrier_st *)(barrier_ptr))
