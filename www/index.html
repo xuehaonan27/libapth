@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIBAPTH HTTP Server</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Welcome to LIBAPTH HTTP Server</h1>
+            <p class="subtitle">A userspace thread library demonstration</p>
+        </header>
+
+        <main>
+            <section class="info">
+                <h2>About LIBAPTH</h2>
+                <p>
+                    LIBAPTH is a userspace thread library that generates multiple user-space
+                    scheduled threads (apths) on top of several pthread-based workers. This
+                    server demonstrates the library's capabilities in handling concurrent I/O
+                    operations efficiently.
+                </p>
+            </section>
+
+            <section class="features">
+                <h2>Key Features</h2>
+                <ul>
+                    <li>Minimizes kernel-userspace context switches</li>
+                    <li>Maximizes I/O efficiency through intelligent scheduling</li>
+                    <li>Provides pthread-compatible API</li>
+                    <li>Hooks libc functions for transparent I/O optimization</li>
+                </ul>
+            </section>
+
+            <section class="demo">
+                <h2>Server Capabilities</h2>
+                <p>This HTTP server demonstrates:</p>
+                <ul>
+                    <li>Multi-threaded request handling with thread pool</li>
+                    <li>Concurrent socket I/O operations</li>
+                    <li>File serving with proper MIME types</li>
+                    <li>Synchronization primitives (mutex, condition variables, rwlock)</li>
+                    <li>Signal handling for graceful shutdown</li>
+                    <li>Real-time statistics tracking</li>
+                </ul>
+            </section>
+
+            <section class="links">
+                <h2>Test Pages</h2>
+                <ul>
+                    <li><a href="/test.html">Test Page</a></li>
+                    <li><a href="/data.json">JSON Data</a></li>
+                    <li><a href="/info.txt">Text File</a></li>
+                </ul>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by LIBAPTH - Userspace Thread Library</p>
+        </footer>
+    </div>
+</body>
+</html>

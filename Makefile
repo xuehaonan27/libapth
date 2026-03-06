@@ -8,13 +8,15 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
 	-DAPTH_DEBUG_SYSCALL_INIT_DBG \
-	-DAPTH_HOLD_INITIALIZER_PTHREAD
+	-DAPTH_HOLD_INITIALIZER_PTHREAD \
+	-DAPTH_DEBUG
 LDFLAGS := -pthread
 ARFLAGS := rcs
 
 # Directories
 SRC_DIR := src
 TEST_DIR := test
+APPS_DIR := apps
 BUILD_DIR := build
 OBJ_DIR := $(BUILD_DIR)/obj
 LIB_DIR := $(BUILD_DIR)/lib
@@ -83,8 +85,13 @@ ALL_TEST_BINS := $(IO_APTH_BINS) $(IO_PTHREAD_BINS) \
                  $(TCP_SERVER_BIN) $(TCP_CLIENT_BIN) \
                  $(LEGACY_TEST_BINS)
 
+# ==================== Application Files ====================
+# Applications in apps/ directory - real-world test applications
+APP_SOURCES := $(wildcard $(APPS_DIR)/*.c)
+APP_BINS := $(patsubst $(APPS_DIR)/%.c, $(BIN_DIR)/%, $(APP_SOURCES))
+
 # ==================== Phony targets ====================
-.PHONY: all static shared tests
+.PHONY: all static shared tests apps
 .PHONY: run-tests run-io-apth-tests run-io-pthread-tests run-tcp-test run-io-tests
 .PHONY: test-% clean distclean help info
 .PHONY: install uninstall 
@@ -100,6 +107,9 @@ shared: $(SHARED_LIB)
 
 # Build ALL test binaries
 tests: shared $(ALL_TEST_BINS)
+
+# Build ALL application binaries
+apps: shared $(APP_BINS)
 
 # ==================== Library Building ====================
 $(STATIC_LIB): $(OBJ_FILES) | $(LIB_DIR)
@@ -146,6 +156,14 @@ $(LEGACY_TEST_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
 	@echo "Building legacy test: $@"
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
 	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS)
+	@echo "Done: $@"
+
+# ==================== Application Building ====================
+# Applications: link against libapth, run with LD_PRELOAD.
+$(APP_BINS): $(BIN_DIR)/%: $(APPS_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
+	@echo "Building application: $@"
+	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
+	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS) -ldl
 	@echo "Done: $@"
 
 # ==================== Test Running ====================
@@ -300,6 +318,9 @@ help:
 	@echo "Tests – build:"
 	@echo "  tests            Build ALL test binaries"
 	@echo ""
+	@echo "Applications:"
+	@echo "  apps             Build ALL application binaries"
+	@echo ""
 	@echo "Tests – run:"
 	@echo "  run-tests        Run legacy tests (original suite, with LD_PRELOAD)"
 	@echo "  run-io-apth-tests    Run *_apth I/O tests (with LD_PRELOAD)"
@@ -345,6 +366,9 @@ info:
 	@echo "TCP test binaries:"
 	@echo "  $(TCP_SERVER_BIN)"
 	@echo "  $(TCP_CLIENT_BIN)"
+	@echo ""
+	@echo "Application binaries:"
+	@$(foreach b,$(APP_BINS),echo "  $(b)";)
 
 # ==================== Dependencies ====================
 -include $(OBJ_FILES:.o=.d)

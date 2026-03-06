@@ -1,0 +1,33 @@
+Building High-Performance Applications
+
+High-performance applications require careful attention to system resources
+and efficient use of CPU cycles. LIBAPTH helps developers build such
+applications by providing userspace threading with optimized I/O handling.
+
+Architecture:
+The library uses a two-level threading model. At the bottom level are
+pthread workers that run on CPU cores. At the top level are apths (userspace
+threads) that are scheduled by the library onto these workers.
+
+Scheduler:
+Each worker runs a scheduler that maintains multiple queues:
+- Ready queue: Threads ready to run
+- Waiting queue: Threads waiting for events
+- Waked queue: Threads whose events have been satisfied
+
+The scheduler continuously picks threads from the ready queue and runs them
+until they yield, block, or terminate. When a thread blocks on I/O, it's
+moved to the waiting queue, and the event manager checks for completed I/O
+operations to wake up waiting threads.
+
+I/O Optimization:
+LIBAPTH hooks socket and file I/O functions. When an operation would block,
+instead of making a blocking system call, the library:
+1. Sets the file descriptor to non-blocking mode
+2. Attempts the operation
+3. If it would block (EAGAIN), registers an event and yields
+4. The scheduler switches to another ready thread
+5. The event manager later wakes the thread when I/O is ready
+
+This approach keeps the CPU busy and reduces context switches between
+kernel and userspace, leading to better overall system performance.

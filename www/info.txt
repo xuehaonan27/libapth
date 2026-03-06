@@ -1,0 +1,58 @@
+LIBAPTH HTTP Server - Information File
+======================================
+
+This is a plain text file served by the LIBAPTH HTTP server.
+
+About LIBAPTH:
+--------------
+LIBAPTH is a userspace thread library designed to minimize kernel-userspace
+context switches and maximize I/O efficiency. It creates multiple user-space
+scheduled threads (apths) on top of several pthread-based workers.
+
+Design Goals:
+-------------
+1. Minimize kernel-userspace context switches
+   - Avoid unnecessary system calls wherever possible
+   - Keep scheduling decisions in userspace
+
+2. Maximize I/O efficiency
+   - When apths wait for I/O, scheduler dispatches other workloads
+   - CPU performs useful tasks instead of busy-waiting
+   - Maintains original I/O semantics for applications
+
+3. Provide Pthread Compatible API
+   - Easy migration from pthread-based applications
+   - Familiar API for developers
+   - Drop-in replacement with LD_PRELOAD
+
+Server Architecture:
+--------------------
+- Acceptor thread: Accepts incoming connections
+- Worker thread pool: Processes HTTP requests
+- Work queue: Distributes requests to workers
+- Statistics thread: Tracks server metrics
+- Signal handling: Graceful shutdown support
+
+Synchronization Primitives Used:
+---------------------------------
+- Mutex: Protects work queue access
+- Condition Variables: Coordinates producer/consumer
+- RWLock: Protects statistics (future use)
+- Barrier: Synchronizes client threads (in client app)
+
+I/O Operations:
+---------------
+- Socket operations: accept(), recv(), send()
+- File operations: open(), read(), close()
+- All operations are hooked by LIBAPTH for optimization
+
+Testing:
+--------
+Use the included http_client application to load test this server:
+  ./http_client localhost 8080 10 100
+
+This will create 10 concurrent threads, each making 100 requests,
+demonstrating LIBAPTH's ability to handle high concurrency efficiently.
+
+---
+End of information file

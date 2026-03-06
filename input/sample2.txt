@@ -1,0 +1,28 @@
+Concurrent Programming with LIBAPTH
+
+Concurrent programming is essential for modern applications that need to
+handle multiple tasks simultaneously. LIBAPTH provides a powerful framework
+for building concurrent applications with userspace threads.
+
+Thread Management:
+- apth_create: Create new threads
+- apth_join: Wait for thread completion
+- apth_detach: Detach threads
+- apth_exit: Exit from a thread
+- apth_cancel: Cancel a thread
+
+Synchronization:
+- Mutexes for mutual exclusion
+- Condition variables for signaling
+- Barriers for synchronization points
+- Semaphores for resource counting
+- Read-write locks for reader-writer problems
+
+The library provides a pthread-compatible API, making it easy to port
+existing pthread applications to LIBAPTH. Simply recompile and run with
+LD_PRELOAD to enable the optimizations.
+
+Performance benefits are most noticeable in I/O-bound applications where
+threads frequently wait for network or disk operations. LIBAPTH's scheduler
+ensures that the CPU is always doing useful work by switching to other
+ready threads when one thread blocks on I/O.

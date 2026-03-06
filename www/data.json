@@ -1,0 +1,32 @@
+{
+  "server": "LIBAPTH HTTP Server",
+  "version": "1.0",
+  "description": "A demonstration of userspace thread library capabilities",
+  "features": [
+    "Multi-threaded request handling",
+    "Optimized I/O operations",
+    "Pthread-compatible API",
+    "Signal handling",
+    "Thread synchronization primitives"
+  ],
+  "statistics": {
+    "note": "Real-time statistics are tracked by the server",
+    "metrics": [
+      "Total requests processed",
+      "Total bytes sent",
+      "Active connections",
+      "Worker thread utilization"
+    ]
+  },
+  "test_data": {
+    "integers": [1, 2, 3, 4, 5, 10, 20, 50, 100],
+    "strings": ["alpha", "beta", "gamma", "delta"],
+    "nested": {
+      "level1": {
+        "level2": {
+          "message": "Deep nesting test"
+        }
+      }
+    }
+  }
+}

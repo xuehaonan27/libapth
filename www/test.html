@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Page - LIBAPTH Server</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Test Page</h1>
+            <p class="subtitle">Testing LIBAPTH HTTP Server</p>
+        </header>
+
+        <main>
+            <section>
+                <h2>Connection Test</h2>
+                <p>If you can see this page, the LIBAPTH HTTP server is working correctly!</p>
+                <p>This page was served using userspace threads (apths) with optimized I/O handling.</p>
+            </section>
+
+            <section>
+                <h2>Performance Characteristics</h2>
+                <ul>
+                    <li>Reduced context switches between kernel and userspace</li>
+                    <li>Efficient I/O multiplexing across multiple apths</li>
+                    <li>Thread pool architecture for handling concurrent requests</li>
+                    <li>Work queue with condition variables for load balancing</li>
+                </ul>
+            </section>
+
+            <section class="links">
+                <h2>Navigation</h2>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/data.json">JSON Data</a></li>
+                    <li><a href="/info.txt">Text File</a></li>
+                </ul>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by LIBAPTH - Userspace Thread Library</p>
+        </footer>
+    </div>
+</body>
+</html>

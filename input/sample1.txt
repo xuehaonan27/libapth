@@ -1,0 +1,27 @@
+LIBAPTH: A Userspace Thread Library
+
+LIBAPTH is a userspace thread library designed to minimize kernel-userspace
+context switches and maximize I/O efficiency. It creates multiple user-space
+scheduled threads (apths) on top of several pthread-based workers.
+
+Design Goals:
+1. Minimize kernel-userspace context switches
+2. Maximize I/O efficiency
+3. Provide pthread-compatible API
+
+The library hooks various libc functions to optimize I/O operations. When an
+apth would block on I/O, it yields control back to the scheduler, allowing
+other apths to run. This improves CPU utilization while maintaining the
+original I/O semantics for applications.
+
+Key Features:
+- Thread pool architecture
+- Event-driven I/O handling
+- Signal handling integration
+- Synchronization primitives (mutex, cond, barrier, semaphore, rwlock)
+- Thread-specific data
+- CPU affinity support
+
+Applications built with LIBAPTH can achieve better performance in I/O-bound
+workloads by reducing unnecessary context switches and keeping the CPU busy
+with useful work instead of waiting for I/O operations to complete.
