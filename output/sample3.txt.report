@@ -1,0 +1,21 @@
+File Analysis Report
+====================
+Input:  /home/ubuntu/libapth/input/sample3.txt
+Output: /home/ubuntu/libapth/output/sample3.txt.report
+
+Statistics:
+  Lines:      33
+  Words:      231
+  Characters: 1495
+
+Top 10 Most Frequent Characters:
+    1. ' ' (0x20): 204 times
+    2. 'e' (0x65): 168 times
+    3. 't' (0x74): 100 times
+    4. 'a' (0x61): 84 times
+    5. 'r' (0x72): 79 times
+    6. 's' (0x73): 74 times
+    7. 'n' (0x6e): 69 times
+    8. 'i' (0x69): 68 times
+    9. 'o' (0x6f): 68 times
+   10. 'h' (0x68): 59 times

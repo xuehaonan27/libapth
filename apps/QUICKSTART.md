@@ -2,11 +2,18 @@
 
 ## Overview
 
-This directory contains three comprehensive applications that demonstrate LIBAPTH's capabilities:
+This directory contains seven comprehensive applications that demonstrate LIBAPTH's capabilities:
 
+### I/O-Focused
 1. **HTTP Server** - Multi-threaded web server with thread pool
 2. **HTTP Client** - Load testing client with concurrent connections
 3. **File Processor** - Concurrent file analysis with rate limiting
+
+### Synchronization-Focused
+4. **Producer-Consumer** - Classic bounded buffer problem
+5. **Readers-Writers** - Concurrent read/exclusive write problem
+6. **Dining Philosophers** - Resource allocation and deadlock avoidance
+7. **Signal Demo** - Signal handling and thread cancellation
 
 ## Quick Start
 
@@ -38,6 +45,38 @@ LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH \
 LD_PRELOAD=build/lib/libapth.so \
 build/bin/file_processor [input_dir] [output_dir] [workers]
 # Example: build/bin/file_processor ./input ./output 4
+```
+
+#### Producer-Consumer
+```bash
+LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH \
+LD_PRELOAD=build/lib/libapth.so \
+build/bin/producer_consumer [producers] [consumers] [buffer_size] [items]
+# Example: build/bin/producer_consumer 3 2 10 20
+```
+
+#### Readers-Writers
+```bash
+LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH \
+LD_PRELOAD=build/lib/libapth.so \
+build/bin/readers_writers [readers] [writers] [iterations]
+# Example: build/bin/readers_writers 5 2 10
+```
+
+#### Dining Philosophers
+```bash
+LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH \
+LD_PRELOAD=build/lib/libapth.so \
+build/bin/dining_philosophers [philosophers] [meals]
+# Example: build/bin/dining_philosophers 5 10
+```
+
+#### Signal Demo
+```bash
+LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH \
+LD_PRELOAD=build/lib/libapth.so \
+build/bin/signal_demo [workers] [duration]
+# Example: build/bin/signal_demo 4 30
 ```
 
 ### Run All Tests
