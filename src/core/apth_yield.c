@@ -13,6 +13,9 @@ int apth_yield(void)
     apth_debug("apth_yield: enter from thread \"%s\"", cur->name);
 
     // TODO: decide a `to` apth and give it a priority
+    
+    // Record cpu tick before yielding
+    cur->last_yield_tick = cpu_tick();
 
     apth_debug("apth_yield: give up control to scheduler");
     apth_ctx_switch(cur->ctx, sched->sched_ctx);
