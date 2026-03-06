@@ -214,10 +214,9 @@ struct apth_perpthr_scheduler
     volatile _Atomic(bool) opening;  // scheduler is opening
     apth_time_t apth_loadticknext;   // scheduler load next tick
     float loadval;                   // scheduler load value
-    
     int epoll_fd;                    // epoll instance for this scheduler
     int wake_eventfd;                // eventfd used to wake the scheduler from epoll_wait
-    // int epoll_fd_count;              // count of fd currently registered in epoll
+
     struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
     struct list active_fd_slots;                                            // slots with waiters
     int active_fd_count;
@@ -378,8 +377,11 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 
 #define APTH_NULL ((apth_t)NULL)
 
+// Minimal stack size by bytes
+#define APTH_MIN_STACK 16384
+
 // Default stack size by bytes
-#define APTH_STACK_SIZE_DEFAULT 16384
+#define APTH_STACK_SIZE_DEFAULT 2097152 // 2 MiB
 
 // FIXME: this should be set by build system
 // Indicate stack growth direction is from high to low (< 0) or from low to
