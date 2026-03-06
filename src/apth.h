@@ -447,7 +447,7 @@ void apth_configure(apth_init_t *cfg);
         free(__apth_args__);                                                    \
         (void)argc_name;                                                        \
         (void)argv_name;                                                        \
-        if (true)
+        if (1)
 
 /* Closes the function body opened by APTH_MAIN_BEGIN. */
 #define APTH_MAIN_END \

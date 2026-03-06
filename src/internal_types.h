@@ -387,7 +387,9 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 // FIXME: this should be set by build system
 // Indicate stack growth direction is from high to low (< 0) or from low to
 // high (> 0). On most systems this should usually be the former.
+#ifndef APTH_STACKGROWTH
 #define APTH_STACKGROWTH (-1)
+#endif
 #define APTH_MAGIC 0xCAFEBABE
 #define APTH_TH_MAGIC_IS_GOOD(th) ((th)->magic == APTH_MAGIC)
 
