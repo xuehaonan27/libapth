@@ -69,6 +69,7 @@ int apth_sem_wait(apth_sem_t *sem)
     lll_unlock(&s->guard, "sem_wait_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "sem_wait");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---
@@ -124,6 +125,7 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
     lll_unlock(&s->guard, "sem_timedwait_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "sem_timedwait");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---

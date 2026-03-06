@@ -89,6 +89,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
     lll_unlock(&b->guard, "barrier_wait_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "barrier_wait");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---

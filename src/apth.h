@@ -166,6 +166,7 @@ int apth_setcancelstate(int state, int *oldstate);
 int apth_setcanceltype(int type, int *oldtype);
 int apth_setname_np(apth_t th, const char *name);
 int apth_yield(void);
+int apth_yield_optional(void);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);

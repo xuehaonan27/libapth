@@ -899,6 +899,7 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     // self->state = APTH_STATE_WAITING;
     // We want to submit WAITING state to `self`
     submit_desired_state_to(self, APTH_STATE_WAITING, "apth_wait_event_list");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // Check for cancellation
@@ -941,6 +942,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     // Move thread into waiting state and transfer control to scheduler
     // We want to submit WAITING state to `self`
     submit_desired_state_to(self, APTH_STATE_WAITING, "apth_wait_event");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // Check for cancellation

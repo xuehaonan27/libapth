@@ -76,6 +76,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     lll_unlock(&rw->guard, "rwlock_rdlock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_rdlock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---
@@ -131,6 +132,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     lll_unlock(&rw->guard, "rwlock_timedrdlock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_timedrdlock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---
@@ -211,6 +213,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     lll_unlock(&rw->guard, "rwlock_wrlock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_wrlock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---
@@ -268,6 +271,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     lll_unlock(&rw->guard, "rwlock_timedwrlock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_timedwrlock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---

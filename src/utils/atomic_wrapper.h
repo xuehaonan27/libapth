@@ -74,6 +74,8 @@
     atomic_exchange_explicit((mem), (desired), __ATOMIC_ACQUIRE)
 #define atomic_exchange_release(mem, desired) \
     atomic_exchange_explicit((mem), (desired), __ATOMIC_RELEASE)
+#define atomic_exchange_acqrel(mem, desired) \
+    atomic_exchange_explicit((mem), (desired), __ATOMIC_ACQ_REL)
 
 #define atomic_fetch_add_relaxed(mem, operand) \
     atomic_fetch_add_explicit((mem), (operand), __ATOMIC_RELAXED)

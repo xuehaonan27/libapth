@@ -164,9 +164,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
         }
         else
         {
-            // apth_t self = (apth_t)self;
             assert(APTH_IS_VALID(self));
-            // apth_worker_t self_worker = self->worker;
             apth_sched_t self_sched = sched_of(self);
 
             // We are now an apth, trying to get the lock
@@ -189,7 +187,6 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 // The owner is a robbed apth, meaning the actual holder is
                 // a scheduler.
                 apth_t owner = APTH_DECODE_FAKE_SCHED(oldval);
-                // apth_worker_t owner_worker = owner->worker;
                 apth_sched_t robber = sched_of(owner);
 
                 if (robber == self_sched)
@@ -215,14 +212,13 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 // TODO: notice the `owner_worker` to schedule the `owner` as soon as possible.
                 apth_t owner = (apth_t)oldval;
                 assert(APTH_IS_VALID(owner));
-                // apth_worker_t owner_worker = owner->worker;
                 apth_sched_t owner_sched = sched_of(owner);
 
-                // if (owner_worker == self_worker)
                 if (owner_sched == self_sched)
                 {
                     // Yield the control back to scheduler
                     // TODO: tell our scheduler to schedule `owner` as soon as possible
+                    self->yield_reason = ((uintptr_t)owner | APTH_YIELD_REASON_ADVICE);
                     apth_yield();
                     continue;
                 }
@@ -230,6 +226,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 {
                     // Different worker
                     // TODO: notice `owner_worker` to schedule `owner` as soon as possible
+                    self->yield_reason = ((uintptr_t)owner | APTH_YIELD_REASON_ADVICE);
                     apth_yield();
                     continue;
                 }

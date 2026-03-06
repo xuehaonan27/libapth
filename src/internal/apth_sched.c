@@ -328,13 +328,25 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
             continue;
         }
 
+        // Inspect the back apth
+        struct list_elem *e = list_back(&victim_rq->th_list);
+        apth_t th = apth_t_list_entry(e);
+
+        // If the `th` happens to be the advised thread, then we just cancel this stealing
+        // and inspect next scheduler. If all stealings fails we natually fails.
+        if (th == atomic_load_acquire(&victim_sched->advised_next_th))
+        {
+            lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim (happens to be advised thread)");
+            continue;
+        }
+
         // Steal from back (owner dispatches from front, thief steals from back)
-        struct list_elem *e = list_pop_back(&victim_rq->th_list);
+        e = list_pop_back(&victim_rq->th_list);
         atomic_fetch_sub_release(&victim_rq->size, 1);
 
         lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim");
 
-        apth_t th = apth_t_list_entry(e);
+        th = apth_t_list_entry(e);
         assert(APTH_IS_VALID(th));
         assert(belonging_queue_of(th, "try_steal_work") == victim_rq);
 
@@ -360,6 +372,42 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
     }
 
     return APTH_NULL;
+}
+
+static void check_yield_reason(apth_t th)
+{
+    assert(APTH_IS_VALID(th));
+    if ((th->yield_reason & APTH_YIELD_REASON_ADVICE) != 0)
+    {
+        apth_t advised_th = (apth_t)(th->yield_reason & (~APTH_YIELD_REASON_ADVICE));
+        assert(APTH_IS_VALID(advised_th));
+        apth_sched_t sched_of_advised_th = sched_of(advised_th);
+
+        apth_t expected = APTH_NULL;
+        // We may fail setting advised thread to the scheduler. Either case
+        // is acceptable, so omit the return value.
+        atomic_compare_exchange_release(&sched_of_advised_th->advised_next_th, &expected, advised_th);
+    }
+    else
+    {
+        switch (th->yield_reason)
+        {
+        case APTH_YIELD_REASON_VOLUNTEER:
+            break;
+        case APTH_YIELD_REASON_WAIT:
+            break;
+        case APTH_YIELD_REASON_TIMESLICE:
+            break;
+        case APTH_YIELD_REASON_EXIT:
+            break;
+        default:
+            PANIC("Invalid yield reason");
+        }
+    }
+
+    // Restore yield reason to VOLUNTEER since program code would not do this
+    // for us, but we could set reason before yielding within LIBAPTH.
+    th->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
 }
 
 // Start routine for a scheduler pthread. The prototype of this function matches
@@ -439,8 +487,27 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Update statistics
         apth_sched_calc_load(sched, &snapshot);
 
-        // Move one apth from ready queue to running queue
-        th = transfer_one_th(sched->ready_queue, sched->running_queue, false, "transfer_one_th popping candidate");
+        // If there's advised apth (which is not WAITING, but rather urgent lll waiting one!)
+        // Schedule it right now
+        // Use atomic_exchange to load and clear in one operation to prevent reusing stale advice
+        th = atomic_exchange_acqrel(&sched->advised_next_th, APTH_NULL);
+        if (th != APTH_NULL)
+        {
+            // The advised thread might have been freed, stolen, or changed state
+            // Validate before using it
+            if (APTH_IS_VALID(th) && sched_of(th) == sched && queue_state_of(th) == APTH_STATE_READY)
+            {
+                submit_desired_state_to(th, APTH_STATE_RUNNING, "transfer_th advised th");
+                transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), sched->running_queue);
+            }
+            else
+                // Thread was freed, stolen, or not ready - ignore the advice and pop from ready queue
+                th = APTH_NULL;
+        }
+
+        if (th == APTH_NULL)
+            // Move one apth from ready queue to running queue
+            th = transfer_one_th(sched->ready_queue, sched->running_queue, false, "transfer_one_th popping candidate");
 
         apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
 
@@ -488,6 +555,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_ctx_switch(sched->sched_ctx, th->ctx);
         // Prepare for thread insertion and event management phase
         set_cur_apth(APTH_FAKE_SCHED(sched));
+
+        // Check apth's yield reason
+        check_yield_reason(th);
 
         // Update scheduler times
         apth_time_set(&snapshot, APTH_TIME_NOW);

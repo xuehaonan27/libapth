@@ -144,6 +144,7 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     lll_unlock(&m->guard, "mutex_lock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "mutex_lock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---
@@ -218,6 +219,7 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     lll_unlock(&m->guard, "mutex_timedlock_pre_yield");
 
     submit_desired_state_to(self, APTH_STATE_WAITING, "mutex_timedlock");
+    self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
     // --- woken up ---

@@ -210,6 +210,7 @@ struct apth_perpthr_scheduler
     _Atomic(unsigned int) thrcnt;    // APTH threads now running on this scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH
+    _Atomic(apth_t) advised_next_th; // advised thread to run next
     volatile _Atomic(bool) opening;  // scheduler is opening
     apth_time_t apth_loadticknext;   // scheduler load next tick
     float loadval;                   // scheduler load value
@@ -268,6 +269,13 @@ struct apth_global_scheduler_pool
 
 // ============================== APTH TCB ==============================
 
+typedef uintptr_t apth_yield_reason_t;
+#define APTH_YIELD_REASON_VOLUNTEER ((uintptr_t)0)
+#define APTH_YIELD_REASON_ADVICE ((uintptr_t)0x1)
+#define APTH_YIELD_REASON_WAIT ((uintptr_t)0x2)
+#define APTH_YIELD_REASON_TIMESLICE ((uintptr_t)0x4)
+#define APTH_YIELD_REASON_EXIT ((uintptr_t)0x8)
+
 // Thread control block.
 struct ALIGNED(8) apth_st
 {
@@ -310,7 +318,7 @@ struct ALIGNED(8) apth_st
     void *join_arg; // joining argument
 
     /* cancellation support */
-    _Atomic(bool) cancelreq;                       // cancellation request is pending
+    _Atomic(bool) cancelreq;              // cancellation request is pending
     _Atomic(unsigned int) cancelhandling; // cancellation state of thread
 
     // Bit set if cancellation is disabled
@@ -360,6 +368,10 @@ struct ALIGNED(8) apth_st
     list_entry(LIST_ELEM, struct apth_st, elem)
 
     _Atomic(apth_thqueue_t) belongs_to_queue;
+
+    uint64_t last_yield_tick;
+    int yield_timeslice;
+    apth_yield_reason_t yield_reason;
 };
 
 APTH_INTERNAL apth_sched_t sched_of(apth_t th);
@@ -578,9 +590,9 @@ struct apth_epoll_waiter
 // this struct persists until the thread is woken.
 struct apth_sync_waiter
 {
-    apth_t th;                 // the blocked apth thread
-    struct apth_event_st ev;   // inline event (no separate allocation)
-    struct list_elem elem;     // link into primitive's waiter queue
+    apth_t th;               // the blocked apth thread
+    struct apth_event_st ev; // inline event (no separate allocation)
+    struct list_elem elem;   // link into primitive's waiter queue
 #define apth_sync_waiter_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_sync_waiter, elem)
 };
@@ -588,11 +600,11 @@ struct apth_sync_waiter
 // Mutex internal structure
 struct apth_mutex_st
 {
-    lll_t guard;               // protects internal fields (short-held)
-    apth_t owner;              // current lock owner, or NULL
-    unsigned int lock_count;   // recursion depth for RECURSIVE type
-    int type;                  // APTH_MUTEX_NORMAL, _ERRORCHECK, _RECURSIVE
-    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+    lll_t guard;             // protects internal fields (short-held)
+    apth_t owner;            // current lock owner, or NULL
+    unsigned int lock_count; // recursion depth for RECURSIVE type
+    int type;                // APTH_MUTEX_NORMAL, _ERRORCHECK, _RECURSIVE
+    struct list waiters;     // FIFO queue of struct apth_sync_waiter
 };
 
 // Helper macros to cast between opaque union and internal struct
@@ -611,8 +623,8 @@ struct apth_mutexattr_st
 // Condition variable internal structure
 struct apth_cond_st
 {
-    lll_t guard;               // protects internal fields
-    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+    lll_t guard;         // protects internal fields
+    struct list waiters; // FIFO queue of struct apth_sync_waiter
 };
 
 #define APTH_COND_CAST(cond_ptr) ((struct apth_cond_st *)(cond_ptr))
@@ -621,7 +633,7 @@ struct apth_cond_st
 // Condition variable attributes internal structure
 struct apth_condattr_st
 {
-    int pshared;  // placeholder
+    int pshared;        // placeholder
     clockid_t clock_id; // clock for timed waits (CLOCK_REALTIME, CLOCK_MONOTONIC, etc.)
 };
 
@@ -631,11 +643,11 @@ struct apth_condattr_st
 // Barrier internal structure
 struct apth_barrier_st
 {
-    lll_t guard;               // protects internal fields (short-held)
-    unsigned int threshold;    // number of threads that must arrive
-    unsigned int count;        // number of threads currently waiting
-    unsigned int generation;   // increments each time barrier opens
-    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+    lll_t guard;             // protects internal fields (short-held)
+    unsigned int threshold;  // number of threads that must arrive
+    unsigned int count;      // number of threads currently waiting
+    unsigned int generation; // increments each time barrier opens
+    struct list waiters;     // FIFO queue of struct apth_sync_waiter
 };
 
 #define APTH_BARRIER_CAST(barrier_ptr) ((struct apth_barrier_st *)(barrier_ptr))
@@ -644,9 +656,9 @@ struct apth_barrier_st
 // Semaphore internal structure
 struct apth_sem_st
 {
-    lll_t guard;               // protects internal fields (short-held)
-    unsigned int value;        // current count
-    struct list waiters;       // FIFO queue of struct apth_sync_waiter
+    lll_t guard;         // protects internal fields (short-held)
+    unsigned int value;  // current count
+    struct list waiters; // FIFO queue of struct apth_sync_waiter
 };
 
 #define APTH_SEM_CAST(sem_ptr) ((struct apth_sem_st *)(sem_ptr))
@@ -655,12 +667,12 @@ struct apth_sem_st
 // Read-write lock internal structure
 struct apth_rwlock_st
 {
-    lll_t guard;               // protects internal fields (short-held)
-    int readers;               // count of active readers
-    int writers;               // count of active writers (0 or 1)
-    int waiting_writers;       // count of writers waiting
-    struct list rd_waiters;    // FIFO queue of reader struct apth_sync_waiter
-    struct list wr_waiters;    // FIFO queue of writer struct apth_sync_waiter
+    lll_t guard;            // protects internal fields (short-held)
+    int readers;            // count of active readers
+    int writers;            // count of active writers (0 or 1)
+    int waiting_writers;    // count of writers waiting
+    struct list rd_waiters; // FIFO queue of reader struct apth_sync_waiter
+    struct list wr_waiters; // FIFO queue of writer struct apth_sync_waiter
 };
 
 #define APTH_RWLOCK_CAST(rwlock_ptr) ((struct apth_rwlock_st *)(rwlock_ptr))
