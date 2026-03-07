@@ -67,6 +67,7 @@ static void apth_writev_iov_advance(const struct iovec *riov, int riovcnt, size_
                                     struct iovec **liov, int *liovcnt,
                                     struct iovec *tiov, int tiovcnt)
 {
+    (void)tiovcnt;
     if (*liov == NULL && *liovcnt == 0)
     {
         // Initialize with real (const) structure on first step
@@ -78,6 +79,11 @@ static void apth_writev_iov_advance(const struct iovec *riov, int riovcnt, size_
         if (*liov == riov && *liovcnt == riovcnt)
         {
             // Reinitialize with a copy to be able to adjust it
+            // // Verify that tiov buffer has enough space
+            // int tiov_capacity = tiovcnt / sizeof(struct iovec);
+            // if (riovcnt > tiov_capacity)
+            //     return; // Buffer too small, should not happen given validation at entry
+
             *liov = &tiov[0];
             for (int i = 0; i < riovcnt; i++)
             {
