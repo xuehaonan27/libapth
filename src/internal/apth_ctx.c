@@ -27,12 +27,6 @@ APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
 #define APTH_SWITCH_DEBUG_LINE \
     "==== THREAD CONTEXT SWITCH ==========================================="
 
-#ifdef APTH_DEBUG
-#define _apth_mctx_switch_debug apth_debug(APTH_SWITCH_DEBUG_LINE);
-#else
-#define _apth_mctx_switch_debug /* NOP */
-#endif
-
 APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
 {
     apth_cxt_t ctx = (apth_cxt_t)malloc(sizeof(struct apth_cxt_st));
@@ -43,8 +37,7 @@ APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
 // Swap context from `old` to `new`.
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
-    _apth_mctx_switch_debug;
-    apth_debug("old=%p, new=%p", old, new);
+    apth_debug(APTH_SWITCH_DEBUG_LINE);
     swapcontext(&old->uc, &new->uc);
 
     // After the context has been switched

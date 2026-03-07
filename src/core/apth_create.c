@@ -103,7 +103,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
-    atomic_store(&t->state, APTH_STATE_NEW);  // NEW: Initialize simple state field
+    atomic_store_release(&t->state, APTH_STATE_NEW);  // NEW: Initialize simple state field
 
     // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);

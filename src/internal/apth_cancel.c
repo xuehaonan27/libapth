@@ -13,8 +13,7 @@ APTH_INTERNAL void apth_cancel_point(void)
     {
         // avoid looping if cleanup handlers contain cancellation points
         atomic_store_release(&cur->cancelreq, false);
-        apth_debug("apth_cancel_point: terminating cancelled thread \"%s\"", cur->name);
-        // apth_exit(APTH_CANCELED);
+        apth_debug("terminating cancelled thread \"%s\"", cur->name);
         apth_do_cancel(APTH_CANCELED);
     }
     return;
@@ -25,29 +24,21 @@ APTH_INTERNAL void apth_do_cancel(void *result)
 {
     apth_sched_t sched = cur_sched();
     apth_t self = sched->cur;
-    apth_debug("apth_do_cancel: cancelling thread \"%s\"", self->name);
+    apth_debug("cancelling thread \"%s\"", self->name);
 
     // Main apth exited
     if (self == get_MAIN_APTH())
         atomic_store_release(&MAIN_APTH_EXITED, 1);
 
-    // TODO: atomically set the thread as cancelled.
-
-    // TODO: specially treat main thread
-
     // Execute cleanups
     apth_thread_cleanup(self);
 
-    // Now mark the current thread as dead, explicitly switch into the scheduler
-    // and let it reap the current apth. We cannot free it here.
-    {
-        self->join_arg = result;
-        // NEW: Don't set state here. Scheduler will set it to TERMINATED
-        // while holding the terminated queue lock for atomicity.
-        apth_debug("apth_do_cancel: switching from thread \"%s\" to scheduler", self->name);
-        self->yield_reason = APTH_YIELD_REASON_EXIT;
-        apth_yield();
-    }
+    self->join_arg = result;
+    // Don't set state here. Scheduler will set it to TERMINATED
+    // while holding the terminated queue lock for atomicity.
+    apth_debug("switching from thread \"%s\" to scheduler", self->name);
+    self->yield_reason = APTH_YIELD_REASON_EXIT;
+    apth_yield();
 
     PANIC("Should not reach here");
 }

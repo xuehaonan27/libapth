@@ -360,7 +360,7 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         th->current_sched = thief_sched;
 
         // Update state to READY
-        atomic_store(&th->state, APTH_STATE_READY); // NEW: Simple state transition
+        atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
 
         // Insert into thief's ready queue at front for immediate dispatch
         apth_thqueue_t thief_rq = thief_sched->ready_queue;
@@ -472,7 +472,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Validate before using it
             if (APTH_IS_VALID(th) && sched_of(th) == sched && queue_state_of(th) == APTH_STATE_READY)
             {
-                atomic_store(&th->state, APTH_STATE_RUNNING); // NEW: Simple state transition
+                atomic_store_release(&th->state, APTH_STATE_RUNNING); // NEW: Simple state transition
                 transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), sched->running_queue);
             }
             else
@@ -562,7 +562,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             {
                 // For detached threads, just remove and free
                 remove_apth_from(sched->running_queue, th);
-                atomic_store(&th->state, APTH_STATE_TERMINATED);
+                atomic_store_release(&th->state, APTH_STATE_TERMINATED);
                 apth_tcb_free(th);
             }
             else
@@ -589,7 +589,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
                 // Change state WHILE HOLDING terminated queue lock
                 // This ensures atomicity of "state change + queue insertion"
-                atomic_store(&th->state, APTH_STATE_TERMINATED);
+                atomic_store_release(&th->state, APTH_STATE_TERMINATED);
 
                 lll_internal_unlock(&term_q->th_list_lock);
                 lll_internal_unlock(&running_q->th_list_lock);
@@ -598,7 +598,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         else
         {
             // Handle other state transitions
-            apth_state_t retired_th_state = atomic_load(&th->state);
+            apth_state_t retired_th_state = atomic_load_acquire(&th->state);
             switch (retired_th_state)
             {
             case APTH_STATE_NEW:
@@ -609,7 +609,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 break;
             case APTH_STATE_RUNNING:
                 apth_debug("moving thread \"%s\" to ready queue", th->name);
-                atomic_store(&th->state, APTH_STATE_READY); // NEW: Simple state transition
+                atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
                 transfer_th(th, sched->running_queue, sched->ready_queue);
                 break;
             case APTH_STATE_WAITING:

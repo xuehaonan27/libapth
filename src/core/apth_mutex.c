@@ -143,7 +143,7 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     // immediately re-ready us.
     lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
-    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -218,7 +218,7 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
 
     lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
-    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

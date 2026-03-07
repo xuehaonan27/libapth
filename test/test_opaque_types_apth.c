@@ -14,6 +14,7 @@ void *test_thread(void *arg)
 }
 
 APTH_MAIN_BEGIN(argc, argv)
+{
     (void)argc;
     (void)argv;
 
@@ -59,4 +60,5 @@ APTH_MAIN_BEGIN(argc, argv)
     printf("Types can now be stack-allocated like pthread types.\n");
 
     exit(0);
+}
 APTH_MAIN_END

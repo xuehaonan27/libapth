@@ -89,7 +89,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
 
     lll_apth_unlock(&b->guard);
 
-    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

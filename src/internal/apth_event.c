@@ -549,7 +549,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                 }
                 // Move to waked queue
-                atomic_store(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                atomic_store_release(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                 transfer_th(th, sched->waiting_queue, sched->waked_queue);
             }
 
@@ -696,7 +696,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                                 event->ev_status == APTH_EV_STATUS_PENDING)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                         }
-                        atomic_store(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                        atomic_store_release(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                         transfer_th(th, sched->waiting_queue, sched->waked_queue);
                     }
                 } while (wake_count == MAX_WAKE_BATCH);
@@ -723,7 +723,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             if (event->ev_type == APTH_EVENT_TYPE_FD)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
-                        atomic_store(&nexttimer_th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                        atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                         transfer_th(nexttimer_th, sched->waiting_queue, sched->waked_queue);
                     }
                 }

@@ -19,7 +19,6 @@ static void apth_cleanup_popall(apth_t t, bool execute)
 }
 
 // Cleanup a particular thread
-// TODO: should not pass `th` in. The thread should execute cleanups on its own!
 APTH_INTERNAL void apth_thread_cleanup(apth_t th)
 {
     // Run the cleaup handlers

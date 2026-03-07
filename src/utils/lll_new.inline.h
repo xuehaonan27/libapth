@@ -37,7 +37,7 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
     // Slow path: yield on contention
     while (1)
     {
-        apth_t owner = atomic_load(&lock->owner);
+        apth_t owner = atomic_load_acquire(&lock->owner);
 
         if (owner == NULL)
         {
@@ -116,7 +116,7 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
     // Slow path: behavior depends on caller
     while (1)
     {
-        unsigned char val = atomic_load(&lock->locked);
+        unsigned char val = atomic_load_acquire(&lock->locked);
 
         if (val == 0)
         {

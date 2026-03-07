@@ -6,13 +6,9 @@
 #include "internal/apth_state.inline.h"
 #include "internal/apth_thqueue.inline.h"
 
-// APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg);
-// APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q);
 APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue, apth_sched_t sched, apth_state_t state);
-// APTH_INTERNAL size_t thqueue_size(apth_thqueue_t queue);
 APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue);
-// APTH_INTERNAL bool apth_is_in(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn);
 APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to);

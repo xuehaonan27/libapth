@@ -111,7 +111,7 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
     apth_mutex_unlock(mutex);
 
     // Block
-    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -165,7 +165,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     apth_mutex_unlock(mutex);
 
     // Block
-    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
