@@ -31,12 +31,14 @@ make apps
 ```bash
 ./apps/run_http_server.sh [port] [workers] [www_root]
 # Example: ./apps/run_http_server.sh 8080 4 ./www
+# Example: ./apps/run_http_server_pthread.sh 8080 4 ./www
 ```
 
 #### HTTP Client
 ```bash
 ./apps/run_http_client.sh [host] [port] [threads] [requests]
 # Example: ./apps/run_http_client.sh localhost 8080 10 100
+# Example: ./apps/run_http_client_pthread.sh localhost 8080 10 100
 ```
 
 #### File Processor

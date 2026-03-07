@@ -85,8 +85,11 @@ ALL_TEST_BINS := $(IO_APTH_BINS) $(IO_PTHREAD_BINS) \
 
 # ==================== Application Files ====================
 # Applications in apps/ directory - real-world test applications
-APP_SOURCES := $(wildcard $(APPS_DIR)/*.c)
+APP_C_FILES := $(wildcard $(APPS_DIR)/*.c)
+APP_SOURCES := $(filter-out %_pthread.c, $(APP_C_FILES))
+APP_PTHREAD_SOURCES := $(filter %_pthread.c, $(APP_C_FILES))
 APP_BINS := $(patsubst $(APPS_DIR)/%.c, $(BIN_DIR)/%, $(APP_SOURCES))
+APP_PTHREAD_BINS := $(patsubst $(APPS_DIR)/%.c, $(BIN_DIR)/%, $(APP_PTHREAD_SOURCES))
 
 # ==================== Phony targets ====================
 .PHONY: all static shared tests apps
@@ -107,7 +110,7 @@ shared: $(SHARED_LIB)
 tests: shared $(ALL_TEST_BINS)
 
 # Build ALL application binaries
-apps: shared $(APP_BINS)
+apps: shared $(APP_BINS) $(APP_PTHREAD_BINS)
 
 # ==================== Library Building ====================
 $(STATIC_LIB): $(OBJ_FILES) | $(LIB_DIR)
@@ -162,6 +165,11 @@ $(APP_BINS): $(BIN_DIR)/%: $(APPS_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
 	@echo "Building application: $@"
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
 	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS) -ldl
+	@echo "Done: $@"
+
+$(APP_PTHREAD_BINS): $(BIN_DIR)/%: $(APPS_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
+	@echo "Building application: $@"
+	$(CC) $(CFLAGS) $< -o $@ -lpthread
 	@echo "Done: $@"
 
 # ==================== Test Running ====================
@@ -367,6 +375,8 @@ info:
 	@echo ""
 	@echo "Application binaries:"
 	@$(foreach b,$(APP_BINS),echo "  $(b)";)
+	@echo "Application pthread binaries:"
+	@$(foreach b,$(APP_PTHREAD_SOURCES),echo "  $(b)";)
 
 # ==================== Dependencies ====================
 -include $(OBJ_FILES:.o=.d)
