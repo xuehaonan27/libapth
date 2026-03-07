@@ -4,6 +4,7 @@
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 
 /*
 ERRORS
@@ -51,7 +52,7 @@ int apth_join(apth_t tid, void **value)
     }
 
     // If the `tid` is not terminated, then wait it until so
-    if (state_holder_of(tid) != APTH_STATE_TERMINATED)
+    if (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
     {
         ev = apth_event_tid(APTH_GOAL_UNTIL_TID_DEAD | APTH_EVENT_MODE_STATIC, tid);
         apth_wait_event(ev);
@@ -64,25 +65,40 @@ int apth_join(apth_t tid, void **value)
     // We mark the `tid` as terminated and as joined
     // NOTE: should get state once again, so state should be volatile.
     // (see `struct apth_st`)
-    apth_state_t dbg_tid_state = atomic_load_acquire(&tid->state_holder);
+    apth_state_t dbg_tid_state = atomic_load_acquire(&tid->state);
     assert_msg(
-        state_is_committed(dbg_tid_state) && dbg_tid_state == APTH_STATE_TERMINATED,
+        dbg_tid_state == APTH_STATE_TERMINATED,
         "tid = 0x%lx(\"%s\") state = %d", tid, tid->name, dbg_tid_state);
+
+    // Acquire ownership lock to safely access current_sched and current_queue
+    lll_internal_lock(&tid->ownership_lock);
+
+    // Get the terminated queue from the APTH's current scheduler
+    apth_thqueue_t term_queue = tid->current_sched->terminated_queue;
+    lll_internal_lock(&term_queue->th_list_lock);
+
+    // Check if the thread is still in the terminated queue
+    // (it might have been removed by another join attempt)
+    if (tid->current_queue != term_queue)
+    {
+        // Already removed by another thread
+        lll_internal_unlock(&term_queue->th_list_lock);
+        lll_internal_unlock(&tid->ownership_lock);
+        return apth_error(EINVAL, EINVAL);
+    }
+
+    // Remove from terminated queue
+    list_remove(&tid->elem);
+    // atomic_fetch_sub_release(&term_queue->size, 1);
+    term_queue->size--;
+    tid->current_queue = NULL;
+
+    lll_internal_unlock(&term_queue->th_list_lock);
+    lll_internal_unlock(&tid->ownership_lock);
 
     // Store the return value if the caller is interested
     if (value != NULL)
         *value = tid->join_arg;
-
-    // Remove the thread from scheduler. This is sane because scheduler itself
-    // would do nothing about threads in the terminated list. All of them are
-    // free for other threads to join to.
-    // But the apth could has not been transferred to terminated list yet.
-    //
-    // Fix: since apth with uncommitted state is not considered as matching an
-    // event goal, so there's no risk receiving `tid` as one without belonging
-    // list / queue. Therefore `wait_apth_to_be_in_list` is no longer needed.
-    // wait_apth_to_be_in_list(tid);
-    remove_apth_from(sched_of(tid)->terminated_queue, tid); // TODO: must modify queue with more sane method
 
     // Note: since the thread is already terminated, then all cleanups should
     // have been executed.

@@ -13,7 +13,7 @@ int apth_cancel(apth_t th)
     if (!APTH_IS_VALID(th))
         return apth_error(ESRCH, ESRCH);
 
-    if (state_holder_of(th) == APTH_STATE_TERMINATED)
+    if (atomic_load(&th->state) == APTH_STATE_TERMINATED)
         return 0;
 
     // Now mark the thread as cancelled

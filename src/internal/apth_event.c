@@ -2,7 +2,7 @@
 #include "internal_funcs.h"
 #include "internal_types.h"
 #include "internal/apth_worker.inline.h"
-#include "utils/lll.inline.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -297,13 +297,13 @@ APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched)
     int local_fds[APTH_PENDING_FD_CLOSE_MAX];
     int local_count;
 
-    lll_lock(&sched->pending_fd_close_lock, "process_pending_fd_closes");
+    lll_internal_lock(&sched->pending_fd_close_lock);
     local_count = atomic_load_acquire(&sched->pending_fd_close_count);
     if (local_count > APTH_PENDING_FD_CLOSE_MAX)
         local_count = APTH_PENDING_FD_CLOSE_MAX;
     memcpy(local_fds, sched->pending_fd_close_fds, local_count * sizeof(int));
     atomic_store_release(&sched->pending_fd_close_count, 0);
-    lll_unlock(&sched->pending_fd_close_lock, "process_pending_fd_closes");
+    lll_internal_unlock(&sched->pending_fd_close_lock);
 
     for (int i = 0; i < local_count; i++)
     {
@@ -313,9 +313,9 @@ APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched)
 
 APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
 {
-    // If the state is not committed, then means it's yet to reach goal.
-    if (state_is_uncommitted(state))
-        return false;
+    // NEW: With the new state management, we don't need to check for uncommitted state
+    // because TERMINATED state is set atomically while holding the queue lock.
+    // For other states, we use simple atomic stores.
 
     if (state == APTH_STATE_NEW && goal == APTH_GOAL_UNTIL_TID_NEW)
         return true;
@@ -358,7 +358,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         apth_t wake_batch[MAX_WAKE_BATCH];
         int wake_count = 0;
 
-        lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1");
+        lll_internal_lock(&sched->waiting_queue->th_list_lock);
 
         FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
         {
@@ -452,19 +452,19 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     {
                         if (sigismember(event->ev_args.SIGS.sigs, sig))
                         {
-                            lll_lock(&th->siglock, "ev_sigs_epoll");
+                            lll_internal_lock(&th->siglock);  // NEW: Use Type 2 LLL
                             if (sigismember(&th->sigpending, sig))
                             {
                                 if (event->ev_args.SIGS.sig)
                                     *(event->ev_args.SIGS.sig) = sig;
                                 sigdelset(&th->sigpending, sig);
                                 th->sigpendcnt--;
-                                lll_unlock(&th->siglock, "ev_sigs_epoll");
+                                lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                                 any_occurred = true;
                                 break;
                             }
-                            lll_unlock(&th->siglock, "ev_sigs_epoll");
+                            lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
                         }
                     }
                     break;
@@ -490,7 +490,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 case APTH_EVENT_TYPE_TID:
                     if ((event->ev_args.TID.tid == NULL && thqueue_size(sched->terminated_queue) != 0) ||
                         (event->ev_args.TID.tid != NULL &&
-                         apth_state_matches_event_goal(state_holder_of(event->ev_args.TID.tid), event->ev_goal)))
+                         apth_state_matches_event_goal(atomic_load_acquire(&event->ev_args.TID.tid->state), event->ev_goal)))
                     {
                         event->ev_status = APTH_EV_STATUS_OCCURRED;
                         any_occurred = true;
@@ -532,7 +532,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             }
         }
 
-        lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1");
+        lll_internal_unlock(&sched->waiting_queue->th_list_lock);
 
         // Move apth discovered during phase 1 from waiting queue to waked queue.
         // Loop until we have transferred all of them: if wake_count hit MAX_WAKE_BATCH
@@ -549,7 +549,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                 }
                 // Move to waked queue
-                submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase1");
+                atomic_store(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                 transfer_th(th, sched->waiting_queue, sched->waked_queue);
             }
 
@@ -558,7 +558,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             if (wake_count == MAX_WAKE_BATCH)
             {
                 wake_count = 0;
-                lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1_rescan");
+                lll_internal_lock(&sched->waiting_queue->th_list_lock);
                 FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
                 {
                     apth_t th = apth_t_list_entry(e);
@@ -578,7 +578,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     if (any_occurred && wake_count < MAX_WAKE_BATCH)
                         wake_batch[wake_count++] = th;
                 }
-                lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase1_rescan");
+                lll_internal_unlock(&sched->waiting_queue->th_list_lock);
                 notified_ths += wake_count;
             }
             else
@@ -664,7 +664,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 // looping until all have been transferred (handles >MAX_WAKE_BATCH case).
                 do {
                     wake_count = 0;
-                    lll_lock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
+                    lll_internal_lock(&sched->waiting_queue->th_list_lock);
                     FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
                     {
                         apth_t th = apth_t_list_entry(e);
@@ -681,7 +681,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         if (should_wake && wake_count < MAX_WAKE_BATCH)
                             wake_batch[wake_count++] = th;
                     }
-                    lll_unlock(&sched->waiting_queue->th_list_lock, "eventmanager_phase2_wake");
+                    lll_internal_unlock(&sched->waiting_queue->th_list_lock);
 
                     for (int i = 0; i < wake_count; i++)
                     {
@@ -696,7 +696,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                                 event->ev_status == APTH_EV_STATUS_PENDING)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                         }
-                        submit_desired_state_to(th, APTH_STATE_WAKED, "eventmanager phase2");
+                        atomic_store(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                         transfer_th(th, sched->waiting_queue, sched->waked_queue);
                     }
                 } while (wake_count == MAX_WAKE_BATCH);
@@ -723,7 +723,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             if (event->ev_type == APTH_EVENT_TYPE_FD)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
-                        submit_desired_state_to(nexttimer_th, APTH_STATE_WAKED, "eventmanager phase2");
+                        atomic_store(&nexttimer_th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
                         transfer_th(nexttimer_th, sched->waiting_queue, sched->waked_queue);
                     }
                 }
@@ -947,9 +947,7 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     self->event_list = *el;
 
     // Move apth into waiting state and transfer control to scheduler
-    // self->state = APTH_STATE_WAITING;
-    // We want to submit WAITING state to `self`
-    submit_desired_state_to(self, APTH_STATE_WAITING, "apth_wait_event_list");
+    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -991,8 +989,8 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     apth_event_list_add(&self->event_list, ev);
 
     // Move thread into waiting state and transfer control to scheduler
-    // We want to submit WAITING state to `self`
-    submit_desired_state_to(self, APTH_STATE_WAITING, "apth_wait_event");
+    // Move to waiting state
+    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

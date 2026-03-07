@@ -1,4 +1,5 @@
 #include "internal_funcs.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include "internal_types.h"
 #include "utils/apth_errno.h"
 
@@ -10,7 +11,7 @@ int apth_barrier_init(apth_barrier_t *barrier, const void *attr, unsigned int co
 
     struct apth_barrier_st *b = APTH_BARRIER_CAST(barrier);
 
-    lll_init(&b->guard);
+    lll_apth_init(&b->guard);
     b->threshold = count;
     b->count = 0;
     b->generation = 0;
@@ -26,16 +27,16 @@ int apth_barrier_destroy(apth_barrier_t *barrier)
 
     struct apth_barrier_st *b = APTH_BARRIER_CAST(barrier);
 
-    lll_lock(&b->guard, "barrier_destroy");
+    lll_apth_lock(&b->guard);
 
     // If threads are still waiting, cannot destroy
     if (b->count > 0 || !list_empty(&b->waiters))
     {
-        lll_unlock(&b->guard, "barrier_destroy");
+        lll_apth_unlock(&b->guard);
         return EBUSY;
     }
 
-    lll_unlock(&b->guard, "barrier_destroy");
+    lll_apth_unlock(&b->guard);
 
     return 0;
 }
@@ -48,7 +49,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
     struct apth_barrier_st *b = APTH_BARRIER_CAST(barrier);
     apth_t self = cur_apth();
 
-    lll_lock(&b->guard, "barrier_wait");
+    lll_apth_lock(&b->guard);
 
     b->count++;
 
@@ -68,7 +69,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
             apth_sched_wake(sched_of(w->th));
         }
 
-        lll_unlock(&b->guard, "barrier_wait");
+        lll_apth_unlock(&b->guard);
         return APTH_BARRIER_SERIAL_THREAD;
     }
 
@@ -86,9 +87,9 @@ int apth_barrier_wait(apth_barrier_t *barrier)
     // Add event to thread's event list
     apth_event_list_add(&self->event_list, &w.ev);
 
-    lll_unlock(&b->guard, "barrier_wait_pre_yield");
+    lll_apth_unlock(&b->guard);
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "barrier_wait");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

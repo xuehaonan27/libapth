@@ -8,9 +8,9 @@
 #include "internal_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
-#include "utils/lll.h"
 
 static void apth_create_trampoline(void)
 {
@@ -103,7 +103,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
-    submit_desired_state_to(t, APTH_STATE_NEW, "apth_create");
+    atomic_store(&t->state, APTH_STATE_NEW);  // NEW: Initialize simple state field
 
     // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);
@@ -117,7 +117,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Signals
     sigemptyset(&t->sigpending);
     t->sigpendcnt = 0;
-    lll_init(&t->siglock);
+    lll_internal_init(&t->siglock);
     t->in_sighandler = false;
     t->sigaltstack_set = false;
 
@@ -132,6 +132,12 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         else
             sigemptyset(&t->sigmask);
     }
+
+    // Ownership system: initialize scheduler ownership fields
+    t->home_sched = sched;       // Immutable: set at creation
+    t->current_sched = sched;    // Initially owned by creating scheduler
+    t->current_queue = NULL;     // Will be set when pushed to queue
+    lll_internal_init(&t->ownership_lock);
 
     // Remember the start routine and arguments
     t->start_func = start_routine;

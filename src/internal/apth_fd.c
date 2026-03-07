@@ -2,6 +2,7 @@
 #include "internal_funcs.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include <fcntl.h>
 #include <string.h>
 
@@ -102,7 +103,7 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
 
     apth_debug("notifying all schedulers: fd=%d closed", fd);
 
-    lll_lock(&GLOBAL_POOL.pool_lock, "apth_notify_fd_closed");
+    lll_internal_lock(&GLOBAL_POOL.pool_lock);
     FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
         apth_worker_t worker = apth_worker_t_list_entry(e);
@@ -110,7 +111,7 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
         if (sched == NULL)
             continue;
 
-        lll_lock(&sched->pending_fd_close_lock, "notify_fd_closed_per_sched");
+        lll_internal_lock(&sched->pending_fd_close_lock);
         int idx = atomic_load_acquire(&sched->pending_fd_close_count);
         if (idx < APTH_PENDING_FD_CLOSE_MAX)
         {
@@ -122,7 +123,7 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
             apth_debug("WARNING: pending_fd_close overflow for sched %d, fd=%d dropped",
                        sched->id, fd);
         }
-        lll_unlock(&sched->pending_fd_close_lock, "notify_fd_closed_per_sched");
+        lll_internal_unlock(&sched->pending_fd_close_lock);
     }
-    lll_unlock(&GLOBAL_POOL.pool_lock, "apth_notify_fd_closed");
+    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
 }

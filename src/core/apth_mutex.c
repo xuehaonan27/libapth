@@ -2,6 +2,7 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 
 // ==================== Mutex Attributes ====================
 
@@ -53,7 +54,7 @@ int apth_mutex_init(apth_mutex_t *mutex, const apth_mutexattr_t *attr)
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
 
-    lll_init(&m->guard);
+    lll_apth_init(&m->guard);  // NEW: Use Type 1 LLL init
     m->owner = NULL;
     m->lock_count = 0;
     m->type = (attr != NULL) ? APTH_MUTEXATTR_CONST_CAST(attr)->type : APTH_MUTEX_DEFAULT;
@@ -68,18 +69,18 @@ int apth_mutex_destroy(apth_mutex_t *mutex)
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
 
-    lll_lock(&m->guard, "mutex_destroy");
+    lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
     if (!list_empty(&m->waiters))
     {
-        lll_unlock(&m->guard, "mutex_destroy");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return EBUSY;
     }
     if (m->owner != NULL)
     {
-        lll_unlock(&m->guard, "mutex_destroy");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return EBUSY;
     }
-    lll_unlock(&m->guard, "mutex_destroy");
+    lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
     // No free() needed - mutex is stack-allocated
     return 0;
@@ -93,14 +94,14 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
-    lll_lock(&m->guard, "mutex_lock");
+    lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
     // Fast path: mutex is free
     if (m->owner == NULL)
     {
         m->owner = self;
         m->lock_count = 1;
-        lll_unlock(&m->guard, "mutex_lock");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -110,12 +111,12 @@ int apth_mutex_lock(apth_mutex_t *mutex)
         if (m->type == APTH_MUTEX_RECURSIVE)
         {
             m->lock_count++;
-            lll_unlock(&m->guard, "mutex_lock");
+            lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
             return 0;
         }
         if (m->type == APTH_MUTEX_ERRORCHECK)
         {
-            lll_unlock(&m->guard, "mutex_lock");
+            lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
             return EDEADLK;
         }
         // NORMAL: undefined behavior per POSIX; we block (will deadlock).
@@ -140,9 +141,9 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     // Between this unlock and the yield, another thread could call unlock()
     // and mark our event as OCCURRED — that's fine; the event manager will
     // immediately re-ready us.
-    lll_unlock(&m->guard, "mutex_lock_pre_yield");
+    lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "mutex_lock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -163,14 +164,14 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
-    lll_lock(&m->guard, "mutex_timedlock");
+    lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
     // Fast path: mutex is free
     if (m->owner == NULL)
     {
         m->owner = self;
         m->lock_count = 1;
-        lll_unlock(&m->guard, "mutex_timedlock");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -180,12 +181,12 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
         if (m->type == APTH_MUTEX_RECURSIVE)
         {
             m->lock_count++;
-            lll_unlock(&m->guard, "mutex_timedlock");
+            lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
             return 0;
         }
         if (m->type == APTH_MUTEX_ERRORCHECK)
         {
-            lll_unlock(&m->guard, "mutex_timedlock");
+            lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
             return EDEADLK;
         }
     }
@@ -215,9 +216,9 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     apth_event_list_add(&self->event_list, &w.ev);
     apth_event_list_add(&self->event_list, &timer_ev);
 
-    lll_unlock(&m->guard, "mutex_timedlock_pre_yield");
+    lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "mutex_timedlock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -227,18 +228,18 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     apth_event_isolate(&timer_ev);
 
     // Resolve race: did unlock() transfer ownership, or did the timer fire?
-    lll_lock(&m->guard, "mutex_timedlock_post");
+    lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
     if (w.ev.ev_status == APTH_EV_STATUS_OCCURRED)
     {
         // unlock() already dequeued us and transferred ownership
-        lll_unlock(&m->guard, "mutex_timedlock_post");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return 0;
     }
 
     // Timer fired first; we're still in the waiters list. Remove ourselves.
     list_remove(&w.elem);
-    lll_unlock(&m->guard, "mutex_timedlock_post");
+    lll_apth_unlock(&m->guard);
     return ETIMEDOUT;
 }
 
@@ -250,24 +251,26 @@ int apth_mutex_trylock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
-    lll_lock(&m->guard, "mutex_trylock");
+    // Use trylock for non-blocking guard acquisition
+    if (lll_apth_trylock(&m->guard) != 0)
+        return EBUSY;
 
     if (m->owner == NULL)
     {
         m->owner = self;
         m->lock_count = 1;
-        lll_unlock(&m->guard, "mutex_trylock");
+        lll_apth_unlock(&m->guard);
         return 0;
     }
 
     if (m->owner == self && m->type == APTH_MUTEX_RECURSIVE)
     {
         m->lock_count++;
-        lll_unlock(&m->guard, "mutex_trylock");
+        lll_apth_unlock(&m->guard);
         return 0;
     }
 
-    lll_unlock(&m->guard, "mutex_trylock");
+    lll_apth_unlock(&m->guard);
     return EBUSY;
 }
 
@@ -279,12 +282,12 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = cur_apth();
 
-    lll_lock(&m->guard, "mutex_unlock");
+    lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
     // Error check
     if (m->type == APTH_MUTEX_ERRORCHECK && m->owner != self)
     {
-        lll_unlock(&m->guard, "mutex_unlock");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return EPERM;
     }
 
@@ -292,7 +295,7 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
     if (m->type == APTH_MUTEX_RECURSIVE && m->lock_count > 1)
     {
         m->lock_count--;
-        lll_unlock(&m->guard, "mutex_unlock");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -302,7 +305,7 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
         // No waiters — simply release
         m->owner = NULL;
         m->lock_count = 0;
-        lll_unlock(&m->guard, "mutex_unlock");
+        lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -320,7 +323,7 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
     // on the waiter's stack, still valid while it's in WAITING state)
     apth_sched_t waiter_sched = sched_of(w->th);
 
-    lll_unlock(&m->guard, "mutex_unlock");
+    lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 
     // Prod the waiter's scheduler so it notices the OCCURRED event
     apth_sched_wake(waiter_sched);

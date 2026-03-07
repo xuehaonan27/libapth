@@ -7,7 +7,7 @@
 
 #include "utils/list.h"
 #include "utils/ring.h"
-#include "utils/lll.h"
+#include "utils/lll_new.h"
 #include <ucontext.h>
 #include <pthread.h>
 
@@ -147,7 +147,7 @@ typedef struct apth_event_st *apth_event_t;
 struct apth_global_sigaction
 {
     struct sigaction actions[APTH_NSIG]; // Signal handler registered by user
-    lll_t lock;                          // Access protection
+    lll_internal_t lock;                 // NEW: Type 2 LLL for access protection
 };
 extern struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 
@@ -208,7 +208,6 @@ typedef struct apth_cleanup_st *apth_cleanup_t;
 // Thread state
 typedef enum
 {
-    // Lower 1 bit is used to mark commit status
     APTH_STATE_NEW = 2,         /* spawned, but still not dispatched */
     APTH_STATE_READY = 4,       /* ready, waiting to be dispatched   */
     APTH_STATE_WAITING = 8,     /* waiting until event occurred      */
@@ -216,39 +215,6 @@ typedef enum
     APTH_STATE_WAKED = 32,
     APTH_STATE_RUNNING = 64
 } apth_state_t;
-
-/* special bit for marking this state is just submitted, but yet committed */
-#define __APTH_STATE_UNCOMMIT_MASK (0x1)
-static inline bool state_is_uncommitted(apth_state_t s)
-{
-    return ((s & __APTH_STATE_UNCOMMIT_MASK) != 0);
-}
-static inline bool state_is_committed(apth_state_t s)
-{
-    return ((s & __APTH_STATE_UNCOMMIT_MASK) == 0);
-}
-static inline apth_state_t make_state_uncommitted(apth_state_t s)
-{
-    return (apth_state_t)(s | __APTH_STATE_UNCOMMIT_MASK);
-}
-static inline apth_state_t make_state_committed(apth_state_t s)
-{
-    return (apth_state_t)(s & (~__APTH_STATE_UNCOMMIT_MASK));
-}
-
-// Although we might modify `apth_state_t` bits, making it be in a
-// state other than APTH_STATE_{NEW, READY, WAITING, TERMINATED},
-// for any state passed in as an argument, its bits should be sane.
-static inline bool state_as_argument_is_valid(apth_state_t s)
-{
-    return state_is_committed(s); // lower 1 bit should be 0
-}
-
-// APTH_INTERNAL apth_state_t queue_state_of(apth_t th);
-// // The returned state might be uncommitted (meaning with invalid lower 1 bit set)
-// APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
-// APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg);
-// APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
 
 // ============================== Scheduler Forward Declaration ==============================
 typedef int sched_id;
@@ -263,10 +229,10 @@ typedef struct apth_worker_st *apth_worker_t;
 struct apth_thqueue_st
 {
     struct list th_list;
-    lll_t th_list_lock;
+    lll_internal_t th_list_lock;  // NEW: Type 2 LLL (replaces lll_t)
     apth_sched_t sched;
     apth_state_t th_state; // State that apths belonging to this queue should be
-    _Atomic(size_t) size;
+    size_t size;              // NEW: Non-atomic, protected by lock
 };
 
 typedef struct apth_thqueue_st *apth_thqueue_t;
@@ -338,7 +304,7 @@ struct apth_perpthr_scheduler
 #define APTH_PENDING_FD_CLOSE_MAX 128
     int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
     _Atomic(int) pending_fd_close_count;
-    lll_t pending_fd_close_lock;
+    lll_internal_t pending_fd_close_lock;  // Type 2 LLL
 };
 
 // ============================== Thread Worker ==============================
@@ -366,7 +332,7 @@ typedef struct apth_worker_pthread_arg *apth_worker_arg_t;
 // Accessing to this pool should be synchronized.
 struct apth_global_scheduler_pool
 {
-    lll_t pool_lock;           // protect access to the pool
+    lll_internal_t pool_lock;  // Type 2 LLL - protect access to the pool
     int worker_count;          // total worker pthreads count
     struct list wrkpthrs_list; // worker pthreads [elem: struct apth_worker_t_list_elem]
 
@@ -379,7 +345,6 @@ struct apth_global_scheduler_pool
 
 typedef uintptr_t apth_yield_reason_t;
 #define APTH_YIELD_REASON_VOLUNTEER ((uintptr_t)0)
-#define APTH_YIELD_REASON_ADVICE ((uintptr_t)0x1)
 #define APTH_YIELD_REASON_WAIT ((uintptr_t)0x2)
 #define APTH_YIELD_REASON_TIMESLICE ((uintptr_t)0x4)
 #define APTH_YIELD_REASON_EXIT ((uintptr_t)0x8)
@@ -391,7 +356,9 @@ struct ALIGNED(8) apth_st
     int prio;                                    // base priority of thread
     char name[APTH_TCB_NAMELEN + 1];             // name of thread
     int dispatches;                              // total number of thread dispatches
-    volatile _Atomic(apth_state_t) state_holder; // holds the state, could be uncommitted
+
+    /* NEW: Simplified state management */
+    _Atomic(apth_state_t) state;              // Simple atomic state
 
     /* timing */
     apth_time_t spawned; // time point at which thread was spawned
@@ -413,7 +380,7 @@ struct ALIGNED(8) apth_st
     sigset_t sigpending;         // set of pending signals
     int sigpendcnt;              // number of pending signals
     sigset_t sigmask;            // signal mask of this apth
-    lll_t siglock;               // synchronize access to signal handling of this apth
+    lll_internal_t siglock;      // NEW: Type 2 LLL for signal handling synchronization
     stack_t signalstack;         // stack for signal handling
     bool sigaltstack_set;        // whether signalstack is set
     volatile bool in_sighandler; // whether we are now executing signal handler in signal stack
@@ -485,6 +452,12 @@ struct ALIGNED(8) apth_st
     list_entry(LIST_ELEM, struct apth_st, elem)
 
     _Atomic(apth_thqueue_t) belongs_to_queue;
+
+    /* NEW: Ownership system for simplified state management */
+    apth_sched_t home_sched;       // Immutable: set at creation, for work stealing decisions
+    apth_sched_t current_sched;    // Mutable: which scheduler currently owns this APTH
+    apth_thqueue_t current_queue;  // Which queue (protected by queue lock)
+    lll_internal_t ownership_lock; // Type 2 LLL for cross-scheduler operations (stealing, join)
 
     uint64_t last_yield_tick;
     int yield_timeslice;
@@ -611,7 +584,7 @@ struct apth_sync_waiter
 // Mutex internal structure
 struct apth_mutex_st
 {
-    lll_t guard;             // protects internal fields (short-held)
+    lll_apth_t guard;        // NEW: Type 1 LLL (protects internal fields)
     apth_t owner;            // current lock owner, or NULL
     unsigned int lock_count; // recursion depth for RECURSIVE type
     int type;                // APTH_MUTEX_NORMAL, _ERRORCHECK, _RECURSIVE
@@ -634,7 +607,7 @@ struct apth_mutexattr_st
 // Condition variable internal structure
 struct apth_cond_st
 {
-    lll_t guard;         // protects internal fields
+    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
     struct list waiters; // FIFO queue of struct apth_sync_waiter
 };
 
@@ -655,7 +628,7 @@ struct apth_condattr_st
 struct apth_barrier_st
 {
     struct list waiters; // FIFO queue of struct apth_sync_waiter
-    lll_t guard;         // protects internal fields (short-held)
+    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
     uint32_t threshold;  // number of threads that must arrive
     uint32_t count;      // number of threads currently waiting
     uint32_t generation; // increments each time barrier opens
@@ -667,7 +640,7 @@ struct apth_barrier_st
 // Semaphore internal structure
 struct apth_sem_st
 {
-    lll_t guard;         // protects internal fields (short-held)
+    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
     unsigned int value;  // current count
     struct list waiters; // FIFO queue of struct apth_sync_waiter
 };
@@ -678,7 +651,7 @@ struct apth_sem_st
 // Read-write lock internal structure
 struct apth_rwlock_st
 {
-    lll_t guard;            // protects internal fields (short-held)
+    lll_apth_t guard;       // NEW: Type 1 LLL (protects internal fields)
     int readers;            // count of active readers
     int writers;            // count of active writers (0 or 1)
     int waiting_writers;    // count of writers waiting

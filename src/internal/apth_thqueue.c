@@ -3,6 +3,7 @@
 #include "utils/list.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 
 APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, apth_state_t state)
 {
@@ -13,10 +14,10 @@ APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, a
     }
 
     list_init(&queue->th_list);
-    lll_init(&queue->th_list_lock);
+    lll_internal_init(&queue->th_list_lock);  // NEW: Use Type 2 LLL init
     queue->sched = sched;
     queue->th_state = state;
-    atomic_store_release(&queue->size, 0);
+    queue->size = 0;  // NEW: Non-atomic, protected by lock
 
     *queue_ptr = queue;
 }
@@ -28,12 +29,13 @@ APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
     // assert(belonging_queue_of(th, "push_apth_to") == NULL);
     assert(atomic_load_acquire(&th->belongs_to_queue) == NULL);
 
-    lll_lock(&queue->th_list_lock, "push_apth_to");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
     list_push_back(&queue->th_list, &th->elem);
-    atomic_fetch_add_release(&queue->size, 1);
+    queue->size++;  // NEW: Non-atomic, protected by lock
     set_belonging_queue_of(th, queue);
-    commit_state_of(th, queue->th_state);
-    lll_unlock(&queue->th_list_lock, "push_apth_to");
+    th->current_queue = queue;  // NEW: Update current_queue
+    atomic_store(&th->state, queue->th_state);  // NEW: Simple state transition
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 }
 
 APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue)
@@ -42,7 +44,7 @@ APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue)
     apth_t th = APTH_NULL;
     struct list_elem *e;
 
-    lll_lock(&queue->th_list_lock, "pop_apth_from");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
     if (!list_empty(&queue->th_list))
     {
         e = list_front(&queue->th_list);
@@ -50,13 +52,16 @@ APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue)
         assert(belonging_queue_of(th, "pop_apth_from") == queue);
         struct list_elem *ee = list_pop_front(&queue->th_list);
         assert(e == ee);
-        atomic_fetch_sub_release(&queue->size, 1);
+        queue->size--;  // NEW: Non-atomic, protected by lock
     }
 
     if (th != APTH_NULL)
+    {
         set_belonging_queue_of(th, NULL);
+        th->current_queue = NULL;  // NEW: Update current_queue
+    }
 
-    lll_unlock(&queue->th_list_lock, "pop_apth_from");
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 
     return th;
 }
@@ -72,17 +77,18 @@ APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th)
                belonging_queue_of(th, "remove_apth_from"),
                belonging_queue_of(th, "remove_apth_from")->th_state,
                queue, queue->th_state);
-    lll_lock(&queue->th_list_lock, "remove_apth_from");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
     list_remove(&th->elem);
-    atomic_fetch_sub_release(&queue->size, 1);
+    queue->size--;  // NEW: Non-atomic, protected by lock
     set_belonging_queue_of(th, NULL);
-    lll_unlock(&queue->th_list_lock, "remove_apth_from");
+    th->current_queue = NULL;  // NEW: Update current_queue
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 }
 
 // Get the ownership of the queue and drain the with `fn`
 APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn)
 {
-    lll_lock(&queue->th_list_lock, "drain_thqueue");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 
     // Note: the entire process should be protected by lock
     struct list_elem *e = NULL;
@@ -98,12 +104,13 @@ APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn)
         assert(e == ee);
 
         set_belonging_queue_of(th, NULL);
+        th->current_queue = NULL;  // NEW: Update current_queue
         fn(th);
     }
 
-    atomic_store_release(&queue->size, 0);
+    queue->size = 0;  // NEW: Non-atomic, protected by lock
 
-    lll_unlock(&queue->th_list_lock, "drain_thqueue");
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 }
 
 APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
@@ -115,38 +122,34 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
     apth_t th = APTH_NULL;
 
     // First we should remove `th` from `from`
-    lll_lock(&from->th_list_lock, "transfer_th locking from");
-    lll_lock(&to->th_list_lock, "transfer_th locking to");
+    lll_internal_lock(&from->th_list_lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&to->th_list_lock);  // NEW: Use Type 2 LLL
     if (list_empty(&from->th_list))
     {
-        assert(from->size == 0);
-        lll_unlock(&to->th_list_lock, "transfer_th locking to");
-        lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
+        assert_msg(from->size == 0, "from->size == %d", from->size);
+        lll_internal_unlock(&to->th_list_lock);  // NEW: Use Type 2 LLL
+        lll_internal_unlock(&from->th_list_lock);  // NEW: Use Type 2 LLL
         return th;
     }
     e = list_pop_front(&from->th_list);
-    from->size -= 1;
-    // lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
+    from->size--;
 
     th = apth_t_list_entry(e);
     assert(APTH_IS_VALID(th));
     assert(belonging_queue_of(th, dbg_msg) != NULL);
     assert(belonging_queue_of(th, dbg_msg) == from);
 
-    submit_desired_state_to(th, to->th_state, dbg_msg);
-
     // Then we should push `th` to `to`
-    // lll_lock(&to->th_list_lock, "transfer_th locking to");
     if (insert_from_front)
         list_push_front(&to->th_list, &th->elem);
     else
         list_push_back(&to->th_list, &th->elem);
-    to->size += 1;
+    to->size++;
     set_belonging_queue_of(th, to);
-    // Till now, state of `th` should still be former value
-    commit_state_of(th, to->th_state);
-    lll_unlock(&to->th_list_lock, "transfer_th unlocking to");
-    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
+    th->current_queue = to;  // NEW: Update current_queue
+    atomic_store(&th->state, to->th_state);  // NEW: Simple state transition
+    lll_internal_unlock(&to->th_list_lock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&from->th_list_lock);  // NEW: Use Type 2 LLL
 
     return th;
 }
@@ -160,22 +163,19 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
     assert(belonging_queue_of(th, "transfer_th") == from);
 
     // First we should remove `th` from `from`
-    lll_lock(&from->th_list_lock, "transfer_th locking from");
-    lll_lock(&to->th_list_lock, "transfer_th locking to");
+    lll_internal_lock(&from->th_list_lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&to->th_list_lock);  // NEW: Use Type 2 LLL
     list_remove(&th->elem);
-    from->size -= 1;
-    // lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
-
-    // submit_desired_state_to(th, to->th_state);
+    from->size--;
 
     // Then we should push `th` to `to`
-    // lll_lock(&to->th_list_lock, "transfer_th locking to");
     list_push_back(&to->th_list, &th->elem);
-    to->size += 1;
+    to->size++;
     set_belonging_queue_of(th, to);
-    commit_state_of(th, to->th_state);
-    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
-    lll_unlock(&to->th_list_lock, "transfer_th unlocking to");
+    th->current_queue = to;  // NEW: Update current_queue
+    atomic_store(&th->state, to->th_state);  // NEW: Simple state transition
+    lll_internal_unlock(&from->th_list_lock);
+    lll_internal_unlock(&to->th_list_lock);
 }
 
 
@@ -185,7 +185,7 @@ APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_t
 
     apth_t ret_th = APTH_NULL;
 
-    lll_lock(&queue->th_list_lock, "find_first_in_thqueue");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
     FOR_ELEMENT_IN_LIST(queue->th_list, e)
     {
         apth_t th = apth_t_list_entry(e);
@@ -200,7 +200,7 @@ APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_t
             break;
         }
     }
-    lll_unlock(&queue->th_list_lock, "find_first_in_thqueue");
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 
     return ret_th;
 }
@@ -213,7 +213,7 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
     struct list ret_list;
     list_init(&ret_list);
 
-    lll_lock(&queue->th_list_lock, "visit_thqueue");
+    lll_internal_lock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 
     apth_thqueue_t last_to_queue = NULL;
     apth_t th_last = APTH_NULL;
@@ -238,14 +238,14 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
                    belonging_queue_of(th_last, "visit_thqueue")->th_state,          \
                    queue, queue->th_state);                                         \
         list_remove(&th_last->elem);                                                \
-        atomic_fetch_sub_release(&queue->size, 1);                                                           \
-        submit_desired_state_to(th_last, last_to_queue->th_state, "visit_thqueue"); \
-        lll_lock(&last_to_queue->th_list_lock, "visit_thqueue");                    \
-        list_push_back(&last_to_queue->th_list, &th_last->elem);                    \
-        atomic_fetch_add_release(&last_to_queue->size, 1);                                                   \
-        set_belonging_queue_of(th_last, last_to_queue);                             \
-        commit_state_of(th_last, last_to_queue->th_state);                          \
-        lll_unlock(&last_to_queue->th_list_lock, "visit_thqueue");                  \
+        queue->size--;  /* Non-atomic, protected by lock */                        \
+        lll_internal_lock(&last_to_queue->th_list_lock);  /* Use Type 2 LLL */     \
+        list_push_back(&last_to_queue->th_list, &th_last->elem);                   \
+        last_to_queue->size++;  /* Non-atomic, protected by lock */                \
+        set_belonging_queue_of(th_last, last_to_queue);                            \
+        th_last->current_queue = last_to_queue;  /* Update current_queue */        \
+        atomic_store(&th_last->state, last_to_queue->th_state);  /* Simple state transition */ \
+        lll_internal_unlock(&last_to_queue->th_list_lock);  /* Use Type 2 LLL */   \
         th_last = APTH_NULL;                                                        \
     }
         HANDLE_MOVE_TH
@@ -267,7 +267,7 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
 
     HANDLE_MOVE_TH
 #undef HANDLE_MOVE_TH
-    lll_unlock(&queue->th_list_lock, "visit_thqueue");
+    lll_internal_unlock(&queue->th_list_lock);  // NEW: Use Type 2 LLL
 
     return ret;
 }

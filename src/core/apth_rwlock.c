@@ -1,6 +1,7 @@
 #include "internal_funcs.h"
 #include "internal_types.h"
 #include "utils/apth_errno.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 
 int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 {
@@ -10,7 +11,7 @@ int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_init(&rw->guard);
+    lll_apth_init(&rw->guard);  // NEW: Use Type 1 LLL init
     rw->readers = 0;
     rw->writers = 0;
     rw->waiting_writers = 0;
@@ -27,16 +28,16 @@ int apth_rwlock_destroy(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_lock(&rw->guard, "rwlock_destroy");
+    lll_apth_lock(&rw->guard);  // NEW: Use Type 1 LLL
 
     if (rw->readers > 0 || rw->writers > 0 ||
         !list_empty(&rw->rd_waiters) || !list_empty(&rw->wr_waiters))
     {
-        lll_unlock(&rw->guard, "rwlock_destroy");
+        lll_apth_unlock(&rw->guard);  // NEW: Use Type 1 LLL
         return EBUSY;
     }
 
-    lll_unlock(&rw->guard, "rwlock_destroy");
+    lll_apth_unlock(&rw->guard);  // NEW: Use Type 1 LLL
 
     return 0;
 }
@@ -49,13 +50,13 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = cur_apth();
 
-    lll_lock(&rw->guard, "rwlock_rdlock");
+    lll_apth_lock(&rw->guard);
 
     // Fast path: no writers and no waiting writers
     if (rw->writers == 0 && rw->waiting_writers == 0)
     {
         rw->readers++;
-        lll_unlock(&rw->guard, "rwlock_rdlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
 
@@ -73,9 +74,9 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     // Add event to thread's event list
     apth_event_list_add(&self->event_list, &w.ev);
 
-    lll_unlock(&rw->guard, "rwlock_rdlock_pre_yield");
+    lll_apth_unlock(&rw->guard);
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_rdlock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -95,13 +96,13 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = cur_apth();
 
-    lll_lock(&rw->guard, "rwlock_timedrdlock");
+    lll_apth_lock(&rw->guard);
 
     // Fast path: no writers and no waiting writers
     if (rw->writers == 0 && rw->waiting_writers == 0)
     {
         rw->readers++;
-        lll_unlock(&rw->guard, "rwlock_timedrdlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
 
@@ -129,9 +130,9 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     apth_event_list_add(&self->event_list, &w.ev);
     apth_event_list_add(&self->event_list, &timer_ev);
 
-    lll_unlock(&rw->guard, "rwlock_timedrdlock_pre_yield");
+    lll_apth_unlock(&rw->guard);
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_timedrdlock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -141,7 +142,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     // Resolve race: unlock vs timeout
     int ret = 0;
-    lll_lock(&rw->guard, "rwlock_timedrdlock_post");
+    lll_apth_lock(&rw->guard);
 
     if (w.ev.ev_status != APTH_EV_STATUS_OCCURRED)
     {
@@ -150,7 +151,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         ret = ETIMEDOUT;
     }
 
-    lll_unlock(&rw->guard, "rwlock_timedrdlock_post");
+    lll_apth_unlock(&rw->guard);
 
     return ret;
 }
@@ -162,16 +163,18 @@ int apth_rwlock_tryrdlock(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_lock(&rw->guard, "rwlock_tryrdlock");
+    // Use trylock for non-blocking guard acquisition
+    if (lll_apth_trylock(&rw->guard) != 0)
+        return EBUSY;
 
     if (rw->writers > 0 || rw->waiting_writers > 0)
     {
-        lll_unlock(&rw->guard, "rwlock_tryrdlock");
+        lll_apth_unlock(&rw->guard);
         return EBUSY;
     }
 
     rw->readers++;
-    lll_unlock(&rw->guard, "rwlock_tryrdlock");
+    lll_apth_unlock(&rw->guard);
 
     return 0;
 }
@@ -184,13 +187,13 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = cur_apth();
 
-    lll_lock(&rw->guard, "rwlock_wrlock");
+    lll_apth_lock(&rw->guard);
 
     // Fast path: no readers and no writers
     if (rw->readers == 0 && rw->writers == 0)
     {
         rw->writers = 1;
-        lll_unlock(&rw->guard, "rwlock_wrlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
 
@@ -210,9 +213,9 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     // Add event to thread's event list
     apth_event_list_add(&self->event_list, &w.ev);
 
-    lll_unlock(&rw->guard, "rwlock_wrlock_pre_yield");
+    lll_apth_unlock(&rw->guard);
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_wrlock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -232,13 +235,13 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = cur_apth();
 
-    lll_lock(&rw->guard, "rwlock_timedwrlock");
+    lll_apth_lock(&rw->guard);
 
     // Fast path: no readers and no writers
     if (rw->readers == 0 && rw->writers == 0)
     {
         rw->writers = 1;
-        lll_unlock(&rw->guard, "rwlock_timedwrlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
 
@@ -268,9 +271,9 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     apth_event_list_add(&self->event_list, &w.ev);
     apth_event_list_add(&self->event_list, &timer_ev);
 
-    lll_unlock(&rw->guard, "rwlock_timedwrlock_pre_yield");
+    lll_apth_unlock(&rw->guard);
 
-    submit_desired_state_to(self, APTH_STATE_WAITING, "rwlock_timedwrlock");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -280,7 +283,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     // Resolve race: unlock vs timeout
     int ret = 0;
-    lll_lock(&rw->guard, "rwlock_timedwrlock_post");
+    lll_apth_lock(&rw->guard);
 
     if (w.ev.ev_status != APTH_EV_STATUS_OCCURRED)
     {
@@ -290,7 +293,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         ret = ETIMEDOUT;
     }
 
-    lll_unlock(&rw->guard, "rwlock_timedwrlock_post");
+    lll_apth_unlock(&rw->guard);
 
     return ret;
 }
@@ -302,16 +305,18 @@ int apth_rwlock_trywrlock(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_lock(&rw->guard, "rwlock_trywrlock");
+    // Use trylock for non-blocking guard acquisition
+    if (lll_apth_trylock(&rw->guard) != 0)
+        return EBUSY;
 
     if (rw->readers > 0 || rw->writers > 0)
     {
-        lll_unlock(&rw->guard, "rwlock_trywrlock");
+        lll_apth_unlock(&rw->guard);
         return EBUSY;
     }
 
     rw->writers = 1;
-    lll_unlock(&rw->guard, "rwlock_trywrlock");
+    lll_apth_unlock(&rw->guard);
 
     return 0;
 }
@@ -323,7 +328,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_lock(&rw->guard, "rwlock_unlock");
+    lll_apth_lock(&rw->guard);
 
     if (rw->writers > 0)
     {
@@ -341,7 +346,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
             apth_sched_t ws = sched_of(w->th);
 
-            lll_unlock(&rw->guard, "rwlock_unlock");
+            lll_apth_unlock(&rw->guard);
             apth_sched_wake(ws);
             return 0;
         }
@@ -357,7 +362,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             apth_sched_wake(sched_of(w->th));
         }
 
-        lll_unlock(&rw->guard, "rwlock_unlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
     else if (rw->readers > 0)
@@ -376,16 +381,16 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
             apth_sched_t ws = sched_of(w->th);
 
-            lll_unlock(&rw->guard, "rwlock_unlock");
+            lll_apth_unlock(&rw->guard);
             apth_sched_wake(ws);
             return 0;
         }
 
-        lll_unlock(&rw->guard, "rwlock_unlock");
+        lll_apth_unlock(&rw->guard);
         return 0;
     }
 
-    lll_unlock(&rw->guard, "rwlock_unlock");
+    lll_apth_unlock(&rw->guard);
     return 0;
 }
 

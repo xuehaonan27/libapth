@@ -24,7 +24,6 @@
  *   All N_PAIRS pairs complete without data loss or corruption.
  *   Process exits 0 on pass, 1 on fail.
  */
-#define _GNU_SOURCE
 #include "apth.h"
 #include <stdlib.h>
 #include <string.h>

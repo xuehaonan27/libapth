@@ -4,7 +4,7 @@
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
-#include "utils/lll.h"
+#include "utils/lll_new.inline.h"
 #include "utils/apth_getpid.h"
 #include <stdlib.h>
 #include <sys/epoll.h>
@@ -103,7 +103,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 
     // Initialize pending fd close notification queue
     atomic_store_release(&sched->pending_fd_close_count, 0);
-    lll_init(&sched->pending_fd_close_lock);
+    lll_internal_init(&sched->pending_fd_close_lock);
 
     // Store the sched into the worker
     worker->sched = sched;
@@ -319,12 +319,13 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         // Attempt to steal from the BACK of victim's ready queue
         apth_thqueue_t victim_rq = victim_sched->ready_queue;
 
-        lll_lock(&victim_rq->th_list_lock, "try_steal_work locking victim");
+        lll_internal_lock(&victim_rq->th_list_lock);
 
         // Re-check under lock
-        if (list_empty(&victim_rq->th_list) || atomic_load_acquire(&victim_rq->size) <= 1)
+        // if (list_empty(&victim_rq->th_list) || atomic_load_acquire(&victim_rq->size) <= 1)
+        if (list_empty(&victim_rq->th_list) || victim_rq->size <= 1)
         {
-            lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim (empty)");
+            lll_internal_unlock(&victim_rq->th_list_lock);
             continue;
         }
 
@@ -336,32 +337,44 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         // and inspect next scheduler. If all stealings fails we natually fails.
         if (th == atomic_load_acquire(&victim_sched->advised_next_th))
         {
-            lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim (happens to be advised thread)");
+            lll_internal_unlock(&victim_rq->th_list_lock);
             continue;
         }
 
         // Steal from back (owner dispatches from front, thief steals from back)
         e = list_pop_back(&victim_rq->th_list);
-        atomic_fetch_sub_release(&victim_rq->size, 1);
+        // atomic_fetch_sub_release(&victim_rq->size, 1);
+        victim_rq->size--;
 
-        lll_unlock(&victim_rq->th_list_lock, "try_steal_work unlocking victim");
+        // Acquire ownership lock before releasing victim queue lock
+        // This ensures atomic ownership transfer
+        lll_internal_lock(&th->ownership_lock);
+
+        lll_internal_unlock(&victim_rq->th_list_lock);
 
         th = apth_t_list_entry(e);
         assert(APTH_IS_VALID(th));
         assert(belonging_queue_of(th, "try_steal_work") == victim_rq);
 
-        // Submit desired state: marks READY as uncommitted for the transfer
-        submit_desired_state_to(th, APTH_STATE_READY, "try_steal_work");
+        // Update ownership: this APTH now belongs to thief scheduler
+        th->current_sched = thief_sched;
+
+        // Update state to READY
+        atomic_store(&th->state, APTH_STATE_READY); // NEW: Simple state transition
 
         // Insert into thief's ready queue at front for immediate dispatch
         apth_thqueue_t thief_rq = thief_sched->ready_queue;
 
-        lll_lock(&thief_rq->th_list_lock, "try_steal_work locking thief");
+        lll_internal_lock(&thief_rq->th_list_lock);
         list_push_front(&thief_rq->th_list, &th->elem);
-        atomic_fetch_add_release(&thief_rq->size, 1);
+        // atomic_fetch_add_release(&thief_rq->size, 1);
+        thief_rq->size++;
         set_belonging_queue_of(th, thief_rq);
-        commit_state_of(th, APTH_STATE_READY);
-        lll_unlock(&thief_rq->th_list_lock, "try_steal_work unlocking thief");
+        th->current_queue = thief_rq; // Update current_queue
+        lll_internal_unlock(&thief_rq->th_list_lock);
+
+        // Release ownership lock
+        lll_internal_unlock(&th->ownership_lock);
 
         // Adjust per-scheduler thread counts
         dec_thrcnt(victim_sched);
@@ -372,42 +385,6 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
     }
 
     return APTH_NULL;
-}
-
-static void check_yield_reason(apth_t th)
-{
-    assert(APTH_IS_VALID(th));
-    if ((th->yield_reason & APTH_YIELD_REASON_ADVICE) != 0)
-    {
-        apth_t advised_th = (apth_t)(th->yield_reason & (~APTH_YIELD_REASON_ADVICE));
-        assert(APTH_IS_VALID(advised_th));
-        apth_sched_t sched_of_advised_th = sched_of(advised_th);
-
-        apth_t expected = APTH_NULL;
-        // We may fail setting advised thread to the scheduler. Either case
-        // is acceptable, so omit the return value.
-        atomic_compare_exchange_release(&sched_of_advised_th->advised_next_th, &expected, advised_th);
-    }
-    else
-    {
-        switch (th->yield_reason)
-        {
-        case APTH_YIELD_REASON_VOLUNTEER:
-            break;
-        case APTH_YIELD_REASON_WAIT:
-            break;
-        case APTH_YIELD_REASON_TIMESLICE:
-            break;
-        case APTH_YIELD_REASON_EXIT:
-            break;
-        default:
-            PANIC("Invalid yield reason");
-        }
-    }
-
-    // Restore yield reason to VOLUNTEER since program code would not do this
-    // for us, but we could set reason before yielding within LIBAPTH.
-    th->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
 }
 
 // Start routine for a scheduler pthread. The prototype of this function matches
@@ -495,7 +472,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Validate before using it
             if (APTH_IS_VALID(th) && sched_of(th) == sched && queue_state_of(th) == APTH_STATE_READY)
             {
-                submit_desired_state_to(th, APTH_STATE_RUNNING, "transfer_th advised th");
+                atomic_store(&th->state, APTH_STATE_RUNNING); // NEW: Simple state transition
                 transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), sched->running_queue);
             }
             else
@@ -547,15 +524,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Set current thread
         set_cur_apth(th);
 
+        // Restore yield reason to VOLUNTEER since program code would not do this
+        // for us, but we could set reason before yielding within LIBAPTH.
+        th->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
+
         // Before context switch, we should handle signals
         if (th->sigpendcnt > 0)
             apth_deliver_pending_signals(th);
         apth_ctx_switch(sched->sched_ctx, th->ctx);
         // Prepare for thread insertion and event management phase
         set_cur_apth(APTH_FAKE_SCHED(sched));
-
-        // Check apth's yield reason
-        check_yield_reason(th);
 
         // Update scheduler times
         apth_time_set(&snapshot, APTH_TIME_NOW);
@@ -571,44 +549,81 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // If a thread overflows its stack, it will trigger a SIGSEGV when
         // accessing the protected guard page, which is handled by the OS.
 
-        apth_state_t retired_th_state = state_holder_of(th);
-        switch (make_state_committed(retired_th_state))
+        // NEW: Check yield reason for EXIT (TERMINATED transition)
+        // For TERMINATED, we handle it specially to ensure atomicity
+        if (th->yield_reason == APTH_YIELD_REASON_EXIT)
         {
-        case APTH_STATE_NEW:
-            PANIC("Insane");
-            break;
-        case APTH_STATE_READY:
-            PANIC("Insane");
-            break;
-        case APTH_STATE_RUNNING:
-            assert(retired_th_state == APTH_STATE_RUNNING);
-            apth_debug("moving thread \"%s\" to ready queue", th->name);
-            submit_desired_state_to(th, APTH_STATE_READY, "moving running to ready");
-            transfer_th(th, sched->running_queue, sched->ready_queue);
-            break;
-        case APTH_STATE_WAITING:
-            assert(state_is_uncommitted(retired_th_state));
-            apth_debug("moving thread \"%s\" to waiting queue", th->name);
-            transfer_th(th, sched->running_queue, sched->waiting_queue);
-            break;
-        case APTH_STATE_TERMINATED:
-            assert(state_is_uncommitted(retired_th_state));
             apth_debug("marking thread \"%s\" as terminated", th->name);
             dec_alive_thrcnt(); // decrement alive nthreads
+
             // NOTE: since `th` is marked as terminated, then all cleanups should
             // have been executed.
             if (IS_DETACHED(th))
             {
+                // For detached threads, just remove and free
                 remove_apth_from(sched->running_queue, th);
+                atomic_store(&th->state, APTH_STATE_TERMINATED);
                 apth_tcb_free(th);
             }
             else
-                // For other apths to join `th`
-                transfer_th(th, sched->running_queue, sched->terminated_queue);
-            break;
-        default:
-            PANIC("Insane");
-            break;
+            {
+                // For joinable threads, transfer to terminated queue
+                // and set state WHILE HOLDING the terminated queue lock
+                apth_thqueue_t running_q = sched->running_queue;
+                apth_thqueue_t term_q = sched->terminated_queue;
+
+                lll_internal_lock(&running_q->th_list_lock);
+                lll_internal_lock(&term_q->th_list_lock);
+
+                // Remove from running queue
+                list_remove(&th->elem);
+                running_q->size--;
+                set_belonging_queue_of(th, NULL);
+                th->current_queue = NULL;
+
+                // Insert into terminated queue
+                list_push_back(&term_q->th_list, &th->elem);
+                term_q->size++;
+                set_belonging_queue_of(th, term_q);
+                th->current_queue = term_q;
+
+                // Change state WHILE HOLDING terminated queue lock
+                // This ensures atomicity of "state change + queue insertion"
+                atomic_store(&th->state, APTH_STATE_TERMINATED);
+
+                lll_internal_unlock(&term_q->th_list_lock);
+                lll_internal_unlock(&running_q->th_list_lock);
+            }
+        }
+        else
+        {
+            // Handle other state transitions
+            apth_state_t retired_th_state = atomic_load(&th->state);
+            switch (retired_th_state)
+            {
+            case APTH_STATE_NEW:
+                PANIC("Insane");
+                break;
+            case APTH_STATE_READY:
+                PANIC("Insane");
+                break;
+            case APTH_STATE_RUNNING:
+                apth_debug("moving thread \"%s\" to ready queue", th->name);
+                atomic_store(&th->state, APTH_STATE_READY); // NEW: Simple state transition
+                transfer_th(th, sched->running_queue, sched->ready_queue);
+                break;
+            case APTH_STATE_WAITING:
+                apth_debug("moving thread \"%s\" to waiting queue", th->name);
+                transfer_th(th, sched->running_queue, sched->waiting_queue);
+                break;
+            case APTH_STATE_TERMINATED:
+                // This case should not happen anymore since we handle EXIT via yield reason
+                PANIC("TERMINATED state should be handled via YIELD_REASON_EXIT");
+                break;
+            default:
+                PANIC("Insane");
+                break;
+            }
         }
 
         th = APTH_NULL;
@@ -638,9 +653,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_debug("MAIN WORKER %d ENDING THE PROCESS...", me->worker_id, me->tid);
 
         // First we should isolate ourself from the pool
-        lll_lock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
+        lll_internal_lock(&GLOBAL_POOL.pool_lock);
         list_remove(&me->elem);
-        lll_unlock(&GLOBAL_POOL.pool_lock, "scheduler isolation");
+        lll_internal_unlock(&GLOBAL_POOL.pool_lock);
         apth_drop();
     }
 

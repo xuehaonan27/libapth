@@ -1,4 +1,5 @@
 #include "internal_funcs.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
@@ -57,7 +58,7 @@ int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr)
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
 
-    lll_init(&c->guard);
+    lll_apth_init(&c->guard);
     list_init(&c->waiters);
     return 0;
 }
@@ -69,13 +70,13 @@ int apth_cond_destroy(apth_cond_t *cond)
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
 
-    lll_lock(&c->guard, "cond_destroy");
+    lll_apth_lock(&c->guard);
     if (!list_empty(&c->waiters))
     {
-        lll_unlock(&c->guard, "cond_destroy");
+        lll_apth_unlock(&c->guard);
         return EBUSY;
     }
-    lll_unlock(&c->guard, "cond_destroy");
+    lll_apth_unlock(&c->guard);
 
     // No free() needed - cond is stack-allocated
     return 0;
@@ -99,9 +100,9 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
 
     // Enqueue as waiter BEFORE releasing the mutex.
     // This ensures a signal between unlock and sleep is not lost.
-    lll_lock(&c->guard, "cond_wait");
+    lll_apth_lock(&c->guard);
     list_push_back(&c->waiters, &w.elem);
-    lll_unlock(&c->guard, "cond_wait");
+    lll_apth_unlock(&c->guard);
 
     // Add event to our event list
     apth_event_list_add(&self->event_list, &w.ev);
@@ -110,7 +111,7 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
     apth_mutex_unlock(mutex);
 
     // Block
-    submit_desired_state_to(self, APTH_STATE_WAITING, "cond_wait");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -152,9 +153,9 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     timer_ev.ev_args.TIME.tv.tv_usec = abstime->tv_nsec / 1000;
 
     // Enqueue waiter BEFORE releasing the mutex
-    lll_lock(&c->guard, "cond_timedwait");
+    lll_apth_lock(&c->guard);
     list_push_back(&c->waiters, &w.elem);
-    lll_unlock(&c->guard, "cond_timedwait");
+    lll_apth_unlock(&c->guard);
 
     // Add BOTH events to event list
     apth_event_list_add(&self->event_list, &w.ev);
@@ -164,7 +165,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     apth_mutex_unlock(mutex);
 
     // Block
-    submit_desired_state_to(self, APTH_STATE_WAITING, "cond_timedwait");
+    atomic_store(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -174,7 +175,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
 
     // Resolve race: signal/broadcast vs timeout
     int ret = 0;
-    lll_lock(&c->guard, "cond_timedwait_post");
+    lll_apth_lock(&c->guard);
 
     if (w.ev.ev_status != APTH_EV_STATUS_OCCURRED)
     {
@@ -183,7 +184,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
         ret = ETIMEDOUT;
     }
 
-    lll_unlock(&c->guard, "cond_timedwait_post");
+    lll_apth_unlock(&c->guard);
 
     // Re-acquire the mutex (required by POSIX, even on timeout)
     apth_mutex_lock(mutex);
@@ -198,7 +199,7 @@ int apth_cond_signal(apth_cond_t *cond)
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
 
-    lll_lock(&c->guard, "cond_signal");
+    lll_apth_lock(&c->guard);
 
     if (!list_empty(&c->waiters))
     {
@@ -209,12 +210,12 @@ int apth_cond_signal(apth_cond_t *cond)
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
         apth_sched_t ws = sched_of(w->th);
 
-        lll_unlock(&c->guard, "cond_signal");
+        lll_apth_unlock(&c->guard);
         apth_sched_wake(ws);
         return 0;
     }
 
-    lll_unlock(&c->guard, "cond_signal");
+    lll_apth_unlock(&c->guard);
     return 0;
 }
 
@@ -225,7 +226,7 @@ int apth_cond_broadcast(apth_cond_t *cond)
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
 
-    lll_lock(&c->guard, "cond_broadcast");
+    lll_apth_lock(&c->guard);
 
     // Collect all schedulers that need waking.
     // Use a simple approach: wake each scheduler as we go.
@@ -238,6 +239,6 @@ int apth_cond_broadcast(apth_cond_t *cond)
         apth_sched_wake(sched_of(w->th));
     }
 
-    lll_unlock(&c->guard, "cond_broadcast");
+    lll_apth_unlock(&c->guard);
     return 0;
 }

@@ -144,7 +144,6 @@ APTH_INTERNAL int check_stacksize_attr(size_t st);
 
 int apth_apth_exists(apth_t t);
 
-#include "utils/lll.inline.h"
 #include "utils/list.inline.h"
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

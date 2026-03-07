@@ -18,8 +18,9 @@ int main() {
     printf("  struct apth_cond_st:    %zu bytes\n", sizeof(struct apth_cond_st));
     
     printf("\nComponent sizes:\n");
-    printf("  lll_t:        %zu bytes\n", sizeof(lll_t));
-    printf("  struct list:  %zu bytes\n", sizeof(struct list));
+    printf("  lll_apth_t:     %zu bytes\n", sizeof(lll_apth_t));
+    printf("  lll_internal_t: %zu bytes\n", sizeof(lll_internal_t));
+    printf("  struct list:    %zu bytes\n", sizeof(struct list));
     
     printf("\nSize check results:\n");
     int all_ok = 1;

@@ -3,12 +3,13 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 
 struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 
 APTH_INTERNAL int apth_signal_system_init(void)
 {
-    lll_init(&APTH_GLOBAL_SIGACTIONS.lock);
+    lll_internal_init(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL init
 
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
@@ -172,9 +173,9 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
     if (sa->sa_flags & SA_RESETHAND)
     {
         struct sigaction dfl = {.sa_handler = SIG_DFL};
-        lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "__apth_inject_signal_handler");
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
         APTH_GLOBAL_SIGACTIONS.actions[sig] = dfl;
-        lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "__apth_inject_signal_handler");
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
     }
 
     // TODO: implement Plan B and give this function a conditional compilation option
@@ -182,7 +183,7 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
 
 APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
 {
-    lll_lock(&th->siglock, "deliver_pending");
+    lll_internal_lock(&th->siglock);  // NEW: Use Type 2 LLL
 
     // Fetch signals that in `pending & ~sigmask`
     for (int sig = 1; sig < APTH_NSIG; sig++)
@@ -197,9 +198,9 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         th->sigpendcnt--;
 
         // Search handler
-        lll_lock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_deliver_pending_signals");
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
         struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
-        lll_unlock(&APTH_GLOBAL_SIGACTIONS.lock, "apth_deliver_pending_signals");
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
 
         if (sa.sa_handler == SIG_IGN)
             continue; // this signal is ignored, skip
@@ -218,7 +219,7 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         __apth_inject_signal_handler(th, sig, &sa);
     }
 
-    lll_unlock(&th->siglock, "deliver_pending");
+    lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
 }
 
 // Process level pending signals, storing signals when all apths are blocking
@@ -316,13 +317,13 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 
         // Add to apth pending
         // sigdelset(&APTH_PROCESS_SIGPENDING, sig);
-        lll_lock(&target->siglock, "route_sig");
+        lll_internal_lock(&target->siglock);  // NEW: Use Type 2 LLL
         if (!sigismember(&target->sigpending, sig))
         {
             sigaddset(&target->sigpending, sig);
             target->sigpendcnt++;
         }
-        lll_unlock(&target->siglock, "route_sig");
+        lll_internal_unlock(&target->siglock);  // NEW: Use Type 2 LLL
     }
 }
 

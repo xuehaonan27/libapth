@@ -20,7 +20,9 @@ INLINE void set_belonging_queue_of(apth_t th, apth_thqueue_t q)
 INLINE size_t thqueue_size(apth_thqueue_t queue)
 {
     assert(queue != NULL);
-    return atomic_load_acquire(&queue->size);
+    // NEW: Size is no longer atomic, but reading without lock is acceptable
+    // for approximate size checks (e.g., work stealing heuristics)
+    return queue->size;
 }
 
 INLINE bool apth_is_in(apth_thqueue_t queue, apth_t th)

@@ -7,6 +7,7 @@
 #include "utils/list.h"
 #include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
 #include <string.h>
 #include <stdlib.h>
 
@@ -85,7 +86,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
     // Slow path: accessing a worker that's added later.
     apth_worker_t result = NULL;
 
-    lll_lock(&GLOBAL_POOL.pool_lock, "get_worker_by_id");
+    lll_internal_lock(&GLOBAL_POOL.pool_lock);
     FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
         apth_worker_t worker = apth_worker_t_list_entry(e);
@@ -95,7 +96,7 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
             break;
         }
     }
-    lll_unlock(&GLOBAL_POOL.pool_lock, "get_worker_by_id");
+    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
     return result;
 }
 
@@ -103,9 +104,9 @@ APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
 APTH_INTERNAL int worker_count(void)
 {
     int result;
-    lll_lock(&GLOBAL_POOL.pool_lock, "worker_count");
+    lll_internal_lock(&GLOBAL_POOL.pool_lock);
     result = GLOBAL_POOL.worker_count;
-    lll_unlock(&GLOBAL_POOL.pool_lock, "worker_count");
+    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
     return result;
 }
 
@@ -223,7 +224,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
         worker_ptr_mem[worker_cnt] = workers_mem;
     }
 
-    lll_init(&GLOBAL_POOL.pool_lock);
+    lll_internal_init(&GLOBAL_POOL.pool_lock);
     GLOBAL_POOL.init_worker_count = worker_cnt;
     GLOBAL_POOL.worker_count = wrkthrs_to_spwan;
     GLOBAL_POOL.worker_ptr_mem_start = worker_ptr_mem;
@@ -243,7 +244,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
 
     apth_debug("WORKER %d enter", cur_worker()->worker_id);
 
-    lll_lock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
+    lll_internal_lock(&GLOBAL_POOL.pool_lock);
     // FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
     {
         struct list_elem *e;
@@ -260,7 +261,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
                 return apth_error(drop_result, errno);
         }
     }
-    lll_unlock(&GLOBAL_POOL.pool_lock, "apth_global_scheduler_pool_drop");
+    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
 
     free(GLOBAL_POOL.worker_ptr_mem_start);
     WORKER_POOL_INITIALIZED = false;
@@ -274,13 +275,13 @@ APTH_INTERNAL int add_worker_thread(void)
     if ((new_worker = malloc(sizeof(struct apth_worker_st))) == NULL)
         return apth_error(-1, ENOMEM);
 
-    lll_lock(&GLOBAL_POOL.pool_lock, "add_worker_thread");
+    lll_internal_lock(&GLOBAL_POOL.pool_lock);
     int id = GLOBAL_POOL.worker_count;
     GLOBAL_POOL.worker_count += 1;
     int init_result;
     if ((init_result = apth_worker_init(new_worker, id)) != 0)
         return apth_error(-1, errno);
     list_push_back(&GLOBAL_POOL.wrkpthrs_list, &new_worker->elem);
-    lll_unlock(&GLOBAL_POOL.pool_lock, "add_worker_thread");
+    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
     return 0;
 }

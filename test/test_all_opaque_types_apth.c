@@ -14,6 +14,7 @@ void *test_thread(void *arg)
 }
 
 APTH_MAIN_BEGIN(argc, argv)
+{
     (void)argc;
     (void)argv;
 
@@ -89,4 +90,5 @@ APTH_MAIN_BEGIN(argc, argv)
     printf("===========================================\n");
 
     exit(0);
+}
 APTH_MAIN_END
