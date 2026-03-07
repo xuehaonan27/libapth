@@ -63,4 +63,33 @@
 #define ALIGNED(n)
 #endif
 
+#define INLINE static inline
+
+#if defined(_MSC_VER)
+#define INLINE_ALWAYS static __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define INLINE_ALWAYS static inline __attribute__((always_inline))
+#else
+#define INLINE_ALWAYS INLINE // fallback
+#endif
+
+#if defined(_MSC_VER)
+#define NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define NOINLINE __attribute__((noinline))
+#else
+#define NOINLINE
+#endif
+
+#ifdef APTH_CUR_USING_KEYWORD
+// C11 _Thread_local is preferred, but fall back to __thread if not available
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#define APTH_THREAD_LOCAL _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+#define APTH_THREAD_LOCAL __thread
+#else
+#error "APTH_CUR_USING_KEYWORD is defined but no thread-local storage keyword is available"
+#endif
+#endif
+
 #endif // __LIBAPTH_UTILS_ARCHPLATTOOLD_H

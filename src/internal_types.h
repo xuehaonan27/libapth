@@ -3,7 +3,6 @@
 // _GNU_SOURCE and _POSIX_C_SOURCE are defined via compiler flags in the Makefile
 // so that they take effect before any system header is included.
 #include "apth.h"
-// #include "common.h"
 #include "hook_libc/hooked_funcs.h"
 
 #include "utils/list.h"
@@ -24,6 +23,7 @@ extern _Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN;
 extern _Atomic(int) MAIN_APTH_EXITED;
 extern _Atomic(int) MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT;
 
+// ============================== Thread Events ==============================
 // Event status code
 typedef enum
 {
@@ -31,6 +31,115 @@ typedef enum
     APTH_EV_STATUS_OCCURRED,
     APTH_EV_STATUS_FAILED,
 } apth_ev_status_t;
+
+enum apth_event_type
+{
+    APTH_EVENT_TYPE_FD,
+    APTH_EVENT_TYPE_SELECT,
+    APTH_EVENT_TYPE_SIGS,
+    APTH_EVENT_TYPE_TIME,
+    APTH_EVENT_TYPE_MUTEX,
+    APTH_EVENT_TYPE_COND,
+    APTH_EVENT_TYPE_TID,
+    APTH_EVENT_TYPE_FUNC
+};
+
+// Waiting on FD
+struct apth_event_fd_st
+{
+    int fd;
+};
+
+// Waiting on Select FD I/O
+struct apth_event_select_st
+{
+    int *n;
+    int nfd;
+    fd_set *rfds;
+    fd_set *wfds;
+    fd_set *efds;
+};
+
+// Waiting on signals
+struct apth_event_sigs_st
+{
+    sigset_t *sigs;
+    int *sig;
+};
+
+// Waiting on Time
+struct apth_event_time_st
+{
+    apth_time_t tv;
+};
+
+// Waiting on Mutex (no fields needed; wakeup is handled directly by unlock)
+struct apth_event_mutex_st
+{
+    char _pad; // C requires non-empty struct
+};
+
+// Waiting on Conditional variables (no fields needed; wakeup is handled directly by signal/broadcast)
+struct apth_event_cond_st
+{
+    char _pad; // C requires non-empty struct
+};
+
+// Waiting on another thread
+struct apth_event_tid_st
+{
+    apth_t tid;
+};
+
+typedef bool (*apth_event_custom_func_t)(void *);
+// Waiting on custom functions
+struct apth_event_func_st
+{
+    apth_event_custom_func_t func;
+    void *arg;
+    apth_time_t tv;
+};
+
+typedef int apth_goal_t;
+/* event occurange restrictions */
+#define APTH_GOAL_UNTIL_OCCURRED _BIT(11)
+#define APTH_GOAL_UNTIL_FD_READABLE _BIT(12)
+#define APTH_GOAL_UNTIL_FD_WRITEABLE _BIT(13)
+#define APTH_GOAL_UNTIL_FD_EXCEPTION _BIT(14)
+#define APTH_GOAL_UNTIL_TID_NEW _BIT(15)
+#define APTH_GOAL_UNTIL_TID_READY _BIT(16)
+#define APTH_GOAL_UNTIL_TID_WAITING _BIT(17)
+#define APTH_GOAL_UNTIL_TID_DEAD _BIT(18)
+
+/* event structure handling modes */
+#define APTH_EVENT_MODE_REUSE _BIT(20)
+#define APTH_EVENT_MODE_CHAIN _BIT(21)
+#define APTH_EVENT_MODE_STATIC _BIT(22)
+
+// APTH Events
+struct apth_event_st
+{
+    struct list_elem elem;
+    apth_ev_status_t ev_status;
+    enum apth_event_type ev_type;
+    apth_goal_t ev_goal;
+    bool epoll_registered;
+    union
+    {
+        struct apth_event_fd_st FD;
+        struct apth_event_select_st SELECT;
+        struct apth_event_sigs_st SIGS;
+        struct apth_event_time_st TIME;
+        struct apth_event_mutex_st MUTEX;
+        struct apth_event_cond_st COND;
+        struct apth_event_tid_st TID;
+        struct apth_event_func_st FUNC;
+    } ev_args;
+#define apth_event_t_list_entry(LIST_ELEM) \
+    list_entry(LIST_ELEM, struct apth_event_st, elem)
+};
+typedef struct apth_event_st *apth_event_t;
+#define APTH_EVENT_NULL ((apth_event_t)NULL)
 
 //  ============================== Global actions==============================
 
@@ -135,11 +244,11 @@ static inline bool state_as_argument_is_valid(apth_state_t s)
     return state_is_committed(s); // lower 1 bit should be 0
 }
 
-APTH_INTERNAL apth_state_t queue_state_of(apth_t th);
-// The returned state might be uncommitted (meaning with invalid lower 1 bit set)
-APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
-APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg);
-APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
+// APTH_INTERNAL apth_state_t queue_state_of(apth_t th);
+// // The returned state might be uncommitted (meaning with invalid lower 1 bit set)
+// APTH_INTERNAL apth_state_t state_holder_of(apth_t th);
+// APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg);
+// APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check);
 
 // ============================== Scheduler Forward Declaration ==============================
 typedef int sched_id;
@@ -292,6 +401,14 @@ struct ALIGNED(8) apth_st
     /* event handling */
     struct list event_list; // events the tread is waiting for
 
+    // Embedded event structures to avoid malloc/free in common case
+    // Most apths wait on at most 1-2 events at a time (e.g., one FD read/write)
+    // For select/poll with many fds, we fall back to malloc
+    struct apth_event_st embedded_event_1;
+    struct apth_event_st embedded_event_2;
+    bool embedded_event_1_in_use;
+    bool embedded_event_2_in_use;
+
     /* per-thread signal handling */
     sigset_t sigpending;         // set of pending signals
     int sigpendcnt;              // number of pending signals
@@ -374,7 +491,7 @@ struct ALIGNED(8) apth_st
     apth_yield_reason_t yield_reason;
 };
 
-APTH_INTERNAL apth_sched_t sched_of(apth_t th);
+// APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 
 #define APTH_NULL ((apth_t)NULL)
 
@@ -400,117 +517,6 @@ APTH_INTERNAL apth_sched_t sched_of(apth_t th);
 // #define APTH_IS_VALID(t) (APTH_TID_IS_VALID(t) && APTH_TH_MAGIC_IS_GOOD(t))
 
 #define APTH_IS_VALID(t) (((t) != APTH_NULL) && APTH_TH_MAGIC_IS_GOOD(t))
-
-// ============================== Thread Events ==============================
-
-enum apth_event_type
-{
-    APTH_EVENT_TYPE_FD,
-    APTH_EVENT_TYPE_SELECT,
-    APTH_EVENT_TYPE_SIGS,
-    APTH_EVENT_TYPE_TIME,
-    APTH_EVENT_TYPE_MUTEX,
-    APTH_EVENT_TYPE_COND,
-    APTH_EVENT_TYPE_TID,
-    APTH_EVENT_TYPE_FUNC
-};
-
-// Waiting on FD
-struct apth_event_fd_st
-{
-    int fd;
-};
-
-// Waiting on Select FD I/O
-struct apth_event_select_st
-{
-    int *n;
-    int nfd;
-    fd_set *rfds;
-    fd_set *wfds;
-    fd_set *efds;
-};
-
-// Waiting on signals
-struct apth_event_sigs_st
-{
-    sigset_t *sigs;
-    int *sig;
-};
-
-// Waiting on Time
-struct apth_event_time_st
-{
-    apth_time_t tv;
-};
-
-// Waiting on Mutex (no fields needed; wakeup is handled directly by unlock)
-struct apth_event_mutex_st
-{
-    char _pad; // C requires non-empty struct
-};
-
-// Waiting on Conditional variables (no fields needed; wakeup is handled directly by signal/broadcast)
-struct apth_event_cond_st
-{
-    char _pad; // C requires non-empty struct
-};
-
-// Waiting on another thread
-struct apth_event_tid_st
-{
-    apth_t tid;
-};
-
-typedef bool (*apth_event_custom_func_t)(void *);
-// Waiting on custom functions
-struct apth_event_func_st
-{
-    apth_event_custom_func_t func;
-    void *arg;
-    apth_time_t tv;
-};
-
-typedef int apth_goal_t;
-/* event occurange restrictions */
-#define APTH_GOAL_UNTIL_OCCURRED _BIT(11)
-#define APTH_GOAL_UNTIL_FD_READABLE _BIT(12)
-#define APTH_GOAL_UNTIL_FD_WRITEABLE _BIT(13)
-#define APTH_GOAL_UNTIL_FD_EXCEPTION _BIT(14)
-#define APTH_GOAL_UNTIL_TID_NEW _BIT(15)
-#define APTH_GOAL_UNTIL_TID_READY _BIT(16)
-#define APTH_GOAL_UNTIL_TID_WAITING _BIT(17)
-#define APTH_GOAL_UNTIL_TID_DEAD _BIT(18)
-
-/* event structure handling modes */
-#define APTH_EVENT_MODE_REUSE _BIT(20)
-#define APTH_EVENT_MODE_CHAIN _BIT(21)
-#define APTH_EVENT_MODE_STATIC _BIT(22)
-
-// APTH Events
-struct apth_event_st
-{
-    struct list_elem elem;
-    apth_ev_status_t ev_status;
-    enum apth_event_type ev_type;
-    apth_goal_t ev_goal;
-    bool epoll_registered;
-    union
-    {
-        struct apth_event_fd_st FD;
-        struct apth_event_select_st SELECT;
-        struct apth_event_sigs_st SIGS;
-        struct apth_event_time_st TIME;
-        struct apth_event_mutex_st MUTEX;
-        struct apth_event_cond_st COND;
-        struct apth_event_tid_st TID;
-        struct apth_event_func_st FUNC;
-    } ev_args;
-#define apth_event_t_list_entry(LIST_ELEM) \
-    list_entry(LIST_ELEM, struct apth_event_st, elem)
-};
-typedef struct apth_event_st *apth_event_t;
-#define APTH_EVENT_NULL NULL
 
 // ============================== Thread Attr ==============================
 // Thread attributes

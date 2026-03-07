@@ -127,14 +127,11 @@ APTH_DEFINE_HOOK(ssize_t, writev,
     int tiovcnt;
 
 #define APTH_WRITEV_TIOV_STACK_SIZE (sizeof(tiov_stack) / sizeof(tiov_stack[0]))
-
-    // if (iovcnt > (int)sizeof(tiov_stack))
     if (iovcnt > (int)APTH_WRITEV_TIOV_STACK_SIZE)
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
         {
-            // apth_shield { apth_fdmode(fd, fdmode); }
             apth_fd_release(fd);
             return apth_error(-1, errno);
         }

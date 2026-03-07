@@ -163,8 +163,3 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
 
     return;
 }
-
-APTH_INTERNAL apth_sched_t sched_of(apth_t th)
-{
-    return belonging_queue_of(th, "sched_of")->sched;
-}

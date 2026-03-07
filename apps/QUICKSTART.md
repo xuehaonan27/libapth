@@ -39,6 +39,7 @@ make apps
 ./apps/run_http_client.sh [host] [port] [threads] [requests]
 # Example: ./apps/run_http_client.sh localhost 8080 10 100
 # Example: ./apps/run_http_client_pthread.sh localhost 8080 10 100
+# perf record -g -- ./apps/run_http_client.sh localhost 8080 10 1000
 ```
 
 #### File Processor

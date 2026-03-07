@@ -60,9 +60,9 @@ APTH_DEFINE_HOOK(
     if (!apth_util_fd_valid(fd))
         return apth_error(-1, EBADF);
 
-    // Force filedescriptor into non-blocking mode
-    int fdmode;
-    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+    // Acquire fd and set to non-blocking mode (no fcntl in hot path)
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Try to connect
@@ -70,16 +70,16 @@ APTH_DEFINE_HOOK(
     while ((rv = apth_func_raw(connect)(fd, (struct sockaddr *)addr, length)) == -1 && errno == EINTR)
         ;
 
-    // Restore filedescriptor mode
-    apth_shield { apth_fdmode(fd, fdmode); }
-
     // If it is still on progress wait until socket is really writeable
-    if (rv == -1 && errno == EINPROGRESS && fdmode != APTH_FDMODE_NONBLOCK)
+    if (rv == -1 && errno == EINPROGRESS && orig_mode != APTH_FDMODE_NONBLOCK)
     {
         apth_event_t ev;
         ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
         if (ev == NULL)
+        {
+            apth_fd_release(fd);
             return apth_error(-1, errno);
+        }
         apth_wait_event(ev);
         apth_event_free(ev);
 
@@ -87,11 +87,20 @@ APTH_DEFINE_HOOK(
         socklen_t errlen;
         errlen = sizeof(err);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen) == -1)
+        {
+            apth_fd_release(fd);
             return -1;
+        }
+
+        apth_fd_release(fd);
+
         if (err == 0)
             return 0;
         return apth_error(rv, err);
     }
+
+    // Release fd (just decrements refcount, no fcntl)
+    apth_fd_release(fd);
 
     apth_debug("apth_func_connect: leave to thread \"%s\"", cur->name);
     return rv;
@@ -109,34 +118,43 @@ APTH_DEFINE_HOOK(int, accept,
     if (!apth_util_fd_valid(fd))
         return apth_error(-1, EBADF);
 
-    // Force filedescriptor into non-blocking mode
-    int fdmode;
-    if ((fdmode = apth_fdmode(fd, APTH_FDMODE_NONBLOCK)) == APTH_FDMODE_ERROR)
+    // Acquire fd and set to non-blocking mode (no fcntl in hot path)
+    int orig_mode = apth_fd_acquire(fd);
+    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Poll socket via accept
-    apth_event_t ev = APTH_EVENT_NULL;
     int rv;
-    while ((rv = apth_func_raw(accept)(fd, addr, length)) == -1 &&
-           (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) &&
-           fdmode != APTH_FDMODE_NONBLOCK)
+    for (;;)
     {
-        // Do lazy event allocation
-        ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-        if (ev == APTH_EVENT_NULL)
-            return apth_error(-1, errno);
-        // Wait until accept has a chance
-        apth_wait_event(ev);
-        apth_event_free(ev);
+        while ((rv = apth_func_raw(accept)(fd, addr, length)) == -1 && errno == EINTR)
+            ;
+
+        // EAGAIN / EWOULDBLOCK: no pending connections
+        if (rv == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
+            if (ev == APTH_EVENT_NULL)
+            {
+                apth_fd_release(fd);
+                return apth_error(-1, errno);
+            }
+            // Wait until accept has a chance
+            apth_wait_event(ev);
+            apth_event_free(ev);
+            continue;
+        }
+
+        // rv >= 0 (new connection) or rv < 0 (real error)
+        break;
     }
 
-    // Restore filedescriptor mode
-    apth_shield
-    {
-        apth_fdmode(fd, fdmode);
-        if (rv != -1)
-            apth_fdmode(rv, fdmode);
-    }
+    // Release listening fd (just decrements refcount, no fcntl)
+    apth_fd_release(fd);
+
+    // Register the newly accepted connection fd
+    if (rv != -1)
+        apth_fd_register(rv);
 
     apth_debug("apth_func_accept: leave to thread \"%s\"", cur->name);
     return rv;

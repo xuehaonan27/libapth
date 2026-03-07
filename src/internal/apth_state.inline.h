@@ -1,19 +1,30 @@
+#ifndef __LIBAPTH_INTERNAL_APTH_STATE_INLINE_H
+#define __LIBAPTH_INTERNAL_APTH_STATE_INLINE_H
+
 #include "internal_types.h"
-#include "internal_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/archplattoold.h"
+#include "internal/apth_worker.inline.h"
+#include "internal/apth_thqueue.inline.h"
+#include "utils/lll.inline.h"
 
-APTH_INTERNAL apth_state_t queue_state_of(apth_t th)
+INLINE apth_sched_t sched_of(apth_t th)
+{
+    return belonging_queue_of(th, "sched_of")->sched;
+}
+
+INLINE apth_state_t queue_state_of(apth_t th)
 {
     return belonging_queue_of(th, "queue_state_of")->th_state;
 }
 
-APTH_INTERNAL apth_state_t state_holder_of(apth_t th)
+INLINE apth_state_t state_holder_of(apth_t th)
 {
     return atomic_load_acquire(&th->state_holder);
 }
 
-APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg)
+INLINE void submit_desired_state_to(apth_t th, apth_state_t desired_state, const char *dbg_msg)
 {
     assert(state_as_argument_is_valid(desired_state));
 
@@ -26,7 +37,7 @@ APTH_INTERNAL void submit_desired_state_to(apth_t th, apth_state_t desired_state
     atomic_store_release(&th->state_holder, make_state_uncommitted(desired_state));
 }
 
-APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
+INLINE void commit_state_of(apth_t th, apth_state_t check)
 {
     // th: the apth whose state is to be committed
     // check: check that the state of `th` that's to be committed should
@@ -87,3 +98,5 @@ APTH_INTERNAL void commit_state_of(apth_t th, apth_state_t check)
         apth_func_raw(exit)(127);
     }
 }
+
+#endif // __LIBAPTH_INTERNAL_APTH_STATE_INLINE_H

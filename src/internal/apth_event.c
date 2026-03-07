@@ -1,6 +1,8 @@
 #include "common.h"
 #include "internal_funcs.h"
 #include "internal_types.h"
+#include "internal/apth_worker.inline.h"
+#include "utils/lll.inline.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -210,7 +212,7 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         slot->registered = false;
         list_remove(&slot->elem);
         sched->active_fd_count--;
-        slot->aggregate_events = 0;
+        slot->aggregate_events = 0; // This cost much!
     }
     else if (waked > 0)
     {
@@ -592,9 +594,20 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         // ==================== Phase 2: epoll_wait handle I/O events ====================
 
         int timeout_ms;
-        if (dopoll)
+        // OPTIMIZATION: Even if we have ready work (dopoll=true), still check I/O
+        // with a very short timeout if there are active FDs waiting. This prevents
+        // busy-waiting and allows I/O to complete while we have work to do.
+        // The key insight: checking I/O with timeout=0 is cheap (just a syscall),
+        // and it can wake up blocked threads immediately.
+        if (dopoll && sched->active_fd_count > 0)
         {
+            // Quick poll for I/O even when we have ready work
             timeout_ms = 0;
+        }
+        else if (dopoll)
+        {
+            // Ready work but no I/O to check, skip epoll entirely
+            timeout_ms = -1; // Signal to skip epoll_wait
         }
         else if (has_timer)
         {
@@ -611,12 +624,13 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         {
             // No timer, no active FDs: block briefly so we don't busy-spin.
             // The wake_eventfd will interrupt us if new work arrives.
-            timeout_ms = dopoll ? 0 : 10;
+            timeout_ms = 10;
         }
 
         // Call epoll_wait whenever we have FDs to watch, a timer to honor,
         // or we need to block while idle (wake_eventfd is always registered).
-        if (sched->active_fd_count > 0 || has_timer || !dopoll)
+        // Skip epoll_wait only if timeout_ms == -1 (dopoll=true with no active FDs)
+        if (timeout_ms >= 0 && (sched->active_fd_count > 0 || has_timer || !dopoll))
         {
             struct epoll_event ep_events[64];
             int nready = epoll_wait(sched->epoll_fd, ep_events, 64, timeout_ms);
@@ -627,7 +641,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 for (int i = 0; i < nready; i++)
                 {
                     int ready_fd = ep_events[i].data.fd;
-                    uint32_t revents = ep_events[i].events;
+                    uint32_t revents = ep_events[i].events; // This cost much!
 
                     // Drain the wake eventfd (used to interrupt idle epoll_wait).
                     // Just consume the counter; no apth needs to be woken for it.
@@ -733,14 +747,34 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 
 static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
 {
-    // TODO: use spec
+    // Try to use embedded events from the current thread first
+    apth_t cur = cur_apth();
+    apth_event_t ev = NULL;
 
-    apth_event_t ev;
-    ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
-    // TODO: profile average thread holding events and prepare a preallocated event structure pool
+    if (cur != NULL && cur != APTH_FAKE_SCHED(cur_sched()))
+    {
+        // Try embedded_event_1 first
+        if (!cur->embedded_event_1_in_use)
+        {
+            cur->embedded_event_1_in_use = true;
+            ev = &cur->embedded_event_1;
+        }
+        // Try embedded_event_2 if first is in use
+        else if (!cur->embedded_event_2_in_use)
+        {
+            cur->embedded_event_2_in_use = true;
+            ev = &cur->embedded_event_2;
+        }
+    }
 
+    // If both embedded events are in use or no thread context, fall back to malloc
+    // This happens for select/poll with many fds, or when called from scheduler context
     if (ev == NULL)
-        return apth_error(APTH_EVENT_NULL, errno);
+    {
+        ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
+        if (ev == NULL)
+            return apth_error(APTH_EVENT_NULL, errno);
+    }
 
     // Initialize common ingredients
     ev->ev_status = APTH_EV_STATUS_PENDING;
@@ -858,6 +892,23 @@ APTH_INTERNAL bool apth_event_free(apth_event_t ev)
     if (ev == NULL)
         return apth_error(false, EINVAL);
 
+    // Check if this is an embedded event from the current thread
+    apth_t cur = cur_apth();
+    if (cur != NULL && cur != APTH_FAKE_SCHED(cur_sched()))
+    {
+        if (ev == &cur->embedded_event_1)
+        {
+            cur->embedded_event_1_in_use = false;
+            return true;
+        }
+        else if (ev == &cur->embedded_event_2)
+        {
+            cur->embedded_event_2_in_use = false;
+            return true;
+        }
+    }
+
+    // Not an embedded event, must be malloc'd - free it
     free(ev);
     return true;
 }

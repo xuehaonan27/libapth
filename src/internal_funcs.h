@@ -3,14 +3,16 @@
 
 #include "internal_types.h"
 #include "utils/archplattoold.h"
+#include "internal/apth_state.inline.h"
+#include "internal/apth_thqueue.inline.h"
 
-APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg);
-APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q);
+// APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg);
+// APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q);
 APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue, apth_sched_t sched, apth_state_t state);
-APTH_INTERNAL size_t thqueue_size(apth_thqueue_t queue);
+// APTH_INTERNAL size_t thqueue_size(apth_thqueue_t queue);
 APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue);
-APTH_INTERNAL bool apth_is_in(apth_thqueue_t queue, apth_t th);
+// APTH_INTERNAL bool apth_is_in(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th);
 APTH_INTERNAL void drain_thqueue(apth_thqueue_t queue, drain_thqueue_th_func fn);
 APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to);
@@ -20,17 +22,10 @@ APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func f
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux);
 
 // ============================== Worker ==============================
-
 APTH_INTERNAL void worker_key_t_init(void);
 APTH_INTERNAL void worker_key_t_drop(void);
 APTH_INTERNAL void sched_key_t_init(void);
 APTH_INTERNAL void sched_key_t_drop(void);
-APTH_INTERNAL apth_worker_t cur_worker(void);
-APTH_INTERNAL void set_cur_worker(apth_worker_t worker);
-APTH_INTERNAL apth_sched_t cur_sched(void);
-APTH_INTERNAL void set_cur_sched(apth_sched_t sched);
-APTH_INTERNAL apth_t cur_apth(void);
-APTH_INTERNAL void set_cur_apth(apth_t t);
 APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id);
 APTH_INTERNAL int worker_count(void);
 APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers);
@@ -144,11 +139,13 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
                                        fd_set *ifds1, fd_set *ofds1,
                                        fd_set *ifds2, fd_set *ofds2,
                                        fd_set *ifds3, fd_set *ofds3);
-APTH_INTERNAL int apth_fdmode(int fd, int newmode);
 
 // Returns 0 if ST is a valid stack size for a thread stack and EINVAL otherwise.
 APTH_INTERNAL int check_stacksize_attr(size_t st);
 
 int apth_apth_exists(apth_t t);
+
+#include "utils/lll.inline.h"
+#include "utils/list.inline.h"
 
 #endif /* __LIBAPTH_INTERNAL_FUNCS_H */

@@ -4,19 +4,6 @@
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 
-APTH_INTERNAL apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg)
-{
-    apth_thqueue_t q = atomic_load_acquire(&th->belongs_to_queue);
-    assert_msg(q != NULL, "calling belonging_queue_of from: %s", dbg_msg);
-    return q;
-}
-
-APTH_INTERNAL void set_belonging_queue_of(apth_t th, apth_thqueue_t q)
-{
-    atomic_store_release(&th->belongs_to_queue, q);
-    // atomic_store_seqcst(&th->belongs_to_queue, q);
-}
-
 APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, apth_state_t state)
 {
     apth_thqueue_t queue;
@@ -32,12 +19,6 @@ APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, a
     atomic_store_release(&queue->size, 0);
 
     *queue_ptr = queue;
-}
-
-APTH_INTERNAL size_t thqueue_size(apth_thqueue_t queue)
-{
-    assert(queue != NULL);
-    return atomic_load_acquire(&queue->size);
 }
 
 APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
@@ -78,12 +59,6 @@ APTH_INTERNAL apth_t pop_apth_from(apth_thqueue_t queue)
     lll_unlock(&queue->th_list_lock, "pop_apth_from");
 
     return th;
-}
-
-APTH_INTERNAL bool apth_is_in(apth_thqueue_t queue, apth_t th)
-{
-    assert(queue != NULL);
-    return (belonging_queue_of(th, "apth_is_in") == queue);
 }
 
 APTH_INTERNAL void remove_apth_from(apth_thqueue_t queue, apth_t th)
@@ -141,15 +116,17 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
 
     // First we should remove `th` from `from`
     lll_lock(&from->th_list_lock, "transfer_th locking from");
+    lll_lock(&to->th_list_lock, "transfer_th locking to");
     if (list_empty(&from->th_list))
     {
         assert(from->size == 0);
+        lll_unlock(&to->th_list_lock, "transfer_th locking to");
         lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
         return th;
     }
     e = list_pop_front(&from->th_list);
     from->size -= 1;
-    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
+    // lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
 
     th = apth_t_list_entry(e);
     assert(APTH_IS_VALID(th));
@@ -159,7 +136,7 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
     submit_desired_state_to(th, to->th_state, dbg_msg);
 
     // Then we should push `th` to `to`
-    lll_lock(&to->th_list_lock, "transfer_th locking to");
+    // lll_lock(&to->th_list_lock, "transfer_th locking to");
     if (insert_from_front)
         list_push_front(&to->th_list, &th->elem);
     else
@@ -169,6 +146,7 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
     // Till now, state of `th` should still be former value
     commit_state_of(th, to->th_state);
     lll_unlock(&to->th_list_lock, "transfer_th unlocking to");
+    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
 
     return th;
 }
@@ -183,18 +161,20 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
 
     // First we should remove `th` from `from`
     lll_lock(&from->th_list_lock, "transfer_th locking from");
+    lll_lock(&to->th_list_lock, "transfer_th locking to");
     list_remove(&th->elem);
     from->size -= 1;
-    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
+    // lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
 
     // submit_desired_state_to(th, to->th_state);
 
     // Then we should push `th` to `to`
-    lll_lock(&to->th_list_lock, "transfer_th locking to");
+    // lll_lock(&to->th_list_lock, "transfer_th locking to");
     list_push_back(&to->th_list, &th->elem);
     to->size += 1;
     set_belonging_queue_of(th, to);
     commit_state_of(th, to->th_state);
+    lll_unlock(&from->th_list_lock, "transfer_th unlocking from");
     lll_unlock(&to->th_list_lock, "transfer_th unlocking to");
 }
 

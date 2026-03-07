@@ -16,8 +16,10 @@ void apth_cleanup_push(void (*func)(void *), void *arg)
         // return apth_error(void, EINVAL);
         errno = EINVAL;
     if ((cleanup = (apth_cleanup_t)malloc(sizeof(struct apth_cleanup_st))) == NULL)
-        // return apth_error(false, ENOMEM);
+    {
         errno = ENOMEM;
+        return;
+    }
     cleanup->func = func;
     cleanup->arg = arg;
     cleanup->next = cur->cleanups;

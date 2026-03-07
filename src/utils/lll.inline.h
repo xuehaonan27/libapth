@@ -1,9 +1,23 @@
+#ifndef __LIBAPTH_UTILS_LLL_INLINE_H
+#define __LIBAPTH_UTILS_LLL_INLINE_H
+
 #include "lll.h"
-#include "atomic_wrapper.h"
-#include "archplattoold.h"
-#include "internal_funcs.h"
+#include <stdint.h>
+#include <stdatomic.h>
 #include "internal_types.h"
-#include "debug.h"
+#include "internal/apth_worker.inline.h"
+#include "utils/archplattoold.h"
+#include "utils/atomic_wrapper.h"
+INLINE apth_sched_t sched_of(apth_t th);
+INLINE_ALWAYS void lll_init(lll_t *lock)
+{
+    atomic_init(&lock->inner, LLL_NOT_ACQUIRED);
+}
+
+INLINE_ALWAYS uintptr_t lll_peek_val(lll_t *lock)
+{
+    return atomic_load_acquire(&lock->inner);
+}
 
 #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
 #ifdef APTH_DEBUG_LLL_USING_FPRINTF
@@ -15,20 +29,14 @@
 #define lll_debug(...) (void)__dummy_holder__(NULL, __VA_ARGS__)
 #endif // APTH_DEBUG && APTH_DEBUG_LLL
 
-APTH_INTERNAL void lll_init(lll_t *lock)
-{
-    atomic_init(&lock->inner, LLL_NOT_ACQUIRED);
-}
-
-APTH_INTERNAL uintptr_t lll_peek_val(lll_t *lock)
-{
-    return atomic_load_acquire(&lock->inner);
-}
-
-APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
+#if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
+INLINE_ALWAYS void __lll_lock(lll_t *lock, const char *from)
 {
     lll_debug("entered lll_lock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
-
+#else
+INLINE_ALWAYS void __lll_lock(lll_t *lock)
+{
+#endif
     apth_sched_t caller_sched = cur_sched();
     apth_worker_t caller_worker = cur_worker();
     apth_t self = caller_sched->cur;
@@ -73,7 +81,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
         assert(self != NULL);
         if (APTH_IS_FAKE_SCHED(self))
         {
-            apth_sched_t self_sched = APTH_DECODE_FAKE_SCHED(self);
+            apth_sched_t self_sched = (apth_sched_t)APTH_DECODE_FAKE_SCHED(self);
             assert(self_sched == caller_sched);
             // apth_worker_t self_worker = self_sched->worker;
 
@@ -81,7 +89,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             if (APTH_IS_FAKE_SCHED(oldval))
             {
                 // The owner is also a scheduler, so spin here, since the owner will release soon.
-                apth_sched_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+                apth_sched_t owner = (apth_sched_t)APTH_DECODE_FAKE_SCHED(oldval);
                 assert(owner != self_sched);
                 sched_yield();
                 continue;
@@ -90,7 +98,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             {
                 // The owner is a robbed apth, meaning the actual holder is
                 // a scheduler.
-                apth_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+                apth_t owner = (apth_t)APTH_DECODE_FAKE_SCHED(oldval);
                 // apth_worker_t owner_worker = owner->worker;
                 // apth_sched_t robber = owner_worker->sched;
                 apth_sched_t robber = sched_of(owner);
@@ -174,7 +182,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
                 // The owner is a scheduler, so spin here, since the owner will release soon.
                 // NOTE: but we could also yield the control to our scheduler here though.
 
-                apth_sched_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+                apth_sched_t owner = (apth_sched_t)APTH_DECODE_FAKE_SCHED(oldval);
 
                 // If the owner is my scheduler, it's considered an error, the scheduler
                 // is programmed wrong.
@@ -186,7 +194,7 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
             {
                 // The owner is a robbed apth, meaning the actual holder is
                 // a scheduler.
-                apth_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+                apth_t owner = (apth_t)APTH_DECODE_FAKE_SCHED(oldval);
                 apth_sched_t robber = sched_of(owner);
 
                 if (robber == self_sched)
@@ -235,10 +243,14 @@ APTH_INTERNAL void lll_lock(lll_t *lock, const char *from)
     }
 }
 
-APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
+#if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
+INLINE_ALWAYS void __lll_unlock(lll_t *lock, const char *from)
 {
     lll_debug("entered lll_unlock %p (%lx) from=%s", lock, *(uintptr_t *)lock, from);
-
+#else
+INLINE_ALWAYS void __lll_unlock(lll_t *lock)
+{
+#endif
     assert_msg(*(uintptr_t *)lock != 0, "INSANE");
 
     apth_sched_t sched = cur_sched();
@@ -249,13 +261,14 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
     _Atomic uintptr_t *inner = &lock->inner;
 
     // Load the current lock value
+    // TODO: this statement costs much!
     uintptr_t oldval = atomic_load_acquire(inner);
 
     if (APTH_IS_FAKE_SCHED(self))
     {
         // We are a scheduler
         lll_debug("self=%p", self);
-        apth_sched_t decoded_sched = APTH_DECODE_FAKE_SCHED(self);
+        apth_sched_t decoded_sched = (apth_sched_t)APTH_DECODE_FAKE_SCHED(self);
         assert_msg(decoded_sched == sched, "self=%p, sched=%p", decoded_sched, sched);
         apth_worker_t self_worker = decoded_sched->worker;
         (void)self_worker; // TODO: make compiler happy, may remove this later
@@ -263,7 +276,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
         if (APTH_IS_FAKE_SCHED(oldval))
         {
             // The owner is also an scheduler, good.
-            apth_sched_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+            apth_sched_t owner = (apth_sched_t)APTH_DECODE_FAKE_SCHED(oldval);
             if (decoded_sched != owner)
             {
                 lll_debug("decoded_sched=%p owner=%p", decoded_sched, owner);
@@ -272,6 +285,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             assert(decoded_sched == owner);
             // FIX: Use CAS to ensure atomicity
             uintptr_t expected = oldval;
+            // TODO: this cost much!
             if (!atomic_compare_exchange_strong(inner, &expected, LLL_NOT_ACQUIRED))
             {
                 // Lock state changed unexpectedly
@@ -282,7 +296,7 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
         else if (APTH_LLL_IS_ROBBED(oldval))
         {
             // The LLL is robbed.
-            apth_t owner = APTH_DECODE_FAKE_SCHED(oldval);
+            apth_t owner = (apth_t)APTH_DECODE_FAKE_SCHED(oldval);
             // apth_worker_t owner_worker = owner->worker;
             // apth_sched_t robber = owner_worker->sched;
             apth_sched_t robber = sched_of(owner);
@@ -291,6 +305,8 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
             // Give the lock back to the apth that should have hold it
             // FIX: Use CAS to ensure atomicity
             uintptr_t expected = oldval;
+
+            // TODO: this cost much!
             if (!atomic_compare_exchange_strong(inner, &expected, (uintptr_t)owner))
             {
                 // Lock state changed unexpectedly
@@ -351,3 +367,13 @@ APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from)
         }
     }
 }
+
+#if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
+#define lll_lock(LOCK, FROM) __lll_lock(LOCK, FROM)
+#define lll_unlock(LOCK, FROM) __lll_unlock(LOCK, FROM)
+#else
+#define lll_lock(LOCK, FROM) __lll_lock(LOCK)
+#define lll_unlock(LOCK, FROM) __lll_unlock(LOCK)
+#endif
+
+#endif // __LIBAPTH_UTILS_LLL_INLINE_H

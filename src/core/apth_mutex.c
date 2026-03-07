@@ -2,7 +2,6 @@
 #include "internal_types.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
-#include <malloc.h>
 
 // ==================== Mutex Attributes ====================
 

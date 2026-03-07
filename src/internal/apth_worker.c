@@ -1,6 +1,8 @@
 #include "internal_types.h"
 #include "internal_funcs.h"
 
+#include "apth_worker.inline.h"
+
 #include "utils/debug.h"
 #include "utils/list.h"
 #include "utils/apth_sysutils.h"
@@ -15,27 +17,13 @@ struct apth_global_scheduler_pool GLOBAL_POOL;
 _Atomic(unsigned int) WORKER_SPAWNED = 0x7FFFFFFF;
 _Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
-// TLS implementation selection:
-// - If APTH_CUR_USING_KEYWORD is defined, use _Thread_local/__thread for faster access
-// - Otherwise, use pthread_getspecific/pthread_setspecific for compatibility
 #ifdef APTH_CUR_USING_KEYWORD
-
-// C11 _Thread_local is preferred, but fall back to __thread if not available
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
-#define APTH_THREAD_LOCAL _Thread_local
-#elif defined(__GNUC__) || defined(__clang__)
-#define APTH_THREAD_LOCAL __thread
-#else
-#error "APTH_CUR_USING_KEYWORD is defined but no thread-local storage keyword is available"
-#endif
-
-static APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
-static APTH_THREAD_LOCAL apth_sched_t __cur_sched_tls = NULL;
-
+APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
+APTH_THREAD_LOCAL apth_sched_t __cur_sched_tls = NULL;
 #else
 // Use pthread TLS API
-static pthread_key_t __CUR_WORKER_KEY;
-static pthread_key_t __CUR_SCHED_KEY;
+pthread_key_t __CUR_WORKER_KEY;
+pthread_key_t __CUR_SCHED_KEY;
 
 static void worker_key_t_destr_fn(void *) { /* nop */ }
 static void sched_key_t_destr_fn(void *) { /* nop */ }
@@ -81,55 +69,6 @@ void sched_key_t_drop(void)
     int result = apth_func_raw(pthread_key_delete)(__CUR_SCHED_KEY);
     assert_msg(result == 0, "fail pthread_key_delete");
 #endif
-}
-
-APTH_INTERNAL apth_worker_t cur_worker(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    return __cur_worker_tls;
-#else
-    return (apth_worker_t)apth_func_raw(pthread_getspecific)(__CUR_WORKER_KEY);
-#endif
-}
-
-APTH_INTERNAL void set_cur_worker(apth_worker_t worker)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    __cur_worker_tls = worker;
-#else
-    int result = apth_func_raw(pthread_setspecific)(__CUR_WORKER_KEY, worker);
-    assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
-#endif
-}
-
-APTH_INTERNAL apth_sched_t cur_sched(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    return __cur_sched_tls;
-#else
-    return (apth_sched_t)apth_func_raw(pthread_getspecific)(__CUR_SCHED_KEY);
-#endif
-}
-
-APTH_INTERNAL void set_cur_sched(apth_sched_t sched)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    __cur_sched_tls = sched;
-#else
-    int result = apth_func_raw(pthread_setspecific)(__CUR_SCHED_KEY, sched);
-    assert_msg(result == 0, "fail pthread_setspecific result = %d (%s)", result, strerror(result));
-#endif
-}
-
-APTH_INTERNAL apth_t cur_apth(void)
-{
-    return cur_sched()->cur;
-}
-
-APTH_INTERNAL void set_cur_apth(apth_t t)
-{
-    assert(t != APTH_NULL);
-    cur_sched()->cur = t;
 }
 
 // Get worker by `worker_id`

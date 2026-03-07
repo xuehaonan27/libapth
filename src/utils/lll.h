@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 #include <stdatomic.h>
+#include "internal_types.h"
 #include "utils/archplattoold.h"
+#include "utils/atomic_wrapper.h"
 
 /**
  * Low-level locks use a combination of atomic operations (to acquire and
@@ -43,15 +45,5 @@ typedef struct lowlevellock
 #define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & APTH_FAKE_SCHED_MARK_IN_PLACE) != 0)
 #define APTH_DECODE_FAKE_SCHED(val) ((void *)((uintptr_t)(val) & APTH_LLL_POINTER_MASK_IN_PLACE))
 #define APTH_LLL_IS_ROBBED(val) (((uintptr_t)(val) & APTH_LLL_ROBBED_MARK_IN_PLACE) != 0)
-
-APTH_INTERNAL void lll_init(lll_t *lock);
-APTH_INTERNAL uintptr_t lll_peek_val(lll_t *lock);
-// #if defined(APTH_DEBUG) && defined(APTH_DEBUG_LLL)
-APTH_INTERNAL void lll_lock(lll_t *lock, const char *from);
-APTH_INTERNAL void lll_unlock(lll_t *lock, const char *from);
-// #else  // APTH_DEBUG_LLL
-// APTH_INTERNAL void lll_lock(lll_t *lock);
-// APTH_INTERNAL void lll_unlock(lll_t *lock);
-// #endif // APTH_DEBUG_LLL
 
 #endif // __LIBAPTH_UTILS_LLL_H

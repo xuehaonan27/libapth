@@ -134,11 +134,9 @@ APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, in
 APTH_EXPOSE_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 APTH_EXPOSE_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
                             const void *option_value, socklen_t option_len)
-// APTH_EXPOSE_DECLARE_SYSCALL(int, fcntl, int fildes, int cmd, ...)
 APTH_EXPOSE_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
 APTH_EXPOSE_DECLARE_SYSCALL(int, unsetenv, const char *n)
 APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
-// APTH_EXPOSE_DECLARE_SYSCALL(struct hostent *, gethostbyname, const char *name)
 
 #undef APTH_EXPOSE_DECLARE_SYSCALL
 
