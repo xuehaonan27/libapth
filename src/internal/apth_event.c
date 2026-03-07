@@ -649,7 +649,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     {
                         // Drain the wake eventfd counter so it becomes non-readable again.
                         uint64_t val;
-                        ssize_t __ignored = read(sched->wake_eventfd, &val, sizeof(val));
+                        ssize_t __ignored = apth_func_raw(read)(sched->wake_eventfd, &val, sizeof(val));
                         (void)__ignored;
                         continue;
                     }

@@ -158,7 +158,7 @@ APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
     {
         uint64_t val = 1;
         // Ignore errors: the scheduler may already be awake, or shutting down.
-        ssize_t __ignored = write(sched->wake_eventfd, &val, sizeof(val));
+        ssize_t __ignored = apth_func_raw(write)(sched->wake_eventfd, &val, sizeof(val));
         (void)__ignored;
     }
 }
