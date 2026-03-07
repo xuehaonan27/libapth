@@ -1,6 +1,4 @@
-#include "apth.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_attr.h"
 #include "utils/apth_errno.h"
 
 int apth_attr_getaffinity_np(const apth_attr_t *attr, size_t cpusetsize, cpu_set_t *cpuset)

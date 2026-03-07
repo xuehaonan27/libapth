@@ -1,8 +1,10 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth_cleanup.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
 #include "utils/debug.h"
-#include <stdlib.h>
+#include <stdbool.h>
+#include <malloc.h>
 
 static void apth_cleanup_popall(apth_t t, bool execute)
 {

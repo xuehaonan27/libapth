@@ -1,6 +1,13 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <signal.h>
+
 #include "hook_libc/hook_lowlevel_io.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_event.h"
+#include "internal/apth_tcb.h"
+#include "utils/list.inline.h"
 
 APTH_DEFINE_HOOK(
     int, select,
@@ -8,7 +15,7 @@ APTH_DEFINE_HOOK(
     (nfd, rfds, wfds, efds, timeout))
 {
     apth_event_t ev;
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_select(hooked): called from thread \"%s\"", cur->name);
 
     // POSIX.1-2001/SUSv3 compliance
@@ -157,7 +164,7 @@ APTH_DEFINE_HOOK(
     (nfds, rfds, wfds, efds, ts, mask))
 {
     apth_event_t ev;
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_pselect(hooked): called from thread \"%s\"", cur->name);
 
     // POSIX.1-2001/SUSv3 compliance

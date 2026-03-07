@@ -1,8 +1,11 @@
 #ifndef __LIBAPTH_HOOK_LIBC_HOOK_SIGNAL_H
 #define __LIBAPTH_HOOK_LIBC_HOOK_SIGNAL_H
 
-#define _POSIX_C_SOURCE 200809L // For struct sigaction
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <signal.h>
+
 #include "hook_utils.h"
 #include <bits/types/stack_t.h>
 #include <bits/types/struct_sigstack.h>

@@ -1,10 +1,10 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_thqueue.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/archplattoold.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h" // NEW: Use new LLL types
 
 /*
 ERRORS
@@ -26,8 +26,8 @@ int apth_join(apth_t tid, void **value)
     apth_event_t ev;
 
     apth_debug("apth_join: joining thread %p (\"%s\")", tid, tid == NULL ? "-ANY-" : tid->name);
-    apth_sched_t sched = cur_sched();
-    apth_t self = sched->cur;
+    // apth_sched_t sched = CUR_SCHED;
+    apth_t self = CUR_APTH;
 
     // Trying to join invalid apth
     if (tid == NULL || !APTH_IS_VALID(tid))

@@ -1,6 +1,6 @@
 #include "hook_time.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "internal/apth_event.h"
+#include "internal/apth_time.h"
 
 // APTH variant of nanosleep(2)
 APTH_DEFINE_HOOK(

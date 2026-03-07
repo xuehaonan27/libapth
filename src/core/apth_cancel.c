@@ -1,5 +1,5 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"

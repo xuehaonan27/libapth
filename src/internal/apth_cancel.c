@@ -1,12 +1,13 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "common.h" // For MAIN_APTH_EXITED
+#include "internal/apth_cancel.h"
+#include "internal/apth_tcb.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 
 // Enter a cancellation point
 APTH_INTERNAL void apth_cancel_point(void)
 {
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     assert(!APTH_IS_FAKE_SCHED(cur));
 
     if (atomic_load_acquire(&cur->cancelreq) && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
@@ -22,7 +23,7 @@ APTH_INTERNAL void apth_cancel_point(void)
 // Called when a thread reacts on a cancellation request.
 APTH_INTERNAL void apth_do_cancel(void *result)
 {
-    apth_sched_t sched = cur_sched();
+    apth_sched_t sched = CUR_SCHED;
     apth_t self = sched->cur;
     apth_debug("cancelling thread \"%s\"", self->name);
 

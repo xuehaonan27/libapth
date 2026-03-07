@@ -1,5 +1,6 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_cancel.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
@@ -9,7 +10,7 @@ int apth_setcancelstate(int state, int *oldstate)
     if (!(state == APTH_CANCEL_ENABLE || state == APTH_CANCEL_DISABLE))
         return apth_error(EINVAL, EINVAL);
 
-    volatile apth_t self = cur_apth();
+    volatile apth_t self = CUR_APTH;
 
     int oldval = atomic_load_relaxed(&self->cancelhandling);
     while (1)

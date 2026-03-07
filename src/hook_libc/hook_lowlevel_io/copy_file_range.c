@@ -1,6 +1,7 @@
 #include "hook_libc/hook_lowlevel_io.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_fd.h"
 
 APTH_DEFINE_HOOK(ssize_t, copy_file_range,
                  (int inputfd, off64_t *inputpos, int outputfd, off64_t *outputpos,
@@ -9,7 +10,7 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
 {
     apth_hook_debug(copy_file_range);
 
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_copy_file_range: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance

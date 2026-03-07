@@ -1,7 +1,10 @@
-#include "internal_funcs.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
-#include "internal_types.h"
+#include "apth_barrier.h"
+#include "apth.h"
+#include "internal/apth_event.h"
+#include "internal/apth_sync_waiter.h"
+#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
+#include "utils/lll_new.inline.h"
 
 int apth_barrier_init(apth_barrier_t *barrier, const void *attr, unsigned int count)
 {
@@ -47,7 +50,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
         return EINVAL;
 
     struct apth_barrier_st *b = APTH_BARRIER_CAST(barrier);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&b->guard);
 
@@ -66,7 +69,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
             struct apth_sync_waiter *w = apth_sync_waiter_entry(e);
 
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_wake(sched_of(w->th));
+            apth_sched_wake(SCHED_OF(w->th));
         }
 
         lll_apth_unlock(&b->guard);

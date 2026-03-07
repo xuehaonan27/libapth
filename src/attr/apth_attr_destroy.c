@@ -1,6 +1,4 @@
-#include "apth.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth_attr.h"
 #include "utils/apth_errno.h"
 #include <malloc.h>
 

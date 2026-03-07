@@ -1,13 +1,14 @@
 #include "hook_libc/hook_lowlevel_io.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_fd.h"
 
 APTH_DEFINE_HOOK(ssize_t, read,
                  (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
     apth_hook_debug(read);
 
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_read: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -54,6 +55,7 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
 
     // TODO: perform check
     apth_hook_debug(__read_chk);
+    (void)buflen;
     return apth_func(read)(fd, buf, nbytes);
 }
 
@@ -62,7 +64,7 @@ APTH_DEFINE_HOOK(ssize_t, write,
 {
     apth_hook_debug(write);
 
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_write: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -124,7 +126,7 @@ APTH_DEFINE_HOOK(ssize_t, pread,
 {
     apth_hook_debug(pread);
 
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_pread: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -169,6 +171,7 @@ APTH_DEFINE_HOOK(ssize_t, __pread_chk,
 {
     // TODO: perform check
     apth_hook_debug(__pread_chk);
+    (void)buflen;
     return apth_func(pread)(fd, buf, nbytes, offset);
 }
 
@@ -178,7 +181,7 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
 {
     apth_hook_debug(pread64);
 
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_pread64: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -222,6 +225,7 @@ APTH_DEFINE_HOOK(ssize_t, __pread64_chk,
                  (fd, buf, nbytes, offset, buflen))
 {
     apth_hook_debug(__pread64_chk);
+    (void)buflen;
     return apth_func(pread64)(fd, buf, nbytes, offset);
 }
 
@@ -230,7 +234,7 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
                  (fd, buf, count, offset))
 {
     apth_hook_debug(pwrite);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwrite: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -293,7 +297,7 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
                  (filedes, buffer, size, offset))
 {
     apth_hook_debug(pwrite64);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwrite64: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance

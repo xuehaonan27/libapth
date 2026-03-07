@@ -1,4 +1,5 @@
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
 #include "utils/debug.h"
 #include "utils/archplattoold.h"
 #include "utils/apth_errno.h"
@@ -9,7 +10,7 @@
 
 void apth_cleanup_push(void (*func)(void *), void *arg)
 {
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     apth_cleanup_t cleanup;
     if (func == NULL)
@@ -29,7 +30,7 @@ void apth_cleanup_push(void (*func)(void *), void *arg)
 void apth_cleanup_pop(int execute)
 {
     apth_cleanup_t cleanup;
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     if ((cleanup = cur->cleanups) != NULL)
     {

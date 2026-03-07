@@ -1,5 +1,6 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "internal/apth_data.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
 #include "utils/archplattoold.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
@@ -51,7 +52,7 @@ void *apth_getspecific(apth_key_t key)
 
     // Special case access to the first 2nd-level block. This is the usual case.
     if (apth_likely(key < APTH_KEY_2NDLEVEL_SIZE))
-        data = &cur_apth()->specific_1stblock[key];
+        data = &CUR_APTH->specific_1stblock[key];
     else
     {
         // Verify the key is sane.
@@ -64,7 +65,7 @@ void *apth_getspecific(apth_key_t key)
         // If the sequence number doesn't match or the key cannot be defined
         // for this apth since the second level array is not allocated,
         // Return NULL.
-        struct apth_key_data *level2 = cur_apth()->specific[idx1st];
+        struct apth_key_data *level2 = CUR_APTH->specific[idx1st];
         if (level2 == NULL)
             return NULL; // Not allocated, therefore no data
 
@@ -90,7 +91,7 @@ int apth_setspecific(apth_key_t key, const void *value)
     struct apth_key_data *level2;
     unsigned int seq;
 
-    self = cur_apth();
+    self = CUR_APTH;
 
     // Special case access to the first 2nd-level block. This is the usual case
     if (apth_likely(key < APTH_KEY_2NDLEVEL_SIZE))

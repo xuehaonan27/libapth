@@ -1,8 +1,10 @@
-#include "internal_funcs.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
-#include "internal_types.h"
-#include "utils/debug.h"
+#include "apth_cond.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_event.h"
+#include "internal/apth_sync_waiter.h"
 #include "utils/apth_errno.h"
+#include "utils/lll_new.inline.h"
 
 // ==================== Condition Variable Attributes ====================
 
@@ -88,7 +90,7 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
         return EINVAL;
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Prepare stack-allocated waiter and event
     struct apth_sync_waiter w;
@@ -133,7 +135,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
         return EINVAL;
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Prepare COND event (sync waiter)
     struct apth_sync_waiter w;
@@ -208,7 +210,7 @@ int apth_cond_signal(apth_cond_t *cond)
 
         // Direct wakeup
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-        apth_sched_t ws = sched_of(w->th);
+        apth_sched_t ws = SCHED_OF(w->th);
 
         lll_apth_unlock(&c->guard);
         apth_sched_wake(ws);
@@ -236,7 +238,7 @@ int apth_cond_broadcast(apth_cond_t *cond)
         struct apth_sync_waiter *w = apth_sync_waiter_entry(e);
 
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-        apth_sched_wake(sched_of(w->th));
+        apth_sched_wake(SCHED_OF(w->th));
     }
 
     lll_apth_unlock(&c->guard);

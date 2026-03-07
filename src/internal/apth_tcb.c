@@ -1,21 +1,13 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth_tcb.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
+#include "utils/list.inline.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
-
-APTH_INTERNAL int check_stacksize_attr(size_t st)
-{
-    if (st >= APTH_STACK_SIZE_DEFAULT)
-        return 0;
-
-    return EINVAL;
-}
 
 // The most lower 2 bits should be 0, meaning TCB should be at least 4 bytes aligned.
 #define IS_VALID_APTH_T(t) (((uintptr_t)(t) & 0x3) == 0)
@@ -136,7 +128,7 @@ APTH_INTERNAL char *apth_tcb_get_usable_stack_start(apth_t t)
 APTH_INTERNAL void apth_tcb_free(apth_t t)
 {
     assert(t != NULL);
-    apth_sched_t sched = cur_sched();
+    apth_sched_t sched = CUR_SCHED;
 
     if (t->stack_mem_start != NULL && !t->stackloan)
     {

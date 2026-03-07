@@ -1,10 +1,10 @@
 #include "debug.h"
-
-#include "common.h"
-#include "apth_errno.h"
-#include "apth_string.h"
-#include "atomic_wrapper.h"
-#include "internal_funcs.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_worker.h"
+#include "hook_libc/hooked_funcs.h"
+#include "utils/apth_errno.h"
+#include "utils/apth_string.h"
+#include "utils/atomic_wrapper.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -73,7 +73,7 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 
         va_start(ap, message);
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, cur_sched()->id);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, CUR_SCHED->id);
         else
             str[0] = NUL;
         n = strlen(str);
@@ -122,7 +122,7 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         _dbg_spin_lock();
 
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, cur_sched()->id);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, CUR_SCHED->id);
         else
             str[0] = '\0';
         n = strlen(str);

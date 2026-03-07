@@ -1,5 +1,6 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_sched.h"
 #include "utils/debug.h"
 
 #define APTH_MIN_TIME_SLICE_BITS 18 // 262144 ticks
@@ -8,12 +9,12 @@
 
 int apth_yield(void)
 {
-    apth_sched_t sched = cur_sched();
+    apth_sched_t sched = CUR_SCHED;
     apth_t cur = sched->cur;
     apth_debug("apth_yield: enter from thread \"%s\"", cur->name);
 
     // TODO: decide a `to` apth and give it a priority
-    
+
     // Record cpu tick before yielding
     cur->last_yield_tick = cpu_tick();
 
@@ -25,7 +26,7 @@ int apth_yield(void)
 
 int apth_yield_optional(void)
 {
-    apth_sched_t sched = cur_sched();
+    apth_sched_t sched = CUR_SCHED;
     apth_t cur = sched->cur;
 
     uint64_t cur_tick = cpu_tick();

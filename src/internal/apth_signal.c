@@ -1,15 +1,16 @@
-#include "common.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_signal.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_thqueue.h"
+#include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 
 APTH_INTERNAL int apth_signal_system_init(void)
 {
-    lll_internal_init(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL init
+    lll_internal_init(&APTH_GLOBAL_SIGACTIONS.lock);
 
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
@@ -125,7 +126,7 @@ static void __apth_sig_default_action(apth_t th, int sig)
 static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *sa)
 {
     // NOTE: here we first implement Plan A
-    assert_msg(!APTH_IS_FAKE_SCHED(cur_apth()), "we should theoratically be an apth now");
+    assert_msg(!APTH_IS_FAKE_SCHED(CUR_APTH), "we should theoratically be an apth now");
     // Uh, although physically not yet. That does not matter though, because
     // we are meant to use scheduler's stack here. What matters is that
     // logically we should be an apth here (cur_apth set to th), because we
@@ -173,9 +174,9 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
     if (sa->sa_flags & SA_RESETHAND)
     {
         struct sigaction dfl = {.sa_handler = SIG_DFL};
-        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
         APTH_GLOBAL_SIGACTIONS.actions[sig] = dfl;
-        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     }
 
     // TODO: implement Plan B and give this function a conditional compilation option
@@ -183,7 +184,7 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
 
 APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
 {
-    lll_internal_lock(&th->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&th->siglock); // NEW: Use Type 2 LLL
 
     // Fetch signals that in `pending & ~sigmask`
     for (int sig = 1; sig < APTH_NSIG; sig++)
@@ -198,9 +199,9 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         th->sigpendcnt--;
 
         // Search handler
-        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
         struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
-        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
 
         if (sa.sa_handler == SIG_IGN)
             continue; // this signal is ignored, skip
@@ -219,7 +220,7 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         __apth_inject_signal_handler(th, sig, &sa);
     }
 
-    lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&th->siglock); // NEW: Use Type 2 LLL
 }
 
 // Process level pending signals, storing signals when all apths are blocking
@@ -232,7 +233,7 @@ static _Atomic(int) APTH_PROCESS_SIGPENDING[APTH_NSIG];
 // do not block the signal. If found, then set pending.
 // If not, then set process-level pending.
 //
-// Note that we should not call function like `cur_apth` `cur_sched` `cur_worker`,
+// Note that we should not call function like `cur_apth` `cur_sched`,
 // since we are not in any pthread's context when executing this function.
 // Instead, we are in a kernel level signal stack.
 static void apth_route_process_signal(int sig)
@@ -241,7 +242,7 @@ static void apth_route_process_signal(int sig)
     // initialized and invalid. And will thread local initialized if we enabled
     // conditional compilation flag APTH_CUR_USING_KEYWORD? I don't think so.
     // We are here, at nowhere, a signal stack.
-    // BUT LLL LOCKING AND UNLOCKING NEED `cur_apth` `cur_sched` and `cur_worker`.
+    // BUT LLL LOCKING AND UNLOCKING NEED `cur_apth` and `cur_sched`.
     // How to solve this problem ? We need to synchronize accessing to each
     // scheduler's apth queue.
     // Moreover, acquiring lll here is deadlock-prone.
@@ -317,13 +318,13 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 
         // Add to apth pending
         // sigdelset(&APTH_PROCESS_SIGPENDING, sig);
-        lll_internal_lock(&target->siglock);  // NEW: Use Type 2 LLL
+        lll_internal_lock(&target->siglock); // NEW: Use Type 2 LLL
         if (!sigismember(&target->sigpending, sig))
         {
             sigaddset(&target->sigpending, sig);
             target->sigpendcnt++;
         }
-        lll_internal_unlock(&target->siglock);  // NEW: Use Type 2 LLL
+        lll_internal_unlock(&target->siglock); // NEW: Use Type 2 LLL
     }
 }
 

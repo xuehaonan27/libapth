@@ -39,6 +39,6 @@ APTH_DECLARE_HOOK(pid_t, wait4, pid_t pid, int *status_ptr, int options, struct 
 
 // ==================== 26.7 Program Termination ====================
 // TODO: implementation
-APTH_DECLARE_HOOK(void, exit, int status)
+APTH_DECLARE_FETCH_LIBCFUNC(void, exit, int status)
 
 #endif // __LIBAPTH_HOOK_LIBC_HOOK_PROCESS_H

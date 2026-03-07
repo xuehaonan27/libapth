@@ -4,7 +4,8 @@
 #include "hook_utils.h"
 #include <pthread.h>
 #include <sched.h> // For cpu_set_t
-#include <signal.h>
+#include <bits/types/sigset_t.h>
+#include <bits/types/clockid_t.h>
 
 #define APTH_LIST_OF_HOOK_PTHREAD  \
     X(pthread_create)              \
@@ -19,7 +20,8 @@
     X(pthread_exit)                \
     X(pthread_attr_setdetachstate) \
     X(pthread_attr_setaffinity_np) \
-    X(pthread_cancel)
+    X(pthread_cancel)              \
+    X(pthread_getcpuclockid)
 
 // ==================== For these functions, only fetch its LIBC impls ====================
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_create, pthread_t *restrict thread,
@@ -39,5 +41,6 @@ APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setdetachstate, pthread_attr_t *at
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_attr_setaffinity_np, pthread_attr_t *attr,
                             size_t cpusetsize, const cpu_set_t *cpuset)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_cancel, pthread_t thread)
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_getcpuclockid, pthread_t thread, clockid_t *clockid);
 
 #endif // __LIBAPTH_HOOK_LIBC_HOOK_PTHREAD_H

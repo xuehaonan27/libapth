@@ -5,7 +5,6 @@
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include <dlfcn.h> // For dlsym and RTLD_NEXT
-// #include <sys/types.h>
 
 // Get identifier of LIBAPTH wrapped function, which is also exposed as a symbol of LIBAPTH.
 // Whenever you want to use a LIBAPTH-hooked version of a function, wrap it in `apth_func`

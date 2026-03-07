@@ -1,13 +1,14 @@
 #ifndef __LIBAPTH_UTILS_LLL_NEW_INLINE_H
 #define __LIBAPTH_UTILS_LLL_NEW_INLINE_H
 
+#include "common.h"
+#include "apth.h"
 #include "lll_new.h"
-#include "internal_types.h"
-#include "internal/apth_worker.inline.h"
+#include "hook_libc/hooked_funcs.h"
+#include "internal/forward_declare.h"
 #include "utils/archplattoold.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
-#include <sched.h>
 
 // ==================== Type 1 LLL: APTH-only locks ====================
 
@@ -24,7 +25,7 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock, const char *from)
 INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
 {
 #endif
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Sanity check: only APTHs can acquire Type 1 locks
     assert_msg(!APTH_IS_FAKE_SCHED(self), "Type 1 LLL can only be acquired by APTHs");
@@ -60,7 +61,7 @@ INLINE_ALWAYS int __lll_apth_trylock(lll_apth_t *lock, const char *from)
 INLINE_ALWAYS int __lll_apth_trylock(lll_apth_t *lock)
 {
 #endif
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Sanity check: only APTHs can acquire Type 1 locks
     assert_msg(!APTH_IS_FAKE_SCHED(self), "Type 1 LLL can only be acquired by APTHs");
@@ -80,7 +81,7 @@ INLINE_ALWAYS void __lll_apth_unlock(lll_apth_t *lock, const char *from)
 INLINE_ALWAYS void __lll_apth_unlock(lll_apth_t *lock)
 {
 #endif
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
     apth_t expected = self;
 
     if (!atomic_compare_exchange_release(&lock->owner, &expected, NULL))
@@ -105,7 +106,7 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock, const char *from)
 INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
 {
 #endif
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
     bool is_scheduler = APTH_IS_FAKE_SCHED(self);
 
     // Fast path: try to acquire

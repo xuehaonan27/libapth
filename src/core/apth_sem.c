@@ -1,7 +1,10 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_sem.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_event.h"
+#include "internal/apth_sync_waiter.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value)
 {
@@ -11,7 +14,7 @@ int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value)
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
 
-    lll_apth_init(&s->guard);  // NEW: Use Type 1 LLL init
+    lll_apth_init(&s->guard); // NEW: Use Type 1 LLL init
     s->value = value;
     list_init(&s->waiters);
     return 0;
@@ -24,13 +27,13 @@ int apth_sem_destroy(apth_sem_t *sem)
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
 
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
     if (!list_empty(&s->waiters))
     {
-        lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+        lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
         return EBUSY;
     }
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
     return 0;
 }
@@ -41,15 +44,15 @@ int apth_sem_wait(apth_sem_t *sem)
         return EINVAL;
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
 
     // Fast path: semaphore has available count
     if (s->value > 0)
     {
         s->value--;
-        lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+        lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -67,9 +70,9 @@ int apth_sem_wait(apth_sem_t *sem)
     // Add event to thread's event list
     apth_event_list_add(&self->event_list, &w.ev);
 
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -87,15 +90,15 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
         return EINVAL;
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
 
     // Fast path: semaphore has available count
     if (s->value > 0)
     {
         s->value--;
-        lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+        lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
         return 0;
     }
 
@@ -123,9 +126,9 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
     apth_event_list_add(&self->event_list, &w.ev);
     apth_event_list_add(&self->event_list, &timer_ev);
 
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -135,7 +138,7 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
 
     // Resolve race: post vs timeout
     int ret = 0;
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
 
     if (w.ev.ev_status != APTH_EV_STATUS_OCCURRED)
     {
@@ -144,7 +147,7 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
         ret = ETIMEDOUT;
     }
 
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
     return ret;
 }
@@ -179,7 +182,7 @@ int apth_sem_post(apth_sem_t *sem)
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
 
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
 
     // If there are waiters, wake one
     if (!list_empty(&s->waiters))
@@ -189,16 +192,16 @@ int apth_sem_post(apth_sem_t *sem)
 
         // Direct wakeup
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-        apth_sched_t ws = sched_of(w->th);
+        apth_sched_t ws = SCHED_OF(w->th);
 
-        lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+        lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
         apth_sched_wake(ws);
         return 0;
     }
 
     // No waiters, increment value
     s->value++;
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
     return 0;
 }
@@ -210,10 +213,9 @@ int apth_sem_getvalue(apth_sem_t *sem, int *sval)
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
 
-    lll_apth_lock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&s->guard); // NEW: Use Type 1 LLL
     *sval = (int)s->value;
-    lll_apth_unlock(&s->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&s->guard); // NEW: Use Type 1 LLL
 
     return 0;
 }
-

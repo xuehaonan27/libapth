@@ -1,6 +1,4 @@
-#include "apth.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_attr.h"
 #include "utils/apth_errno.h"
 
 int apth_attr_getdetachstate(const apth_attr_t *attr, int *detachstate)

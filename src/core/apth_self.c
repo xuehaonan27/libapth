@@ -1,7 +1,8 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth.h"
+#include "common.h"
+#include "internal/apth_sched.h"
 
 apth_t apth_self(void)
 {
-    return cur_apth();
+    return CUR_APTH;
 }

@@ -1,7 +1,10 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_rwlock.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_event.h"
+#include "internal/apth_sync_waiter.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 {
@@ -11,7 +14,7 @@ int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_apth_init(&rw->guard);  // NEW: Use Type 1 LLL init
+    lll_apth_init(&rw->guard); // NEW: Use Type 1 LLL init
     rw->readers = 0;
     rw->writers = 0;
     rw->waiting_writers = 0;
@@ -28,16 +31,16 @@ int apth_rwlock_destroy(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_apth_lock(&rw->guard);  // NEW: Use Type 1 LLL
+    lll_apth_lock(&rw->guard); // NEW: Use Type 1 LLL
 
     if (rw->readers > 0 || rw->writers > 0 ||
         !list_empty(&rw->rd_waiters) || !list_empty(&rw->wr_waiters))
     {
-        lll_apth_unlock(&rw->guard);  // NEW: Use Type 1 LLL
+        lll_apth_unlock(&rw->guard); // NEW: Use Type 1 LLL
         return EBUSY;
     }
 
-    lll_apth_unlock(&rw->guard);  // NEW: Use Type 1 LLL
+    lll_apth_unlock(&rw->guard); // NEW: Use Type 1 LLL
 
     return 0;
 }
@@ -48,7 +51,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
         return EINVAL;
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&rw->guard);
 
@@ -76,7 +79,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -94,7 +97,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         return EINVAL;
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&rw->guard);
 
@@ -132,7 +135,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -185,7 +188,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
         return EINVAL;
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&rw->guard);
 
@@ -215,7 +218,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -233,7 +236,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         return EINVAL;
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&rw->guard);
 
@@ -273,7 +276,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -344,7 +347,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             rw->waiting_writers--;
             rw->writers = 1;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_t ws = sched_of(w->th);
+            apth_sched_t ws = SCHED_OF(w->th);
 
             lll_apth_unlock(&rw->guard);
             apth_sched_wake(ws);
@@ -359,7 +362,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
 
             rw->readers++;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_wake(sched_of(w->th));
+            apth_sched_wake(SCHED_OF(w->th));
         }
 
         lll_apth_unlock(&rw->guard);
@@ -379,7 +382,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             rw->waiting_writers--;
             rw->writers = 1;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_t ws = sched_of(w->th);
+            apth_sched_t ws = SCHED_OF(w->th);
 
             lll_apth_unlock(&rw->guard);
             apth_sched_wake(ws);
@@ -393,4 +396,3 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
     lll_apth_unlock(&rw->guard);
     return 0;
 }
-

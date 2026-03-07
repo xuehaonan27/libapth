@@ -1,8 +1,11 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_mutex.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_event.h"
+#include "internal/apth_sync_waiter.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 // ==================== Mutex Attributes ====================
 
@@ -92,7 +95,7 @@ int apth_mutex_lock(apth_mutex_t *mutex)
         return EINVAL;
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
@@ -162,7 +165,7 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
         return EINVAL;
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
@@ -249,7 +252,7 @@ int apth_mutex_trylock(apth_mutex_t *mutex)
         return EINVAL;
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Use trylock for non-blocking guard acquisition
     if (lll_apth_trylock(&m->guard) != 0)
@@ -280,7 +283,7 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
         return EINVAL;
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     lll_apth_lock(&m->guard);  // NEW: Use Type 1 LLL
 
@@ -321,7 +324,7 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
 
     // Save scheduler pointer before releasing guard (waiter struct is
     // on the waiter's stack, still valid while it's in WAITING state)
-    apth_sched_t waiter_sched = sched_of(w->th);
+    apth_sched_t waiter_sched = SCHED_OF(w->th);
 
     lll_apth_unlock(&m->guard);  // NEW: Use Type 1 LLL
 

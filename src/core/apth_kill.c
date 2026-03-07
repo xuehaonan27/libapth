@@ -1,8 +1,30 @@
-#include "common.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <signal.h>
+
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_thqueue.h"
+#include "internal/apth_signal.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h" // NEW: Use new LLL types
+
+static int apth_apth_exists(apth_t t)
+{
+    if (!APTH_IS_VALID(t))
+        return false;
+
+    apth_sched_t sched = CUR_SCHED;
+
+    bool found_in_new = apth_is_in(sched->new_queue, t);
+    bool found_in_ready = apth_is_in(sched->ready_queue, t);
+    bool found_in_waiting = apth_is_in(sched->waiting_queue, t);
+    bool found_in_terminated = apth_is_in(sched->terminated_queue, t);
+    bool found_in_waked = apth_is_in(sched->waked_queue, t);
+
+    return found_in_new || found_in_ready || found_in_waiting || found_in_terminated || found_in_waked;
+}
 
 // Raise a signal for an apth
 int apth_kill(apth_t t, int sig)
@@ -13,25 +35,25 @@ int apth_kill(apth_t t, int sig)
         return apth_apth_exists(t) ? 0 : apth_error(ESRCH, ESRCH);
 
     // Check global action
-    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
-    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
 
     if (sa.sa_handler == SIG_IGN)
         return 0;
 
     // Atomically add `sig` to pending set of target apth `t`
-    lll_internal_lock(&t->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&t->siglock); // NEW: Use Type 2 LLL
     if (!sigismember(&t->sigpending, sig))
     {
         sigaddset(&t->sigpending, sig);
         t->sigpendcnt++;
     }
-    lll_internal_unlock(&t->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&t->siglock); // NEW: Use Type 2 LLL
 
     // Allow killing signal to self.
     // If `t == self`, check delivery immediately
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
     if (t == self && !APTH_IS_FAKE_SCHED(self))
         apth_deliver_pending_signals(self);
 

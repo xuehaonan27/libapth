@@ -1,15 +1,26 @@
-#include "common.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
-#include "internal/apth_worker.inline.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "apth_event.h"
+#include "hook_libc/hooked_funcs.h"
+#include "internal/apth_cancel.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_fd.h"
+#include "internal/apth_fd_slot.h"
+#include "internal/apth_epoll_waiter.h"
+#include "internal/apth_sched.h"
+// #include "internal/apth_sched.inline.h"
+#include "internal/apth_signal.h"
+#include "internal/apth_state.h"
+// #include "internal/apth_state.inline.h"
+#include "internal/apth_time.h"
+#include "internal/apth_thqueue.h"
+#include "internal/apth_worker.h"
+// #include "internal/apth_worker.inline.h"
+#include "utils/lll_new.inline.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
 #include <malloc.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-// #include <unistd.h>
 
 // ==================== FD to apths mapping ====================
 
@@ -452,19 +463,19 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     {
                         if (sigismember(event->ev_args.SIGS.sigs, sig))
                         {
-                            lll_internal_lock(&th->siglock);  // NEW: Use Type 2 LLL
+                            lll_internal_lock(&th->siglock); // NEW: Use Type 2 LLL
                             if (sigismember(&th->sigpending, sig))
                             {
                                 if (event->ev_args.SIGS.sig)
                                     *(event->ev_args.SIGS.sig) = sig;
                                 sigdelset(&th->sigpending, sig);
                                 th->sigpendcnt--;
-                                lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
+                                lll_internal_unlock(&th->siglock); // NEW: Use Type 2 LLL
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                                 any_occurred = true;
                                 break;
                             }
-                            lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
+                            lll_internal_unlock(&th->siglock); // NEW: Use Type 2 LLL
                         }
                     }
                     break;
@@ -537,7 +548,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         // Move apth discovered during phase 1 from waiting queue to waked queue.
         // Loop until we have transferred all of them: if wake_count hit MAX_WAKE_BATCH
         // on this pass we may have more waiting, so we re-scan after draining.
-        do {
+        do
+        {
             for (int i = 0; i < wake_count; i++)
             {
                 apth_t th = wake_batch[i];
@@ -549,7 +561,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                 }
                 // Move to waked queue
-                atomic_store_release(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                atomic_store_release(&th->state, APTH_STATE_WAKED); // NEW: Simple state transition
                 transfer_th(th, sched->waiting_queue, sched->waked_queue);
             }
 
@@ -662,7 +674,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 // but not move apth to waked_queue yet.
                 // Now traverse waiting queue and move apths with OCCURRED events,
                 // looping until all have been transferred (handles >MAX_WAKE_BATCH case).
-                do {
+                do
+                {
                     wake_count = 0;
                     lll_internal_lock(&sched->waiting_queue->th_list_lock);
                     FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
@@ -696,7 +709,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                                 event->ev_status == APTH_EV_STATUS_PENDING)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                         }
-                        atomic_store_release(&th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                        atomic_store_release(&th->state, APTH_STATE_WAKED); // NEW: Simple state transition
                         transfer_th(th, sched->waiting_queue, sched->waked_queue);
                     }
                 } while (wake_count == MAX_WAKE_BATCH);
@@ -723,7 +736,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             if (event->ev_type == APTH_EVENT_TYPE_FD)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
-                        atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED);  // NEW: Simple state transition
+                        atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED); // NEW: Simple state transition
                         transfer_th(nexttimer_th, sched->waiting_queue, sched->waked_queue);
                     }
                 }
@@ -748,10 +761,10 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
 {
     // Try to use embedded events from the current thread first
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_event_t ev = NULL;
 
-    if (cur != NULL && cur != APTH_FAKE_SCHED(cur_sched()))
+    if (cur != NULL && cur != APTH_FAKE_SCHED(CUR_SCHED))
     {
         // Try embedded_event_1 first
         if (!cur->embedded_event_1_in_use)
@@ -893,8 +906,8 @@ APTH_INTERNAL bool apth_event_free(apth_event_t ev)
         return apth_error(false, EINVAL);
 
     // Check if this is an embedded event from the current thread
-    apth_t cur = cur_apth();
-    if (cur != NULL && cur != APTH_FAKE_SCHED(cur_sched()))
+    apth_t cur = CUR_APTH;
+    if (cur != NULL && cur != APTH_FAKE_SCHED(CUR_SCHED))
     {
         if (ev == &cur->embedded_event_1)
         {
@@ -930,7 +943,7 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     if (list_empty(el))
         return apth_error(-1, EINVAL);
 
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     apth_debug("apth_wait_events: enter from thread \"%s\"", self->name);
 
@@ -947,7 +960,7 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     self->event_list = *el;
 
     // Move apth into waiting state and transfer control to scheduler
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -978,8 +991,8 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
 {
     if (ev == APTH_EVENT_NULL)
         return apth_error(false, EINVAL);
-    apth_t self = cur_apth();
-    assert(sched_of(self) == cur_sched());
+    apth_t self = CUR_APTH;
+    assert(SCHED_OF(self) == CUR_SCHED);
     apth_debug("enter from thread \"%s\"", self->name);
 
     // Mark the event as still pending
@@ -990,7 +1003,7 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
 
     // Move thread into waiting state and transfer control to scheduler
     // Move to waiting state
-    atomic_store_release(&self->state, APTH_STATE_WAITING);  // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

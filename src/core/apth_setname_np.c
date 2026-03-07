@@ -1,5 +1,6 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "common.h" // For APTH_TCB_NAMELEN
+#include "apth.h"
+#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
 #include <string.h>
 

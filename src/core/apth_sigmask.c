@@ -1,12 +1,17 @@
-#include "common.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE // For SIG_SETMASK
+#endif
+#include <signal.h>
+
 #include "apth.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_signal.h"
+#include "hook_libc/hooked_funcs.h"
 #include "utils/apth_errno.h"
 
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     // If is scheduler context, operate with pthread level mask
     if (APTH_IS_FAKE_SCHED(cur))

@@ -1,6 +1,8 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
- #include <sys/time.h> // For gettimeofday
+#include "apth_time.h"
+#include "apth.h"
+#include "utils/archplattoold.h"
+#include <stdint.h>
+#include <sys/time.h> // For gettimeofday
 
 apth_time_t apth_time_zero = {0L, 0L};
 

@@ -1,13 +1,12 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
-
-#include "apth_worker.inline.h"
-
+#include "apth_worker.h"
+#include "hook_libc/hooked_funcs.h"
+#include "internal/apth_sched.h"
+#include "internal/apth_global_sched_pool.h"
 #include "utils/debug.h"
-#include "utils/list.h"
+#include "utils/list.inline.h"
 #include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -18,59 +17,35 @@ struct apth_global_scheduler_pool GLOBAL_POOL;
 _Atomic(unsigned int) WORKER_SPAWNED = 0x7FFFFFFF;
 _Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
-#ifdef APTH_CUR_USING_KEYWORD
-APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
-APTH_THREAD_LOCAL apth_sched_t __cur_sched_tls = NULL;
-#else
-// Use pthread TLS API
-pthread_key_t __CUR_WORKER_KEY;
-pthread_key_t __CUR_SCHED_KEY;
+// #ifdef APTH_CUR_USING_KEYWORD
+// APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
+// #else
+// // Use pthread TLS API
+// pthread_key_t __CUR_WORKER_KEY;
 
-static void worker_key_t_destr_fn(void *) { /* nop */ }
-static void sched_key_t_destr_fn(void *) { /* nop */ }
-#endif
+// static void worker_key_t_destr_fn(void *) { /* nop */ }
+// #endif
 
-void worker_key_t_init(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    // No initialization needed for thread-local storage keywords
-    __cur_worker_tls = NULL;
-#else
-    int result = apth_func_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
-    assert_msg(result == 0, "fail pthread_key_create");
-#endif
-}
+// void worker_key_t_init(void)
+// {
+// #ifdef APTH_CUR_USING_KEYWORD
+//     // No initialization needed for thread-local storage keywords
+//     __cur_worker_tls = NULL;
+// #else
+//     int result = apth_func_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
+//     assert_msg(result == 0, "fail pthread_key_create");
+// #endif
+// }
 
-void worker_key_t_drop(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    __cur_worker_tls = NULL;
-#else
-    int result = apth_func_raw(pthread_key_delete)(__CUR_WORKER_KEY);
-    assert_msg(result == 0, "fail pthread_key_delete");
-#endif
-}
-
-void sched_key_t_init(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    // No initialization needed for thread-local storage keywords
-    __cur_sched_tls = NULL;
-#else
-    int result = apth_func_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
-    assert_msg(result == 0, "fail pthread_key_create");
-#endif
-}
-
-void sched_key_t_drop(void)
-{
-#ifdef APTH_CUR_USING_KEYWORD
-    __cur_sched_tls = NULL;
-#else
-    int result = apth_func_raw(pthread_key_delete)(__CUR_SCHED_KEY);
-    assert_msg(result == 0, "fail pthread_key_delete");
-#endif
-}
+// void worker_key_t_drop(void)
+// {
+// #ifdef APTH_CUR_USING_KEYWORD
+//     __cur_worker_tls = NULL;
+// #else
+//     int result = apth_func_raw(pthread_key_delete)(__CUR_WORKER_KEY);
+//     assert_msg(result == 0, "fail pthread_key_delete");
+// #endif
+// }
 
 // Get worker by `worker_id`
 APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
@@ -173,7 +148,6 @@ static int apth_worker_drop(apth_worker_t worker)
 
     void *pthr_rslt;
     apth_func_raw(pthread_join)(worker->tid, &pthr_rslt);
-    apth_debug("MAIN WORKER %d joined WORKER %d", cur_worker()->worker_id, target_worker_id);
     assert(pthr_rslt == NULL);
 
     free(worker);
@@ -241,8 +215,6 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
         PANIC("Worker pool not initialized!");
         return -1;
     }
-
-    apth_debug("WORKER %d enter", cur_worker()->worker_id);
 
     lll_internal_lock(&GLOBAL_POOL.pool_lock);
     // FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)

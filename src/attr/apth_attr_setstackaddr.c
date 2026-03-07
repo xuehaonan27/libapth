@@ -1,8 +1,4 @@
-#include "apth.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
-#include "utils/apth_sysutils.h"
-#include "utils/apth_errno.h"
+#include "apth_attr.h"
 
 int apth_attr_setstackaddr(apth_attr_t *attr, void *stackaddr)
 {

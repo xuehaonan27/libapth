@@ -1,6 +1,7 @@
 #include "hook_socket.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_event.h"
+#include "internal/apth_fd.h"
 
 APTH_DEFINE_HOOK(int, socket,
                  (int domain, int style, int protocol),
@@ -53,7 +54,7 @@ APTH_DEFINE_HOOK(
     (fd, addr, length))
 {
     apth_hook_debug(connect);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_connect: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -111,7 +112,7 @@ APTH_DEFINE_HOOK(int, accept,
                  (fd, addr, length))
 {
     apth_hook_debug(accept);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_accept: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -167,7 +168,7 @@ APTH_DEFINE_HOOK(
     (sockfd, buf, nbytes, flags, src_addr, addrlen))
 {
     apth_hook_debug(recvfrom);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_recvfrom: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -215,7 +216,7 @@ APTH_DEFINE_HOOK(
      int __flags, struct sockaddr *__addr, socklen_t *__restrict __addr_len),
     (__fd, __buf, __n, __buflen, __flags, __addr, __addr_len))
 {
-    // TODO: perform check
+    (void)__buflen;
     return apth_func(recvfrom)(__fd, __buf, __n, __flags, __addr, __addr_len);
 }
 
@@ -226,7 +227,7 @@ APTH_DEFINE_HOOK(
     (sockfd, buf, nbytes, flags, dest_addr, dest_len))
 {
     apth_hook_debug(sendto);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     apth_debug("apth_func_sendto: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -303,6 +304,7 @@ APTH_DEFINE_HOOK(ssize_t, __recv_chk,
 {
     // TODO: Perform check here
     apth_hook_debug(__recv_chk);
+    (void)buflen;
     return apth_func(recv)(sockfd, buf, len, flags);
 }
 

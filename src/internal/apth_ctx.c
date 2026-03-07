@@ -1,11 +1,13 @@
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth_ctx.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_cancel.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
-#include "utils/apth_errno.h"
 #include "utils/debug.h"
 #include <malloc.h>
 #include <string.h>
+#include <stdbool.h>
 
 // Save the current thread context into `ctx`.
 APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx)
@@ -41,7 +43,7 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
     swapcontext(&old->uc, &new->uc);
 
     // After the context has been switched
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     if (!APTH_IS_FAKE_SCHED(cur))
     {
         unsigned int cc_h = atomic_load_acquire(&cur->cancelhandling);

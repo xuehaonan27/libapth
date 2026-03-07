@@ -3,20 +3,22 @@
 #endif
 #include <sched.h>
 
-#include "common.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "common.h" // For APTH_TCB_NAMELEN
+#include "internal/apth_global_sched_pool.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_cancel.h"
+#include "internal/apth_thqueue.h"
+#include "attr/apth_attr.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 #include "utils/apth_errno.h"
-#include "utils/apth_sysutils.h"
 
 static void apth_create_trampoline(void)
 {
     void *data;
     // If this apth is scheduled to run, then `cur` should point to current apth
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     data = (*cur->start_func)(cur->start_arg);
 
@@ -82,11 +84,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         else
         {
             // Spawn in current scheduler
-            worker = cur_worker();
-            sched = cur_sched();
+            sched = CUR_SCHED;
             assert(sched != NULL);
-            assert(sched == worker->sched);
-            assert(worker == sched->worker);
         }
     }
 
@@ -103,7 +102,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;
-    atomic_store_release(&t->state, APTH_STATE_NEW);  // NEW: Initialize simple state field
+    atomic_store_release(&t->state, APTH_STATE_NEW); // NEW: Initialize simple state field
 
     // Timing: initialize the time points and ranges
     apth_time_set(&ts, APTH_TIME_NOW);
@@ -126,7 +125,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         t->sigmask = iattr->sigmask;
     else
     {
-        apth_t creator = cur_apth();
+        apth_t creator = CUR_APTH;
         if (!APTH_IS_FAKE_SCHED(creator))
             t->sigmask = creator->sigmask;
         else
@@ -134,9 +133,9 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     }
 
     // Ownership system: initialize scheduler ownership fields
-    t->home_sched = sched;       // Immutable: set at creation
-    t->current_sched = sched;    // Initially owned by creating scheduler
-    t->current_queue = NULL;     // Will be set when pushed to queue
+    t->home_sched = sched;    // Immutable: set at creation
+    t->current_sched = sched; // Initially owned by creating scheduler
+    t->current_queue = NULL;  // Will be set when pushed to queue
     lll_internal_init(&t->ownership_lock);
 
     // Remember the start routine and arguments

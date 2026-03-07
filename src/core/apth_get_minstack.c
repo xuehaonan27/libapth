@@ -1,8 +1,4 @@
-#include "apth.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
-#include "utils/apth_errno.h"
-#include <unistd.h>
+#include "attr/apth_attr.h"
 
 /* Get the minimum stack size for a thread.
  *

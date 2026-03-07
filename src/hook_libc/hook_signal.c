@@ -1,7 +1,7 @@
 #include "hook_signal.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
-#include "utils/lll_new.inline.h"  // NEW: Use new LLL types
+#include "internal/apth_tcb.h"
+#include "internal/apth_signal.h"
+#include "utils/lll_new.inline.h"
 
 APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {
@@ -13,7 +13,7 @@ APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, ha
 
     sighandler_t prev;
 
-    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
 
     // Return old action
     prev = APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler;
@@ -23,7 +23,7 @@ APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, ha
     sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
     APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART;
 
-    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     return prev;
 }
 
@@ -32,12 +32,12 @@ APTH_DEFINE_HOOK(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(SIG_ERR, EINVAL);
     sighandler_t prev;
-    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     prev = APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler;
     APTH_GLOBAL_SIGACTIONS.actions[sig].sa_handler = handler;
     sigemptyset(&APTH_GLOBAL_SIGACTIONS.actions[sig].sa_mask);
     APTH_GLOBAL_SIGACTIONS.actions[sig].sa_flags = SA_RESTART;
-    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     return prev;
 }
 
@@ -65,7 +65,7 @@ APTH_DEFINE_HOOK(int, sigaction,
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(-1, EINVAL);
 
-    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
 
     // Return old action
     if (oldact != NULL)
@@ -75,7 +75,7 @@ APTH_DEFINE_HOOK(int, sigaction,
     if (act != NULL)
         APTH_GLOBAL_SIGACTIONS.actions[sig] = *act;
 
-    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
     return 0;
 }
 
@@ -84,24 +84,24 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
     apth_hook_debug(sigwait);
 
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
     if (set == NULL || sigp == NULL)
         return apth_error(EINVAL, EINVAL);
 
     // Check whether there's signal already pending
-    lll_internal_lock(&self->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&self->siglock); // NEW: Use Type 2 LLL
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
         if (sigismember(set, sig) && sigismember(&self->sigpending, sig))
         {
             sigdelset(&self->sigpending, sig);
             self->sigpendcnt--;
-            lll_internal_unlock(&self->siglock);  // NEW: Use Type 2 LLL
+            lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
             *sigp = sig;
             return 0;
         }
     }
-    lll_internal_unlock(&self->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
 
     // No signal is pending, then we should wait
     apth_event_t ev = apth_event_sigs(APTH_EVENT_MODE_STATIC, set, sigp);
@@ -117,7 +117,7 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 
 APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 {
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
     if (APTH_IS_FAKE_SCHED(self))
         return apth_func_raw(raise)(sig);
     return apth_kill(self, sig);
@@ -149,13 +149,13 @@ APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
 {
     if (set == NULL)
         return apth_error(-1, EFAULT);
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     if (APTH_IS_FAKE_SCHED(cur))
         return apth_func_raw(sigpending)(set);
 
-    lll_internal_lock(&cur->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&cur->siglock); // NEW: Use Type 2 LLL
     *set = cur->sigpending;
-    lll_internal_unlock(&cur->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&cur->siglock); // NEW: Use Type 2 LLL
     return 0;
 }
 
@@ -163,7 +163,7 @@ APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
 static bool __apth_sigsuspend_check(void *arg)
 {
     apth_t th = (apth_t)arg;
-    lll_internal_lock(&th->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&th->siglock); // NEW: Use Type 2 LLL
     bool found = false;
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
@@ -173,7 +173,7 @@ static bool __apth_sigsuspend_check(void *arg)
             break;
         }
     }
-    lll_internal_unlock(&th->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&th->siglock); // NEW: Use Type 2 LLL
     return found;
 }
 
@@ -185,21 +185,21 @@ APTH_DEFINE_HOOK(int, pause, (void), ())
     // According to POSIX, pause() always returns -1 with errno set to EINTR
     // We implement this by waiting for any signal to be delivered
 
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Check if there's already a pending unblocked signal
-    lll_internal_lock(&self->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_lock(&self->siglock); // NEW: Use Type 2 LLL
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
         if (sigismember(&self->sigpending, sig) && !sigismember(&self->sigmask, sig))
         {
-            lll_internal_unlock(&self->siglock);  // NEW: Use Type 2 LLL
+            lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
             // Deliver the signal and return
             apth_deliver_pending_signals(self);
             return apth_error(-1, EINTR);
         }
     }
-    lll_internal_unlock(&self->siglock);  // NEW: Use Type 2 LLL
+    lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
 
     // No signal pending, wait for any signal using a custom check function
     apth_event_t ev = apth_event_func(
@@ -218,7 +218,7 @@ APTH_DEFINE_HOOK(int, pause, (void), ())
 
 APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 {
-    apth_t self = cur_apth();
+    apth_t self = CUR_APTH;
 
     // Replace signal mask temporarily
     sigset_t oldmask = self->sigmask;
@@ -244,7 +244,7 @@ APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 
 APTH_DEFINE_HOOK(int, sigaltstack, (const stack_t *restrict ss, stack_t *restrict oss), (ss, oss))
 {
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
     if (oss != NULL)
     {
         if (cur->sigaltstack_set)

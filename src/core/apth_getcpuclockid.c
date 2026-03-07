@@ -1,9 +1,10 @@
 #include "apth.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "common.h"
+#include "hook_libc/hooked_funcs.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_sched.h"
+#include "internal/apth_worker.h"
 #include "utils/apth_errno.h"
-#include <errno.h>
-#include <pthread.h>
 
 /* Get the CPU-time clock ID for a thread.
  *
@@ -29,7 +30,7 @@ int apth_getcpuclockid(apth_t th, clockid_t *clock_id)
         return apth_error(EINVAL, EINVAL);
 
     // Get the scheduler this apth belongs to
-    apth_sched_t sched = sched_of(th);
+    apth_sched_t sched = SCHED_OF(th);
     if (sched == NULL)
         return apth_error(ESRCH, ESRCH);
 
@@ -40,7 +41,7 @@ int apth_getcpuclockid(apth_t th, clockid_t *clock_id)
 
     // Get the CPU clock ID for the underlying pthread worker
     // Note: This returns the CPU time for the entire worker, not just this apth
-    int ret = pthread_getcpuclockid(worker->tid, clock_id);
+    int ret = apth_func_raw(pthread_getcpuclockid)(worker->tid, clock_id);
     if (ret != 0)
         return apth_error(ret, ret);
 

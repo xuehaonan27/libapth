@@ -1,6 +1,10 @@
+#include "common.h" // For WORKER_SPAWNED
 #include "apth.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "hook_libc/hooked_funcs.h"
+#include "internal/apth_sched.h"
+#include "internal/apth_worker.h"
+#include "internal/apth_signal.h"
+#include "internal/apth_fd.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -85,7 +89,7 @@ int apth_init(apth_init_t *initvals)
 
     apth_fd_table_init();
 
-    worker_key_t_init();
+    // worker_key_t_init();
     sched_key_t_init();
 
     // TODO: check `initvals`
@@ -118,9 +122,9 @@ int apth_init(apth_init_t *initvals)
     apth_worker_t worker0 = get_worker_by_id(0);
     apth_sched_t sched = worker0->sched;
 
-    set_cur_worker(worker0);
-    set_cur_sched(sched);
-    set_cur_apth(APTH_FAKE_SCHED(sched));
+    // set_cur_worker(worker0);
+    SET_CUR_SCHED(sched);
+    SET_CUR_APTH(APTH_FAKE_SCHED(sched));
 
     apth_debug("worker0 = %p", worker0);
     apth_debug("sched = %p", sched);
@@ -157,8 +161,8 @@ int apth_init(apth_init_t *initvals)
     apth_debug("LIBAPTH INITIALIZER JOINED WORKER 0...");
 #endif // APTH_HOLD_INITIALIZER_PTHREAD
 
-    set_cur_sched(NULL);
-    set_cur_worker(NULL);
+    SET_CUR_SCHED(NULL);
+    // set_cur_worker(NULL);
 
     // Call `pthread_exit`, the initializer pthread should exit but others
     // should continue to run

@@ -1,6 +1,7 @@
 #include "hook_libc/hook_lowlevel_io.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_fd.h"
 
 APTH_DEFINE_HOOK(int, dup, (int old), (old))
 {

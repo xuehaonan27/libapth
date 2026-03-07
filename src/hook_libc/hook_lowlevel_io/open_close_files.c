@@ -1,6 +1,7 @@
 #include "hook_libc/hook_lowlevel_io.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "apth.h"
+#include "internal/apth_tcb.h"
+#include "internal/apth_fd.h"
 #include <stdbool.h>
 #include <stdarg.h>
 #include <sys/syscall.h>

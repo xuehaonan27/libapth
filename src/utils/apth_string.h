@@ -1,7 +1,8 @@
 #ifndef __LIBAPTH_UTILS_APTH_STRING_H
 #define __LIBAPTH_UTILS_APTH_STRING_H
 
-#include "common.h"
+#include <sys/types.h>
+#include <stdarg.h>
 
 #define NUL '\0'
 

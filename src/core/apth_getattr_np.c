@@ -1,6 +1,5 @@
-#include "apth.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "attr/apth_attr.h"
+#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
 #include <string.h>
 

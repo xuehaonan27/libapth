@@ -1,8 +1,14 @@
-#define _POSIX_C_SOURCE 200809L // For struct sigaction
+// #define _POSIX_C_SOURCE 200809L // For struct sigaction
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <signal.h>
+
 #include "hook_process.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#include "hook_pthread.h"
+#include "common.h" // For APTH_PATH_BINSH
+#include "internal/apth_event.h"
+#include "internal/apth_tcb.h"
 #include "utils/atomic_wrapper.h"
 #include <sys/stat.h> // For stat
 
@@ -138,7 +144,7 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
 {
     apth_event_t ev;
     pid_t pid;
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     apth_debug("apth_waitpid: called from thread \"%s\"", cur->name);
     for (;;)
@@ -178,7 +184,7 @@ APTH_DEFINE_HOOK(pid_t, wait4,
 
     apth_event_t ev;
     pid_t result;
-    apth_t cur = cur_apth();
+    apth_t cur = CUR_APTH;
 
     apth_debug("apth_wait4: called from thread \"%s\"", cur->name);
     for (;;)
@@ -201,29 +207,4 @@ APTH_DEFINE_HOOK(pid_t, wait4,
     return result;
 }
 
-APTH_DEFINE_HOOK(void, exit, (int status), (status))
-{
-    apth_hook_debug(exit);
-
-    apth_t cur = cur_apth();
-
-    // If this is the main apth, we should exit the whole process
-    if (cur == get_MAIN_APTH())
-    {
-        // Mark that main apth exited
-        atomic_store_release(&MAIN_APTH_EXITED, 1);
-        atomic_store_release(&MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT, 1);
-
-        // Call the real exit to terminate the process
-        apth_func_raw(exit)(status);
-    }
-    else
-    {
-        // For non-main apths, exit() should terminate the thread
-        // Use apth_exit to properly clean up the thread
-        apth_exit((void *)(long)status);
-    }
-
-    // Should not reach here
-    PANIC("exit() should not return");
-}
+APTH_FETCH_LIBCFUNC(exit)

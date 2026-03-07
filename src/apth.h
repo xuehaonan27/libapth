@@ -333,10 +333,6 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 int apth_rwlock_trywrlock(apth_rwlock_t *rwlock);
 int apth_rwlock_unlock(apth_rwlock_t *rwlock);
 
-// ==================== INCLUDE SYS HEADERS ====================
-#include <bits/types/struct_timeval.h>
-typedef struct timeval apth_time_t;
-
 // ==================== Application Entry Point ====================
 
 /*

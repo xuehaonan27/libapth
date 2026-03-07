@@ -1,5 +1,5 @@
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_data.h"
+#include "apth.h"
 #include "utils/debug.h"
 
 APTH_INTERNAL void apth_key_destroydata(apth_t th) {

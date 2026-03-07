@@ -1,6 +1,17 @@
-#include "common.h"
-#include "internal_types.h"
-#include "internal_funcs.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE // For SIG_SETMASK
+#endif
+#include <signal.h>
+
+#include "common.h" // For WORKER_SPAWNED
+#include "apth_sched.h"
+// #include "internal/apth_tcb.h"
+#include "internal/apth_fd_slot.h"
+#include "internal/apth_time.h"
+#include "internal/apth_global_sched_pool.h"
+#include "internal/apth_thqueue.h"
+#include "internal/apth_signal.h"
+#include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
@@ -18,6 +29,35 @@ _Atomic(unsigned int) apth_alive_nthreads = 0;
 static _Atomic(apth_t) MAIN_APTH = APTH_NULL;
 _Atomic(int) MAIN_APTH_EXITED = 0;
 _Atomic(int) MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT = 0;
+
+#ifdef APTH_CUR_USING_KEYWORD
+APTH_THREAD_LOCAL apth_sched_t __cur_sched_tls = NULL;
+#else
+// Use pthread TLS API
+pthread_key_t __CUR_SCHED_KEY;
+static void sched_key_t_destr_fn(void *) { /* nop */ }
+#endif
+
+void sched_key_t_init(void)
+{
+#ifdef APTH_CUR_USING_KEYWORD
+    // No initialization needed for thread-local storage keywords
+    __cur_sched_tls = NULL;
+#else
+    int result = apth_func_raw(pthread_key_create)(&__CUR_SCHED_KEY, sched_key_t_destr_fn);
+    assert_msg(result == 0, "fail pthread_key_create");
+#endif
+}
+
+void sched_key_t_drop(void)
+{
+#ifdef APTH_CUR_USING_KEYWORD
+    __cur_sched_tls = NULL;
+#else
+    int result = apth_func_raw(pthread_key_delete)(__CUR_SCHED_KEY);
+    assert_msg(result == 0, "fail pthread_key_delete");
+#endif
+}
 
 APTH_INTERNAL apth_t get_MAIN_APTH(void)
 {
@@ -195,7 +235,7 @@ static void __drain_free_th(apth_t t)
 // Kill the schduler ingredients
 APTH_INTERNAL void apth_scheduler_kill(void)
 {
-    apth_sched_t sched = cur_sched();
+    apth_sched_t sched = CUR_SCHED;
 
     drain_thqueue(sched->new_queue, __drain_free_th);
     drain_thqueue(sched->ready_queue, __drain_free_th);
@@ -238,11 +278,11 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 
     // Cancel TLS, no need for set current apth to APTH_NULL
     // since clearing scheduler will do this.
-    set_cur_sched(NULL);
-    set_cur_worker(NULL);
+    SET_CUR_SCHED(NULL);
+    // set_cur_worker(NULL);
 
     sched_key_t_drop();
-    worker_key_t_drop();
+    // worker_key_t_drop();
 
     // Free sched
     free((void *)sched->sched_ctx);
@@ -410,9 +450,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     apth_debug("WORKER %d created scheduler", me->worker_id);
 
     // Set TLS
-    set_cur_worker(me);
-    set_cur_sched(sched);
-    set_cur_apth(APTH_FAKE_SCHED(sched));
+    // set_cur_worker(me);
+    SET_CUR_SCHED(sched);
+    SET_CUR_APTH(APTH_FAKE_SCHED(sched));
 
     sigset_t sigs;
     apth_time_t snapshot;
@@ -470,7 +510,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         {
             // The advised thread might have been freed, stolen, or changed state
             // Validate before using it
-            if (APTH_IS_VALID(th) && sched_of(th) == sched && queue_state_of(th) == APTH_STATE_READY)
+            if (APTH_IS_VALID(th) && SCHED_OF(th) == sched && QUEUE_STATE_OF(th) == APTH_STATE_READY)
             {
                 atomic_store_release(&th->state, APTH_STATE_RUNNING); // NEW: Simple state transition
                 transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), sched->running_queue);
@@ -522,7 +562,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         th->dispatches += 1;
 
         // Set current thread
-        set_cur_apth(th);
+        SET_CUR_APTH(th);
 
         // Restore yield reason to VOLUNTEER since program code would not do this
         // for us, but we could set reason before yielding within LIBAPTH.
@@ -533,7 +573,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             apth_deliver_pending_signals(th);
         apth_ctx_switch(sched->sched_ctx, th->ctx);
         // Prepare for thread insertion and event management phase
-        set_cur_apth(APTH_FAKE_SCHED(sched));
+        SET_CUR_APTH(APTH_FAKE_SCHED(sched));
 
         // Update scheduler times
         apth_time_set(&snapshot, APTH_TIME_NOW);

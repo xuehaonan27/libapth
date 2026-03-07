@@ -1,6 +1,5 @@
 #include "apth.h"
-#include "internal_funcs.h"
-#include "internal_types.h"
+#include "apth_once.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
 
