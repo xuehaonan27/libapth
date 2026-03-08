@@ -21,42 +21,46 @@ typedef uintptr_t apth_yield_reason_t;
 // Thread control block.
 struct ALIGNED(8) apth_st
 {
-    /* standard thread control block ingredients */
+    /* Common TCB Ingredients */
     int prio;                        // base priority of thread
-    char name[APTH_TCB_NAMELEN + 1]; // name of thread
     int dispatches;                  // total number of thread dispatches
+    char name[APTH_TCB_NAMELEN + 1]; // name of thread
+    _Atomic(apth_state_t) state;     // Simple atomic state
 
-    /* NEW: Simplified state management */
-    _Atomic(apth_state_t) state; // Simple atomic state
-
-    /* timing */
+    /* Time statistics */
     apth_time_t spawned; // time point at which thread was spawned
     apth_time_t lastran; // time point at which thread was last running
     apth_time_t running; // time range the thread was already running
 
-    /* event handling */
+    /* Events waiting on */
     struct list event_list; // events the tread is waiting for
 
-    // Embedded event structures to avoid malloc/free in common case
-    // Most apths wait on at most 1-2 events at a time (e.g., one FD read/write)
-    // For select/poll with many fds, we fall back to malloc
+    /* Embedded event structures to avoid memory allocation in common case.
+       Most apths wait on at most 1-2 events at a time (e.g. one FD read/write)
+       For select/poll with many fds, we fall back to memory allocation */
     struct apth_event_st embedded_event_1;
     struct apth_event_st embedded_event_2;
     bool embedded_event_1_in_use;
     bool embedded_event_2_in_use;
 
-    /* per-thread signal handling */
+    /* Per APTH Signal Handling */
     sigset_t sigpending;         // set of pending signals
     int sigpendcnt;              // number of pending signals
     sigset_t sigmask;            // signal mask of this apth
-    lll_internal_t siglock;      // NEW: Type 2 LLL for signal handling synchronization
+    lll_internal_t siglock;      // signal handling synchronization
     stack_t signalstack;         // stack for signal handling
     bool sigaltstack_set;        // whether signalstack is set
     volatile bool in_sighandler; // whether we are now executing signal handler in signal stack
 
-    /* machine context */
-    struct apth_cxt_st ctx_st; // last saved context of thread
+    /* Context */
+    uint64_t last_yield_tick;         // when did APTH yield last time
+    int yield_timeslice;              // count of timeslices between each two of volunteer yielding
+    apth_yield_reason_t yield_reason; // reason why the APTH yields
+    struct apth_cxt_st ctx_st;        // saved context of thread
+// Useful macro for accessing `ctx_st` neatly
 #define CTX(T) ((apth_cxt_t) & ((T)->ctx_st))
+
+    /* Stack */
     char *stack_mem_start;       // pointer to thread stack memory (including guard page if any)
     size_t stacksize;            // size of thread stack (excluding guard page)
     size_t guardsize;            // size of guard page
@@ -65,27 +69,27 @@ struct ALIGNED(8) apth_st
     void *(*start_func)(void *); // start routine
     void *start_arg;             // start argument
 
-    /* thread joining */
-    _Atomic(apth_t) joinid; // Who is joining me? Only one apth can do this, store here
-    // When (pd)->joinid == (pd), then `pd` is marked as DETACHED
+    /* Thread Joining */
+    void *join_arg;         // Result of this APTH
+    _Atomic(apth_t) joinid; // APTH that's joining us. Only one APTH can do this, store here
+// When (pd)->joinid == (pd), then `pd` is marked as DETACHED
 #define IS_DETACHED(pd) ((pd)->joinid == (pd))
-    void *join_arg; // joining argument
 
-    /* cancellation support */
+    /* Cancellation */
     _Atomic(bool) cancelreq;              // cancellation request is pending
     _Atomic(unsigned int) cancelhandling; // cancellation state of thread
-
-    // Bit set if cancellation is disabled
+// Bit set if cancellation is disabled
 #define CANCELSTATE_BITMASK _BIT(0)
-    // Bit set if asynchronous cancellation mode is selected
+// Bit set if asynchronous cancellation mode is selected
 #define CANCELTYPE_BITMASK _BIT(1)
 
+    /* Cleanups */
     apth_cleanup_t cleanups; // stack of thread cleanup handlers
 
-    /* per-thread exception handling */
+    /* Exception Handling */
     // TODO: exception handling
 
-    /* Thread specific data */
+    /* Thread Specific Data (TLS) */
 #define APTH_KEYS_MAX 1024
 
 // We keep thread specific data in a special data structure, a two-level
@@ -102,26 +106,17 @@ struct ALIGNED(8) apth_st
     // allocating any memory dynamically for most applications
     struct apth_key_data specific_1stblock[APTH_KEY_2NDLEVEL_SIZE];
     struct apth_key_data *specific[APTH_KEY_1STLEVEL_SIZE];
+    bool specific_used; // flag which is set when specific data is set.
 
-    // Flag which is set when specific data is set.
-    bool specific_used;
-
-    /* scheduler list handling */
+    /* APTH Ownership */
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
-
     _Atomic(apth_thqueue_t) belongs_to_queue;
-
-    /* NEW: Ownership system for simplified state management */
-    apth_sched_t home_sched;       // Immutable: set at creation, for work stealing decisions
-    apth_sched_t current_sched;    // Mutable: which scheduler currently owns this APTH
-    apth_thqueue_t current_queue;  // Which queue (protected by queue lock)
-    lll_internal_t ownership_lock; // Type 2 LLL for cross-scheduler operations (stealing, join)
-
-    uint64_t last_yield_tick;
-    int yield_timeslice;
-    apth_yield_reason_t yield_reason;
+    apth_sched_t home_sched;       // immutable: set at creation, for work stealing decisions
+    apth_sched_t current_sched;    // mutable: which scheduler currently owns this APTH
+    apth_thqueue_t current_queue;  // which queue this APTH is on (protected by queue lock)
+    lll_internal_t ownership_lock; // synchronize cross-scheduler operations (stealing, join)
 };
 
 #define APTH_NULL ((apth_t)NULL)
