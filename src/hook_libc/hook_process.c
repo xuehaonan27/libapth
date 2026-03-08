@@ -143,7 +143,6 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
                  (pid_t wpid, int *status, int options),
                  (wpid, status, options))
 {
-    apth_event_t ev;
     pid_t pid;
     apth_t cur = CUR_APTH;
 
@@ -181,8 +180,6 @@ APTH_DEFINE_HOOK(pid_t, wait4,
                  (pid, status_ptr, options, usage))
 {
     apth_hook_debug(wait4);
-
-    apth_event_t ev;
     pid_t result;
     apth_t cur = CUR_APTH;
 

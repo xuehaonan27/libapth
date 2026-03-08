@@ -98,8 +98,6 @@ struct apth_event_st
         struct apth_event_select_st SELECT;
         struct apth_event_sigs_st SIGS;
         struct apth_event_time_st TIME;
-        struct apth_event_mutex_st MUTEX;
-        struct apth_event_cond_st COND;
         struct apth_event_tid_st TID;
         struct apth_event_func_st FUNC;
     } ev_args;
