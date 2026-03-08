@@ -1,7 +1,7 @@
 #ifndef __LIBAPTH_CORE_APTH_MUTEX_H
 #define __LIBAPTH_CORE_APTH_MUTEX_H
 
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/list.inline.h"
 
 // Mutex internal structure

@@ -4,7 +4,7 @@
 #include "internal/forward_declare.h"
 #include "internal/apth_tcb.h"
 #include "internal/apth_state.h"
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/list.inline.h"
 
 struct apth_thqueue_st

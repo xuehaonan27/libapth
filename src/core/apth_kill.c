@@ -8,7 +8,7 @@
 #include "internal/apth_thqueue.h"
 #include "internal/apth_signal.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 static int apth_apth_exists(apth_t t)
 {

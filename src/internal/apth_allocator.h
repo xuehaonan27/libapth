@@ -2,7 +2,7 @@
 #define __LIBAPTH_INTERNAL_APTH_ALLOCATOR_H
 
 #include "utils/list.h"
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include <stddef.h>
 
 struct glbmem_st {

@@ -4,7 +4,7 @@
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 

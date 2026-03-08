@@ -2,7 +2,7 @@
 #define __LIBAPTH_CORE_APTH_COND_H
 
 #include <bits/types/clockid_t.h>
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/list.inline.h"
 
 // Condition variable internal structure

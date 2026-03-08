@@ -2,7 +2,7 @@
 #define __LIBAPTH_INTERNAL_APTH_GLOBAL_SCHED_POOL_H
 
 #include "internal/apth_worker.h"
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 
 // The whole process shares this pool. This pool should be placed in heap.
 // Accessing to this pool should be synchronized.

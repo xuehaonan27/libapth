@@ -1,7 +1,7 @@
 #ifndef __LIBAPTH_CORE_APTH_RWLOCK_H
 #define __LIBAPTH_CORE_APTH_RWLOCK_H
 
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/list.inline.h"
 
 // Read-write lock internal structure

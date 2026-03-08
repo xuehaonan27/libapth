@@ -16,7 +16,7 @@ Phase 2 is underway! We're migrating synchronization primitives from the old `ll
 - `lll_init(&m->guard)` → `lll_apth_init(&m->guard)`
 - `lll_lock(&m->guard, "...")` → `lll_apth_lock(&m->guard)`
 - `lll_unlock(&m->guard, "...")` → `lll_apth_unlock(&m->guard)`
-- Added `#include "utils/lll_new.inline.h"`
+- Added `#include "utils/lll.inline.h"`
 
 **Functions Updated:**
 - `apth_mutex_init()` - Uses `lll_apth_init`
@@ -63,14 +63,14 @@ After completing all synchronization primitives:
 ## Files Modified So Far
 
 ### Created:
-- `src/utils/lll_new.h`
-- `src/utils/lll_new.inline.h`
+- `src/utils/lll.h`
+- `src/utils/lll.inline.h`
 - `docs/NEW_LLL_AND_STATE_DESIGN.md`
 - `docs/IMPLEMENTATION_PROGRESS.md`
 - `docs/PHASE2_PROGRESS.md` (this file)
 
 ### Modified:
-- `src/internal_types.h` - Added `lll_new.h` include, updated `apth_mutex_st`
+- `src/internal_types.h` - Added `lll.h` include, updated `apth_mutex_st`
 - `src/core/apth_mutex.c` - Migrated to `lll_apth_t`
 
 ## Key Insights

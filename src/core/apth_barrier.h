@@ -1,7 +1,7 @@
 #ifndef __LIBAPTH_CORE_APTH_BARRIER_H
 #define __LIBAPTH_CORE_APTH_BARRIER_H
 
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/list.inline.h"
 
 // Barrier internal structure

@@ -2,7 +2,7 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_signal.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {

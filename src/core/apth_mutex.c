@@ -6,7 +6,7 @@
 #include "internal/apth_event.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 // ==================== Mutex Attributes ====================
 

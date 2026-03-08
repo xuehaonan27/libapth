@@ -3,7 +3,7 @@
 
 #include "common.h"
 #include "apth.h"
-#include "lll_new.h"
+#include "lll.h"
 #include "hook_libc/hooked_funcs.h"
 #include "internal/forward_declare.h"
 #include "internal/types.h"

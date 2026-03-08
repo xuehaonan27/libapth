@@ -21,7 +21,7 @@ Phase 3 is underway! We're migrating internal locks from the old `lll_t` to the 
 - `atomic_fetch_add_release(&queue->size, 1)` → `queue->size++`
 - `atomic_fetch_sub_release(&queue->size, 1)` → `queue->size--`
 - `atomic_store_release(&queue->size, 0)` → `queue->size = 0`
-- Added `#include "utils/lll_new.inline.h"`
+- Added `#include "utils/lll.inline.h"`
 
 **Functions Updated:**
 - `thqueue_init()` - Uses `lll_internal_init`, non-atomic size

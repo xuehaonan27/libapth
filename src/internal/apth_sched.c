@@ -16,7 +16,7 @@
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 #include "utils/apth_getpid.h"
 #include <stdlib.h>
 #include <sys/epoll.h>

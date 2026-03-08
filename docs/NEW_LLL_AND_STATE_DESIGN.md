@@ -208,7 +208,7 @@ int apth_join(apth_t target, void **retval) {
 ## Migration Plan
 
 ### Phase 1: Add New LLL Types (DONE)
-- [x] Create `lll_new.h` and `lll_new.inline.h`
+- [x] Create `lll.h` and `lll.inline.h`
 - [x] Implement `lll_apth_t` and `lll_internal_t`
 - [x] Add comments to `internal_types.h` showing new fields
 

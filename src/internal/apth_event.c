@@ -7,7 +7,7 @@
 #include "internal/apth_signal.h"
 #include "internal/apth_state.h"
 #include "internal/apth_time.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"

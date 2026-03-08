@@ -3,8 +3,8 @@
 ## Completed
 
 ### 1. New LLL Type Definitions
-- ✅ Created `src/utils/lll_new.h` with Type 1 and Type 2 LLL definitions
-- ✅ Created `src/utils/lll_new.inline.h` with complete implementations
+- ✅ Created `src/utils/lll.h` with Type 1 and Type 2 LLL definitions
+- ✅ Created `src/utils/lll.inline.h` with complete implementations
 - ✅ Type 1 LLL (`lll_apth_t`): For synchronization primitives, APTH-only
 - ✅ Type 2 LLL (`lll_internal_t`): For internal locks, mixed APTH/scheduler
 
@@ -106,8 +106,8 @@ typedef struct {
 ## Files Created/Modified
 
 ### Created:
-- `src/utils/lll_new.h`
-- `src/utils/lll_new.inline.h`
+- `src/utils/lll.h`
+- `src/utils/lll.inline.h`
 - `docs/NEW_LLL_AND_STATE_DESIGN.md`
 - `docs/IMPLEMENTATION_PROGRESS.md` (this file)
 

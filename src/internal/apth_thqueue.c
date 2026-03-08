@@ -3,7 +3,7 @@
 #include "utils/list.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 APTH_INTERNAL void thqueue_init(apth_thqueue_t queue, apth_state_t state)
 {

@@ -5,7 +5,7 @@
 #include "internal/apth_event.h"
 #include "internal/apth_sched.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 int apth_barrier_init(apth_barrier_t *barrier, const void *attr, unsigned int count)
 {

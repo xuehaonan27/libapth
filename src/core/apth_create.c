@@ -12,7 +12,7 @@
 #include "attr/apth_attr.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 #include "utils/apth_errno.h"
 
 static void apth_create_trampoline(void)

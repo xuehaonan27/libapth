@@ -8,7 +8,7 @@
 
 #include "internal/apth_sched.h"
 #include "internal/apth_signal.h"
-#include "utils/lll_new.h"
+#include "utils/lll.h"
 #include "utils/archplattoold.h"
 
 #define APTH_NSIG 65

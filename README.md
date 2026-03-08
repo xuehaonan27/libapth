@@ -111,7 +111,7 @@ Structures that needs allocation:
 4. `malloc(sizeof(struct apth_cleanup_st))`. This struct is currently 3 pointers, meaning 3 words = 12 bytes (32 bits platform) or 24 bytes (64 bits platform). It is aligned to 8 bytes! Should be allocated in per-scheduler TLAB.
 5. `tiov = (struct iovec *)malloc(tiovcnt)` in scatter_gather I/O. But could it be optimized to stack allocation?
 6. `struct apth_epoll_waiter *w = (struct apth_epoll_waiter *)malloc(sizeof(*w));`
- and `(apth_event_t)malloc(sizeof(struct apth_event_st))`. They should be allocated in per-scheduler TLAB! So the global memory pool should instead maintain a per-pthread memory block!
+ . They should be allocated in per-scheduler TLAB! So the global memory pool should instead maintain a per-pthread memory block!
 7. `sched = (apth_sched_t)malloc(sizeof(struct apth_sched_st))`. This is allocated only once per pthread. So could be allocated in global pool.
 8. `t = (apth_t)malloc(sizeof(struct apth_st))`. TCB should be merged with CTX, and fill a 4 KiB page.
 10. `(apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))`. Is allocated only once per pthread.

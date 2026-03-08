@@ -5,7 +5,7 @@
 #include "internal/apth_sched.h"
 #include "internal/apth_sync_waiter.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h"
+#include "utils/lll.inline.h"
 
 // ==================== Condition Variable Attributes ====================
 
