@@ -412,7 +412,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 // Collect apths that need to be waked, avoiding operating waked_queue
 // while still holding lock of waiting_queue, which is deadlock-prone.
 // Use a temporary array here.
-#define MAX_WAKE_BATCH 128
+#define MAX_WAKE_BATCH 512
         apth_t wake_batch[MAX_WAKE_BATCH];
         int wake_count = 0;
 
