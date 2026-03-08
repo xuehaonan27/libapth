@@ -102,3 +102,19 @@ mutator threads)
 10. Memory allocator designed delibratedly.
 11. On Linux platform, mechanisms like signalfd, eventfd should also be 
 considered and hooked.
+
+## Memory Allocator
+Structures that needs allocation:
+1. Stack. Should treated specially.
+2. `struct __apth_main_args *__margs__= malloc(sizeof(struct __apth_main_args));`. But this is only one.
+3. `iattr->cpuset`. `cpu_set_t`.
+4. `malloc(sizeof(struct apth_cleanup_st))`. This struct is currently 3 pointers, meaning 3 words = 12 bytes (32 bits platform) or 24 bytes (64 bits platform). It is aligned to 8 bytes! Should be allocated in per-scheduler TLAB.
+5. `tiov = (struct iovec *)malloc(tiovcnt)` in scatter_gather I/O. But could it be optimized to stack allocation?
+6. `(apth_cxt_t)malloc(sizeof(struct apth_cxt_st))`. This should be embeded into TCB later.
+7. `struct apth_epoll_waiter *w = (struct apth_epoll_waiter *)malloc(sizeof(*w));`
+ and `(apth_event_t)malloc(sizeof(struct apth_event_st))`. They should be allocated in per-scheduler TLAB! So the global memory pool should instead maintain a per-pthread memory block!
+8. `sched = (apth_sched_t)malloc(sizeof(struct apth_perpthr_scheduler))`. This is allocated only once per pthread. So could be allocated in global pool.
+9. `t = (apth_t)malloc(sizeof(struct apth_st))`. TCB should be merged with CTX, and fill a 4 KiB page.
+10. `malloc(sizeof(struct apth_thqueue_st))`. Thread queues should be embeded into scheduler as well.
+11. `(apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))`. Is allocated only once per pthread.
+12. `(rv = (char *)malloc(n + 1))`. This is used in `apth_string`. Could we consider allocate on stack? Since LIBAPTH currently do not support time slicing, so we could just do that on scheduler's stack?

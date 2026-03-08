@@ -17,7 +17,8 @@
 struct apth_perpthr_scheduler
 {
     sched_id id;                     // scheduler ID
-    apth_cxt_t sched_ctx;            // scheduler context (as trampoline)
+    struct apth_cxt_st sched_ctx_st; // scheduler context (as trampoline)
+#define SCHED_CTX(S) ((apth_cxt_t) & ((S)->sched_ctx_st))
     apth_thqueue_t new_queue;        // new threads
     apth_thqueue_t ready_queue;      // threads ready to run
     apth_thqueue_t waiting_queue;    // threads waiting for an event

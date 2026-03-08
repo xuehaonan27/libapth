@@ -167,7 +167,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Get the usable stack start (after guard page if present)
     char *usable_stack_start = apth_tcb_get_usable_stack_start(t);
-    if (!apth_ctx_set(t->ctx, apth_create_trampoline, usable_stack_start, t->stacksize))
+    if (!apth_ctx_set(CTX(t), apth_create_trampoline, usable_stack_start, t->stacksize))
     {
         apth_shield
         {

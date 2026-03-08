@@ -4,20 +4,9 @@
 #include "utils/archplattoold.h"
 #include "internal/forward_declare.h"
 
-// #define _POSIX_C_SOURCE 200809L // For struct sigaction
-// #include <signal.h>
-// #include <bits/ss_flags.h> // _SIGNAL_H should defined
-// #include <sys/types.h>     // for size_t, ssize_t, off_t
-// #include <sys/time.h>
-// #include <stdarg.h>
-// #include <stddef.h>
-// #include <errno.h>
-// #include <stdbool.h>
-// #include <string.h>
-
-// TLS implementation selection:
-// - If APTH_CUR_USING_KEYWORD is defined, use _Thread_local/__thread for faster access
-// - Otherwise, use pthread_getspecific/pthread_setspecific for compatibility
+// TLS implementation selection.
+// If APTH_CUR_USING_KEYWORD is defined, use _Thread_local/__thread for faster
+// access. Otherwise, use pthread_getspecific/pthread_setspecific for compatibility
 #ifdef APTH_CUR_USING_KEYWORD
 extern APTH_THREAD_LOCAL apth_sched_t __cur_sched_tls;
 #else

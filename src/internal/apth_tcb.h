@@ -60,7 +60,8 @@ struct ALIGNED(8) apth_st
     volatile bool in_sighandler; // whether we are now executing signal handler in signal stack
 
     /* machine context */
-    apth_cxt_t ctx;              // last saved context of thread
+    struct apth_cxt_st ctx_st; // last saved context of thread
+#define CTX(T) ((apth_cxt_t) & ((T)->ctx_st))
     char *stack_mem_start;       // pointer to thread stack memory (including guard page if any)
     size_t stacksize;            // size of thread stack (excluding guard page)
     size_t guardsize;            // size of guard page
@@ -83,16 +84,6 @@ struct ALIGNED(8) apth_st
 #define CANCELSTATE_BITMASK _BIT(0)
     // Bit set if asynchronous cancellation mode is selected
 #define CANCELTYPE_BITMASK _BIT(1)
-    //     // Bit set if canceling has been initiated
-    // #define CANCELING_BITMASK _BIT(2)
-    //     // Bit set if canceled
-    // #define CANCELED_BITMASK _BIT(3)
-    //     // Bit set if thread is exiting
-    // #define EXITING_BITMASK _BIT(4)
-    //     // Bit set if thread terminated and TCB is freed
-    // #define TERMINATED_BITMASK _BIT(5)
-    //     // Bit set if thread is supposed to change XID
-    // #define SETXID_BITMASK _BIT(6)
 
     apth_cleanup_t cleanups; // stack of thread cleanup handlers
 

@@ -26,8 +26,6 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
 
     memset(t, '\0', sizeof(struct apth_st));
 
-    t->ctx = apth_ctx_alloc();
-
     t->stacksize = stacksize;
     t->guardsize = guardsize;
     t->stack_mem_start = NULL;
@@ -65,12 +63,11 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
 
             // Use mmap for better control over memory protection
             void *mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (mem == MAP_FAILED)
             {
                 apth_shield
                 {
-                    free(t->ctx);
                     free(t);
                 }
                 return APTH_NULL;
@@ -147,7 +144,6 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
 
     // TODO: Clear other fields
 
-    free(t->ctx);
     free(t);
 
     // Decrement

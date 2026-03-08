@@ -80,11 +80,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_debug("enter");
     sched->id = worker->worker_id;
 
-    // Initialize scheduler context
-    sched->sched_ctx = apth_ctx_alloc();
-    if (sched->sched_ctx == NULL)
-        return apth_error(false, ENOMEM);
-
     thqueue_init(&sched->new_queue, sched, APTH_STATE_NEW);
     thqueue_init(&sched->ready_queue, sched, APTH_STATE_READY);
     thqueue_init(&sched->waiting_queue, sched, APTH_STATE_WAITING);
@@ -279,13 +274,7 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // Cancel TLS, no need for set current apth to APTH_NULL
     // since clearing scheduler will do this.
     SET_CUR_SCHED(NULL);
-    // set_cur_worker(NULL);
-
     sched_key_t_drop();
-    // worker_key_t_drop();
-
-    // Free sched
-    free((void *)sched->sched_ctx);
     free((void *)sched);
     return;
 }
@@ -571,7 +560,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Before context switch, we should handle signals
         if (th->sigpendcnt > 0)
             apth_deliver_pending_signals(th);
-        apth_ctx_switch(sched->sched_ctx, th->ctx);
+        apth_ctx_switch(SCHED_CTX(sched), CTX(th));
         // Prepare for thread insertion and event management phase
         SET_CUR_APTH(APTH_FAKE_SCHED(sched));
 

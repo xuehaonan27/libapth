@@ -19,7 +19,7 @@ int apth_yield(void)
     cur->last_yield_tick = cpu_tick();
 
     apth_debug("apth_yield: give up control to scheduler");
-    apth_ctx_switch(cur->ctx, sched->sched_ctx);
+    apth_ctx_switch(CTX(cur), SCHED_CTX(sched));
     apth_debug("apth_yield: got back control from scheduler");
     return 0;
 }

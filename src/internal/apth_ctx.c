@@ -10,37 +10,29 @@
 #include <stdbool.h>
 
 // Save the current thread context into `ctx`.
-APTH_INTERNAL bool apth_ctx_save(apth_cxt_t ctx)
+APTH_INTERNAL void apth_ctx_save(apth_cxt_t ctx)
 {
     ctx->error = errno;
-    ctx->restored = 0;
     getcontext(&ctx->uc);
-    return ctx->restored;
 }
 
 // Restore the current machine context (at the location of the old context)
 APTH_INTERNAL void apth_ctx_restore(apth_cxt_t ctx)
 {
     errno = ctx->error;
-    ctx->restored = 1;
     setcontext(&ctx->uc);
 }
 
 #define APTH_SWITCH_DEBUG_LINE \
     "==== THREAD CONTEXT SWITCH ==========================================="
 
-APTH_INTERNAL apth_cxt_t apth_ctx_alloc(void)
-{
-    apth_cxt_t ctx = (apth_cxt_t)malloc(sizeof(struct apth_cxt_st));
-    memset(ctx, '\0', sizeof(struct apth_cxt_st));
-    return ctx;
-}
-
 // Swap context from `old` to `new`.
 APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 {
     apth_debug(APTH_SWITCH_DEBUG_LINE);
+    old->error = errno;
     swapcontext(&old->uc, &new->uc);
+    errno = new->error;
 
     // After the context has been switched
     apth_t cur = CUR_APTH;
