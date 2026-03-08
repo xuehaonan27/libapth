@@ -42,13 +42,12 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
 
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            // Wait for both input readable and output writable
-            apth_event_t ev_in = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, inputfd);
-            apth_event_t ev_out = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, outputfd);
-            apth_wait_event(ev_in);
-            apth_wait_event(ev_out);
-            apth_event_free(ev_in);
-            apth_event_free(ev_out);
+            struct apth_event_st ev_in = EVENT_FD(inputfd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev_in);
+            assert(ev_in.ev_status != APTH_EV_STATUS_PENDING);
+            struct apth_event_st ev_out = EVENT_FD(outputfd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev_out);
+            assert(ev_out.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 

@@ -45,7 +45,7 @@ struct apth_event_select_st
 // Waiting on signals
 struct apth_event_sigs_st
 {
-    sigset_t *sigs;
+    const sigset_t *sigs;
     int *sig;
 };
 

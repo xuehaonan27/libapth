@@ -31,9 +31,9 @@ APTH_DEFINE_HOOK(ssize_t, read,
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
             // Data not ready, yield CPU to other apths
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // Try again after waked
         }
 
@@ -88,9 +88,9 @@ APTH_DEFINE_HOOK(ssize_t, write,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // try again
         }
 
@@ -149,9 +149,9 @@ APTH_DEFINE_HOOK(ssize_t, pread,
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
             // Data not ready, yield CPU to other apths
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // Try again after waked
         }
 
@@ -204,9 +204,9 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
             // Data not ready, yield CPU to other apths
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // Try again after waked
         }
 
@@ -258,9 +258,9 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // try again
         }
 
@@ -321,9 +321,9 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, filedes);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(filedes, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue; // try again
         }
 

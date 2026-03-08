@@ -32,9 +32,9 @@ APTH_DEFINE_HOOK(ssize_t, readv,
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -167,10 +167,9 @@ APTH_DEFINE_HOOK(ssize_t, writev,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(
-                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -234,9 +233,9 @@ APTH_DEFINE_HOOK(ssize_t, preadv,
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -280,9 +279,9 @@ APTH_DEFINE_HOOK(ssize_t, preadv64,
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -356,10 +355,9 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(
-                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -455,10 +453,9 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(
-                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -522,9 +519,9 @@ APTH_DEFINE_HOOK(ssize_t, preadv2, (int fd, const struct iovec *iov, int iovcnt,
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -568,9 +565,9 @@ APTH_DEFINE_HOOK(ssize_t, preadv64v2,
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -644,10 +641,9 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(
-                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -743,10 +739,9 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(
-                APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 

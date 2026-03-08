@@ -5,6 +5,7 @@
 #include "apth.h"
 #include "internal/forward_declare.h"
 #include "internal/types/struct_apth_event_st.h"
+#include "internal/apth_epoll_waiter.h"
 #include "internal/apth_cleanup.h"
 #include "internal/apth_ctx.h"
 #include "internal/apth_data.h"

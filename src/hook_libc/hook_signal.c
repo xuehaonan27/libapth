@@ -105,14 +105,9 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
     lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
 
     // No signal is pending, then we should wait
-    apth_event_t ev = apth_event_sigs(APTH_EVENT_MODE_STATIC, set, sigp);
-    if (ev == NULL)
-        return apth_error(errno, errno);
-    apth_wait_event(ev);
-
-    // When the event is marked as OCCURRED by event manager,
-    // *sigp should have been set to proper value.
-    apth_event_free(ev);
+    struct apth_event_st ev = EVENT_SIGS(set, sigp);
+    apth_wait_event(&ev);
+    assert(ev.ev_status != APTH_EV_STATUS_PENDING);
     return 0;
 }
 

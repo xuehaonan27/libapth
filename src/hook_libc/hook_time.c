@@ -11,7 +11,6 @@ APTH_DEFINE_HOOK(
     apth_time_t until;
     apth_time_t offset;
     apth_time_t now;
-    apth_event_t ev;
 
     // Consistency checks for POSIX conformance
     if (rqtp == NULL)
@@ -29,10 +28,8 @@ APTH_DEFINE_HOOK(
     apth_time_add(&until, &offset);
 
     // And let apth sleeps until this time is elapsed
-    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == APTH_EVENT_NULL)
-        return apth_error(-1, errno);
-    apth_wait_event(ev);
-    apth_event_free(ev);
+    struct apth_event_st ev = EVENT_TIME(until);
+    apth_wait_event(&ev);
 
     // Optionally provide amount of slept time
     if (rmtp != NULL)
@@ -51,7 +48,6 @@ APTH_DEFINE_HOOK(int, usleep, (unsigned int usec), (usec))
 {
     apth_time_t until;
     apth_time_t offset;
-    apth_event_t ev;
 
     // Short-circuit
     if (usec == 0)
@@ -62,11 +58,9 @@ APTH_DEFINE_HOOK(int, usleep, (unsigned int usec), (usec))
     apth_time_set(&until, APTH_TIME_NOW);
     apth_time_add(&until, &offset);
 
-    /* and let thread sleep until this time is elapsed */
-    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
-        return apth_error(-1, errno);
-    apth_wait_event(ev);
-    apth_event_free(ev);
+    // and let thread sleep until this time is elapsed
+    struct apth_event_st ev = EVENT_TIME(until);
+    apth_wait_event(&ev);
 
     return 0;
 }
@@ -75,7 +69,6 @@ APTH_DEFINE_HOOK(unsigned int, sleep, (unsigned int sec), (sec))
 {
     apth_time_t until;
     apth_time_t offset;
-    apth_event_t ev;
 
     // Consistency check
     if (sec == 0)
@@ -87,10 +80,8 @@ APTH_DEFINE_HOOK(unsigned int, sleep, (unsigned int sec), (sec))
     apth_time_add(&until, &offset);
 
     // And let thread sleep until this time is elapsed
-    if ((ev = apth_event_time(APTH_EVENT_MODE_STATIC, until)) == NULL)
-        return sec;
-    apth_wait_event(ev);
-    apth_event_free(ev);
+    struct apth_event_st ev = EVENT_TIME(until);
+    apth_wait_event(&ev);
 
     return 0;
 }

@@ -159,9 +159,8 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
             break;
 
         // Else wait a little bit
-        ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
-        apth_wait_event(ev);
-        apth_event_free(ev);
+        struct apth_event_st ev = EVENT_TIME(apth_timeout(0, 250000));
+        apth_wait_event(&ev);
     }
 
     apth_debug("apth_waitpid: leave to thread \"%s\"", cur->name);
@@ -199,9 +198,8 @@ APTH_DEFINE_HOOK(pid_t, wait4,
             break;
 
         // Else wait a little bit
-        ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(0, 250000));
-        apth_wait_event(ev);
-        apth_event_free(ev);
+        struct apth_event_st ev = EVENT_TIME(apth_timeout(0, 250000));
+        apth_wait_event(&ev);
     }
 
     apth_debug("apth_wait4: leave to thread \"%s\"", cur->name);

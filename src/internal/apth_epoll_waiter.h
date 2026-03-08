@@ -2,7 +2,7 @@
 #define __LIBAPTH_INTERNAL_APTH_EPOLL_WAITER_H
 
 #include "apth.h"
-#include "internal/types.h"
+#include "internal/forward_declare.h"
 #include "utils/list.h"
 
 // Entry for an apth waiting for a certain fd.

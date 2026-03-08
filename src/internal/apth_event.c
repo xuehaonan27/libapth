@@ -1,16 +1,12 @@
 #include "apth_event.h"
 #include "hook_libc/hooked_funcs.h"
 #include "internal/apth_cancel.h"
-// #include "internal/apth_tcb.h"
 #include "internal/apth_fd.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
-// #include "internal/apth_sched.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_state.h"
 #include "internal/apth_time.h"
-// #include "internal/apth_thqueue.h"
-// #include "internal/apth_worker.h"
 #include "utils/lll_new.inline.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
@@ -793,21 +789,6 @@ static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_fd(unsigned long spec, int fd)
-{
-    // Filedescriptor event
-    if (!apth_util_fd_valid(fd))
-        return apth_error(APTH_EVENT_NULL, EBADF);
-
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_FD;
-    ev->ev_goal = (int)(spec & (APTH_GOAL_UNTIL_FD_READABLE |
-                                APTH_GOAL_UNTIL_FD_WRITEABLE |
-                                APTH_GOAL_UNTIL_FD_EXCEPTION));
-    ev->ev_args.FD.fd = fd;
-    return ev;
-}
-
 APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
                                              fd_set *rfds, fd_set *wfds, fd_set *efds)
 {
@@ -820,49 +801,6 @@ APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd
     ev->ev_args.SELECT.rfds = rfds;
     ev->ev_args.SELECT.wfds = wfds;
     ev->ev_args.SELECT.efds = efds;
-    return ev;
-}
-
-// TODO: sigs will drop const identifier, performing a const-cast.
-// Note that this is error-prone. If caller submits a temporary variable on the
-// stack, and apth_wait_event exceeds scope, then `sigs` and `sig` will become
-// dangling pointers. Currently all invocations, `sigs` and `sig` will still
-// be on the stack of apths while waiting the event. But this could be an
-// error prone situation.
-APTH_INTERNAL apth_event_t apth_event_sigs(unsigned long spec, const sigset_t *sigs, int *sig)
-{
-    // Signal set event
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_SIGS;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    ev->ev_args.SIGS.sigs = (sigset_t *)sigs;
-    ev->ev_args.SIGS.sig = sig;
-    return ev;
-}
-
-APTH_INTERNAL apth_event_t apth_event_time(unsigned long spec, apth_time_t tv)
-{
-    // Interrupt request event
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_TIME;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    ev->ev_args.TIME.tv = tv;
-    return ev;
-}
-
-APTH_INTERNAL apth_event_t apth_event_mutex(unsigned long spec)
-{
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_MUTEX;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    return ev;
-}
-
-APTH_INTERNAL apth_event_t apth_event_cond(unsigned long spec)
-{
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_COND;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
     return ev;
 }
 

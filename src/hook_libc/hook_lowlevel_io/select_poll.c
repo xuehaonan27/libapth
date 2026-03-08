@@ -14,7 +14,6 @@ APTH_DEFINE_HOOK(
     (int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *timeout),
     (nfd, rfds, wfds, efds, timeout))
 {
-    apth_event_t ev;
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_select(hooked): called from thread \"%s\"", cur->name);
 
@@ -43,9 +42,8 @@ APTH_DEFINE_HOOK(
         else
         {
             // Larger delays have to go through the scheduler
-            ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(timeout->tv_sec, timeout->tv_usec));
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
+            apth_wait_event(&ev);
         }
 
         /*
@@ -111,35 +109,32 @@ APTH_DEFINE_HOOK(
 
     // Suspend currrent apth until one filedescriptor is ready or the timeout occurred.
     apth_event_t ev_select;
-    apth_event_t ev_timeout;
     struct list event_list;
     list_init(&event_list);
     rc = -1;
+    apth_event_t ev;
     ev = ev_select = apth_event_select(APTH_EVENT_MODE_STATIC, &rc, nfd, rfds, wfds, efds);
     apth_event_list_add(&event_list, ev);
-    ev_timeout = NULL;
+
+    struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
     if (timeout != NULL)
-    {
-        ev_timeout = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(timeout->tv_sec, timeout->tv_usec));
-        apth_event_list_add(&event_list, ev_timeout);
-    }
+        apth_event_list_add(&event_list, &ev_timeout);
+
     apth_wait_event_list(&event_list);
     if (timeout != NULL)
-        apth_event_isolate(ev_timeout);
+        apth_event_isolate(&ev_timeout);
 
     // Select return code semantics
     if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
     {
         apth_event_free(ev_select);
-        if (ev_timeout != NULL)
-            apth_event_free(ev_timeout);
         return apth_error(-1, EBADF);
     }
 
     // If the select event occurred, then RC should have been set in ev_args.SELECT.n
     // If timeout occurred and select event did not, return 0 and clear fd_set
     if (timeout != NULL &&
-        ev_timeout->ev_status == APTH_EV_STATUS_OCCURRED &&
+        ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
         ev_select->ev_status != APTH_EV_STATUS_OCCURRED)
     {
         if (rfds != NULL)
@@ -152,8 +147,6 @@ APTH_DEFINE_HOOK(
     }
 
     apth_event_free(ev_select);
-    if (ev_timeout != NULL)
-        apth_event_free(ev_timeout);
 
     return rc;
 }
@@ -201,9 +194,8 @@ APTH_DEFINE_HOOK(
         else
         {
             // Larger delays have to go through the scheduler
-            ev = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
+            apth_wait_event(&ev);
         }
 
         if (mask != NULL)
@@ -264,28 +256,24 @@ APTH_DEFINE_HOOK(
 
     // Suspend current apth until one filedescriptor is ready or the timeout occurred.
     apth_event_t ev_select;
-    apth_event_t ev_timeout;
     struct list event_list;
     list_init(&event_list);
     rc = -1;
     ev = ev_select = apth_event_select(APTH_EVENT_MODE_STATIC, &rc, nfds, rfds, wfds, efds);
     apth_event_list_add(&event_list, ev);
-    ev_timeout = NULL;
+
+    struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
     if (ts != NULL)
-    {
-        ev_timeout = apth_event_time(APTH_EVENT_MODE_STATIC, apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
-        apth_event_list_add(&event_list, ev_timeout);
-    }
+        apth_event_list_add(&event_list, &ev_timeout);
+
     apth_wait_event_list(&event_list);
     if (ts != NULL)
-        apth_event_isolate(ev_timeout);
+        apth_event_isolate(&ev_timeout);
 
     // Select return code semantics
     if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
     {
         apth_event_free(ev_select);
-        if (ev_timeout != NULL)
-            apth_event_free(ev_timeout);
         if (mask != NULL)
             sigprocmask(SIG_SETMASK, &origmask, NULL);
         return apth_error(-1, EBADF);
@@ -294,7 +282,7 @@ APTH_DEFINE_HOOK(
     // If the select event occurred, then RC should have been set in ev_args.SELECT.n
     // If timeout occurred and select event did not, return 0 and clear fd_set
     if (ts != NULL &&
-        ev_timeout->ev_status == APTH_EV_STATUS_OCCURRED &&
+        ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
         ev_select->ev_status != APTH_EV_STATUS_OCCURRED)
     {
         if (rfds != NULL)
@@ -307,8 +295,6 @@ APTH_DEFINE_HOOK(
     }
 
     apth_event_free(ev_select);
-    if (ev_timeout != NULL)
-        apth_event_free(ev_timeout);
 
     // Restore original signal mask
     if (mask != NULL)
@@ -337,39 +323,31 @@ APTH_DEFINE_HOOK(int, poll,
     if (rc > 0 || timeout == 0)
         return rc;
 
+    // Prepare an array of events. Thankfully, we are in C, not CPP.
+    struct apth_event_st evs[nfds];
+
     // Construct event list, one fd event for every pollfd
     struct list event_list;
     list_init(&event_list);
     for (nfds_t i = 0; i < nfds; i++)
     {
-        unsigned long goal = APTH_EVENT_MODE_STATIC;
+        unsigned long goal = 0;
         if (fds[i].events & POLLIN)
             goal |= APTH_GOAL_UNTIL_FD_READABLE;
         if (fds[i].events & POLLOUT)
             goal |= APTH_GOAL_UNTIL_FD_WRITEABLE;
-        apth_event_t ev = apth_event_fd(goal, fds[i].fd);
-        apth_event_list_add(&event_list, ev);
+        struct apth_event_st ev = EVENT_FD(fds[i].fd, goal);
+        evs[i] = ev;
+        apth_event_list_add(&event_list, &evs[i]);
     }
+    struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout / 1000, (timeout % 1000) * 1000));
     if (timeout > 0)
-    {
-        apth_event_t ev_timeout = apth_event_time(
-            APTH_EVENT_MODE_STATIC,
-            apth_timeout(timeout / 1000, (timeout % 1000) * 1000));
-        apth_event_list_add(&event_list, ev_timeout);
-    }
+        apth_event_list_add(&event_list, &ev_timeout);
     apth_wait_event_list(&event_list);
 
     // poll again to fetch revents
     while ((rc = apth_func_raw(poll)(fds, nfds, 0)) < 0 && errno == EINTR)
         ;
-
-    // TODO: a more general way for freeing event list
-    while (!list_empty(&event_list))
-    {
-        struct list_elem *e = list_pop_front(&event_list);
-        apth_event_t ev = apth_event_t_list_entry(e);
-        apth_event_free(ev);
-    }
 
     return rc;
 }

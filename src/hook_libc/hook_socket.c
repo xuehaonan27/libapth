@@ -74,15 +74,9 @@ APTH_DEFINE_HOOK(
     // If it is still on progress wait until socket is really writeable
     if (rv == -1 && errno == EINPROGRESS && orig_mode != APTH_FDMODE_NONBLOCK)
     {
-        apth_event_t ev;
-        ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, fd);
-        if (ev == NULL)
-        {
-            apth_fd_release(fd);
-            return apth_error(-1, errno);
-        }
-        apth_wait_event(ev);
-        apth_event_free(ev);
+        struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+        apth_wait_event(&ev);
+        assert(ev.ev_status != APTH_EV_STATUS_PENDING);
 
         int err;
         socklen_t errlen;
@@ -134,15 +128,9 @@ APTH_DEFINE_HOOK(int, accept,
         // EAGAIN / EWOULDBLOCK: no pending connections
         if (rv == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, fd);
-            if (ev == APTH_EVENT_NULL)
-            {
-                apth_fd_release(fd);
-                return apth_error(-1, errno);
-            }
-            // Wait until accept has a chance
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -192,9 +180,9 @@ APTH_DEFINE_HOOK(
         // POSIX allows either name; check both for portability.
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_READABLE | APTH_EVENT_MODE_STATIC, sockfd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
+            struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
             continue;
         }
 
@@ -249,10 +237,10 @@ APTH_DEFINE_HOOK(
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            apth_event_t ev = apth_event_fd(APTH_GOAL_UNTIL_FD_WRITEABLE | APTH_EVENT_MODE_STATIC, sockfd);
-            apth_wait_event(ev);
-            apth_event_free(ev);
-            continue; // try again
+            struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
+            continue;
         }
 
         if (s > 0)
