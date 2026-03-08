@@ -1,6 +1,8 @@
 #include "apth.h"
 #include "utils/apth_string.h"
 #include <stdlib.h>
+#include <stdint.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 5
 #define N_ITEMS 100

@@ -1,6 +1,7 @@
 #include "apth.h"
 #include "utils/apth_string.h"
 #include <stdlib.h>
+#include <stdint.h>
 
 #define N_THREADS 10
 #define N_WORKERS 2

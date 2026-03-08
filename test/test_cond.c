@@ -2,6 +2,7 @@
 #include "utils/apth_string.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define BUFFER_SIZE 10
 #define N_ITEMS 200

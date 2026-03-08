@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <time.h>
+#include <stdint.h>
+#include <errno.h>
 
 #define N_WORKERS 2
 

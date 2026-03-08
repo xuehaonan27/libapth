@@ -2,6 +2,7 @@
 #include "utils/apth_string.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define N_THREADS 50
 #define N_INCREMENTS 1000

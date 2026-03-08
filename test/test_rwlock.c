@@ -1,6 +1,7 @@
 #include "apth.h"
 #include "utils/apth_string.h"
 #include <stdlib.h>
+#include <stdint.h>
 
 #define N_READERS 8
 #define N_WRITERS 2

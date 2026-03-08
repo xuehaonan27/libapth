@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <errno.h>
 
 #define N_CHILDREN 200
 #define N_WORKERS 4
