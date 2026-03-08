@@ -41,6 +41,12 @@ struct apth_sched_st
     struct list active_fd_slots;                                            // slots with waiters
     int active_fd_count;
 
+// Memory pool for apth_epoll_waiter structures to avoid malloc/free
+#define APTH_WAITER_POOL_SIZE 256
+    struct apth_epoll_waiter waiter_pool[APTH_WAITER_POOL_SIZE];
+    struct list free_waiters;  // List of free waiter structures
+    int waiter_pool_allocated; // Number of waiters allocated from pool
+
     // Pending fd close notifications from other schedulers (or self).
     // When an fd is closed, the closing scheduler pushes the fd number into
     // every scheduler's pending list. Each scheduler drains its list at the

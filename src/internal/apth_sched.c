@@ -138,9 +138,20 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
         list_init(&sched->fd_slot_table[i].waiters);
         sched->fd_slot_table[i].waiter_count = 0;
         sched->fd_slot_table[i].registered = false;
+        sched->fd_slot_table[i].readable_count = 0;
+        sched->fd_slot_table[i].writeable_count = 0;
+        sched->fd_slot_table[i].exception_count = 0;
     }
     list_init(&sched->active_fd_slots);
     sched->active_fd_count = 0;
+
+    // Initialize waiter memory pool
+    list_init(&sched->free_waiters);
+    for (int i = 0; i < APTH_WAITER_POOL_SIZE; i++)
+    {
+        list_push_back(&sched->free_waiters, &sched->waiter_pool[i].elem);
+    }
+    sched->waiter_pool_allocated = 0;
 
     // Initialize pending fd close notification queue
     atomic_store_release(&sched->pending_fd_close_count, 0);

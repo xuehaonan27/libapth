@@ -15,6 +15,11 @@ struct apth_epoll_fd_slot
     struct list_elem elem;     // link into scheduler's active_fd_slots list
 #define apth_epoll_fd_slot_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_epoll_fd_slot, elem)
+
+    // Reference counts for each event type to avoid recalculation
+    int readable_count;  // Number of waiters waiting for EPOLLIN
+    int writeable_count; // Number of waiters waiting for EPOLLOUT
+    int exception_count; // Number of waiters waiting for EPOLLPRI
 };
 
 #define APTH_EPOLL_FD_SLOT_TABLE_SIZE FD_SETSIZE

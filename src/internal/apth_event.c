@@ -14,6 +14,41 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 
+// Fast waiter allocation from pool
+static struct apth_epoll_waiter *alloc_waiter(apth_sched_t sched)
+{
+    if (!list_empty(&sched->free_waiters))
+    {
+        struct list_elem *e = list_pop_front(&sched->free_waiters);
+        return apth_epoll_waiter_list_entry(e);
+    }
+
+    // Pool exhausted, fall back to malloc
+    sched->waiter_pool_allocated++;
+    if (sched->waiter_pool_allocated > APTH_WAITER_POOL_SIZE)
+    {
+        apth_debug("WARNING: waiter pool exhausted, using malloc (count=%d)",
+                   sched->waiter_pool_allocated);
+    }
+    return (struct apth_epoll_waiter *)malloc(sizeof(struct apth_epoll_waiter));
+}
+
+static void free_waiter(apth_sched_t sched, struct apth_epoll_waiter *w)
+{
+    // Check if this waiter is from the pool
+    if (w >= sched->waiter_pool && w < sched->waiter_pool + APTH_WAITER_POOL_SIZE)
+    {
+        // Return to pool
+        list_push_back(&sched->free_waiters, &w->elem);
+    }
+    else
+    {
+        // Was allocated with malloc
+        free(w);
+        sched->waiter_pool_allocated--;
+    }
+}
+
 // ==================== FD to apths mapping ====================
 
 // Register a (apth, event) pair to slot of fd.
@@ -29,7 +64,7 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
 
     // Create waiter entry.
     // TODO: more efficient memory allocation, and reuse memory space.
-    struct apth_epoll_waiter *w = (struct apth_epoll_waiter *)malloc(sizeof(*w));
+    struct apth_epoll_waiter *w = alloc_waiter(sched);
     if (w == NULL)
         return -1;
     w->th = th;
@@ -38,19 +73,34 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
     // Calculate waiter's event mask
     uint32_t needed = 0;
     if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
+    {
         needed |= EPOLLIN;
+        slot->readable_count++;
+    }
     if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
+    {
         needed |= EPOLLOUT;
+        slot->writeable_count++;
+    }
     if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
+    {
         needed |= EPOLLPRI;
+        slot->exception_count++;
+    }
 
     // Add to waiter list
     list_push_back(&slot->waiters, &w->elem);
     slot->waiter_count++;
 
-    // Update aggregation mask
+    // Update aggregation mask based on refcounts
     uint32_t old_aggregate = slot->aggregate_events;
-    slot->aggregate_events |= needed;
+    slot->aggregate_events = 0;
+    if (slot->readable_count > 0)
+        slot->aggregate_events |= EPOLLIN;
+    if (slot->writeable_count > 0)
+        slot->aggregate_events |= EPOLLOUT;
+    if (slot->exception_count > 0)
+        slot->aggregate_events |= EPOLLPRI;
 
     // If this is the first waiter, link to active_fd_slots and register to epoll
     if (!slot->registered)
@@ -73,7 +123,7 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
                 list_remove(&slot->elem);
                 sched->active_fd_count--;
             }
-            free(w);
+            free_waiter(sched, w);
             return -1;
         }
         slot->registered = true;
@@ -110,8 +160,16 @@ static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_
         struct apth_epoll_waiter *w = apth_epoll_waiter_list_entry(e);
         if (w->th == th && w->ev == ev)
         {
+            // Decrement refcounts based on what this waiter was waiting for
+            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
+                slot->readable_count--;
+            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
+                slot->writeable_count--;
+            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
+                slot->exception_count--;
+
             list_remove(&w->elem);
-            free(w); // TODO: better memory allocation and deallocation
+            free_waiter(sched, w);
             slot->waiter_count--;
             break;
         }
@@ -124,27 +182,25 @@ static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_
         {
             epoll_ctl(sched->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
             slot->registered = false;
-            list_remove(&slot->elem); // Remove from active_fd_slots
+            list_remove(&slot->elem);
             sched->active_fd_count--;
         }
         slot->aggregate_events = 0;
+        slot->readable_count = 0;
+        slot->writeable_count = 0;
+        slot->exception_count = 0;
     }
     else
     {
-        // There's still other waiters.
-        // We need to calculate mask again, because the removed waiter might be
-        // the only one requiring a certain flag.
+        // Recalculate aggregate mask from refcounts (O(1) instead of O(n))
         uint32_t new_aggregate = 0;
-        FOR_ELEMENT_IN_LIST(slot->waiters, e2)
-        {
-            struct apth_epoll_waiter *w2 = apth_epoll_waiter_list_entry(e2);
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-                new_aggregate |= EPOLLIN;
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-                new_aggregate |= EPOLLOUT;
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-                new_aggregate |= EPOLLPRI;
-        }
+        if (slot->readable_count > 0)
+            new_aggregate |= EPOLLIN;
+        if (slot->writeable_count > 0)
+            new_aggregate |= EPOLLOUT;
+        if (slot->exception_count > 0)
+            new_aggregate |= EPOLLPRI;
+
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
@@ -176,12 +232,21 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         struct list_elem *next = list_next(e); // save, because waiter might be removed
 
         bool matched = false;
-        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE) && (revents & (EPOLLIN | EPOLLHUP | EPOLLERR)))
+        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE) && (revents & EPOLLIN))
+        {
             matched = true;
-        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE) && (revents & (EPOLLOUT | EPOLLERR)))
+            slot->readable_count--;
+        }
+        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE) && (revents & EPOLLOUT))
+        {
             matched = true;
-        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION) && (revents & (EPOLLPRI | EPOLLERR)))
+            slot->writeable_count--;
+        }
+        if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION) && (revents & EPOLLPRI))
+        {
             matched = true;
+            slot->exception_count--;
+        }
 
         // EPOLLERR and EPOLLHUP always matches.
         // If fd errs or peer closes, then all waiters need to be waked.
@@ -201,7 +266,7 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
             // Remember apth need to be waked, but do not move it here.
             // An apth might have several events. Moving the apth should be handled
             // outside of this function
-            free(w); // free the waiter
+            free_waiter(sched, w);
             waked++;
         }
 
@@ -216,21 +281,21 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         list_remove(&slot->elem);
         sched->active_fd_count--;
         slot->aggregate_events = 0; // This cost much!
+        slot->readable_count = 0;
+        slot->writeable_count = 0;
+        slot->exception_count = 0;
     }
     else if (waked > 0)
     {
         // Calculate event mask again
         uint32_t new_aggregate = 0;
-        FOR_ELEMENT_IN_LIST(slot->waiters, e2)
-        {
-            struct apth_epoll_waiter *w2 = apth_epoll_waiter_list_entry(e2);
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-                new_aggregate |= EPOLLIN;
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-                new_aggregate |= EPOLLOUT;
-            if (w2->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-                new_aggregate |= EPOLLPRI;
-        }
+        if (slot->readable_count > 0)
+            new_aggregate |= EPOLLIN;
+        if (slot->writeable_count > 0)
+            new_aggregate |= EPOLLOUT;
+        if (slot->exception_count > 0)
+            new_aggregate |= EPOLLPRI;
+
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
@@ -272,7 +337,7 @@ static void epoll_map_fail_all_waiters_for_fd(apth_sched_t sched, int fd)
         apth_debug("[fd_close] fd=%d event FAILED for apth \"%s\"", fd, w->th->name);
 
         list_remove(&w->elem);
-        free(w);
+        free_waiter(sched, w);
 
         e = next;
     }
