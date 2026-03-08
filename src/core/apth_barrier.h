@@ -8,7 +8,7 @@
 struct apth_barrier_st
 {
     struct list waiters; // FIFO queue of struct apth_sync_waiter
-    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
+    lll_apth_t guard;    // protects internal fields)
     uint32_t threshold;  // number of threads that must arrive
     uint32_t count;      // number of threads currently waiting
     uint32_t generation; // increments each time barrier opens

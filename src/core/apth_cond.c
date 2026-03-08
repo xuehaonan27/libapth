@@ -97,7 +97,7 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
@@ -142,7 +142,7 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 

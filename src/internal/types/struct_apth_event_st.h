@@ -20,8 +20,7 @@ enum apth_event_type
     APTH_EVENT_TYPE_SELECT,
     APTH_EVENT_TYPE_SIGS,
     APTH_EVENT_TYPE_TIME,
-    APTH_EVENT_TYPE_MUTEX,
-    APTH_EVENT_TYPE_COND,
+    APTH_EVENT_TYPE_SYNC,
     APTH_EVENT_TYPE_TID,
     APTH_EVENT_TYPE_FUNC
 };
@@ -102,11 +101,6 @@ struct apth_event_st
 #define APTH_GOAL_UNTIL_TID_READY _BIT(16)
 #define APTH_GOAL_UNTIL_TID_WAITING _BIT(17)
 #define APTH_GOAL_UNTIL_TID_DEAD _BIT(18)
-
-/* event structure handling modes */
-#define APTH_EVENT_MODE_REUSE _BIT(20)
-#define APTH_EVENT_MODE_CHAIN _BIT(21)
-#define APTH_EVENT_MODE_STATIC _BIT(22)
 
 #define APTH_EVENT_NULL ((apth_event_t)NULL)
 

@@ -61,7 +61,7 @@ int apth_sem_wait(apth_sem_t *sem)
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
@@ -107,7 +107,7 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 

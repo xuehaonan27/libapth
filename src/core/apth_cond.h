@@ -8,7 +8,7 @@
 // Condition variable internal structure
 struct apth_cond_st
 {
-    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
+    lll_apth_t guard;    // protects internal fields)
     struct list waiters; // FIFO queue of struct apth_sync_waiter
 };
 

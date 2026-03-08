@@ -68,7 +68,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
@@ -114,7 +114,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
@@ -207,7 +207,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
@@ -255,7 +255,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_sync_waiter w;
     w.th = self;
     w.ev.ev_status = APTH_EV_STATUS_PENDING;
-    w.ev.ev_type = APTH_EVENT_TYPE_COND;
+    w.ev.ev_type = APTH_EVENT_TYPE_SYNC;
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
