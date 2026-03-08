@@ -36,14 +36,6 @@ struct ALIGNED(8) apth_st
     /* Events waiting on */
     struct list event_list; // events the tread is waiting for
 
-    /* Embedded event structures to avoid memory allocation in common case.
-       Most apths wait on at most 1-2 events at a time (e.g. one FD read/write)
-       For select/poll with many fds, we fall back to memory allocation */
-    struct apth_event_st embedded_event_1;
-    struct apth_event_st embedded_event_2;
-    bool embedded_event_1_in_use;
-    bool embedded_event_2_in_use;
-
     /* Per APTH Signal Handling */
     sigset_t sigpending;         // set of pending signals
     int sigpendcnt;              // number of pending signals

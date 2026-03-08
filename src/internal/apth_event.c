@@ -11,7 +11,6 @@
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
-#include <malloc.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 
@@ -749,70 +748,6 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
     }
 
     apth_debug("leave");
-}
-
-static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
-{
-    // Try to use embedded events from the current thread first
-    apth_t cur = CUR_APTH;
-    apth_event_t ev = NULL;
-
-    if (cur != NULL && cur != APTH_FAKE_SCHED(CUR_SCHED))
-    {
-        // Try embedded_event_1 first
-        if (!cur->embedded_event_1_in_use)
-        {
-            cur->embedded_event_1_in_use = true;
-            ev = &cur->embedded_event_1;
-        }
-        // Try embedded_event_2 if first is in use
-        else if (!cur->embedded_event_2_in_use)
-        {
-            cur->embedded_event_2_in_use = true;
-            ev = &cur->embedded_event_2;
-        }
-    }
-
-    // If both embedded events are in use or no thread context, fall back to malloc
-    // This happens for select/poll with many fds, or when called from scheduler context
-    if (ev == NULL)
-    {
-        ev = (apth_event_t)malloc(sizeof(struct apth_event_st));
-        if (ev == NULL)
-            return apth_error(APTH_EVENT_NULL, errno);
-    }
-
-    // Initialize common ingredients
-    ev->ev_status = APTH_EV_STATUS_PENDING;
-    ev->epoll_registered = false;
-
-    return ev;
-}
-
-APTH_INTERNAL bool apth_event_free(apth_event_t ev)
-{
-    if (ev == NULL)
-        return apth_error(false, EINVAL);
-
-    // Check if this is an embedded event from the current thread
-    apth_t cur = CUR_APTH;
-    if (cur != NULL && cur != APTH_FAKE_SCHED(CUR_SCHED))
-    {
-        if (ev == &cur->embedded_event_1)
-        {
-            cur->embedded_event_1_in_use = false;
-            return true;
-        }
-        else if (ev == &cur->embedded_event_2)
-        {
-            cur->embedded_event_2_in_use = false;
-            return true;
-        }
-    }
-
-    // Not an embedded event, must be malloc'd - free it
-    free(ev);
-    return true;
 }
 
 APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev)

@@ -12,7 +12,6 @@ APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
 APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
 APTH_INTERNAL int apth_wait_event_list(struct list *el);
 APTH_INTERNAL bool apth_wait_event(apth_event_t ev);
-APTH_INTERNAL bool apth_event_free(apth_event_t ev);
 APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal);
 
 #define EVENT_FD(ARG_FD, ARG_GOAL)                                  \
