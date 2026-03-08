@@ -384,7 +384,7 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
 
         th = apth_t_list_entry(e);
         assert(APTH_IS_VALID(th));
-        assert(belonging_queue_of(th, "try_steal_work") == victim_rq);
+        assert(th->current_queue == victim_rq);
 
         // Update ownership: this APTH now belongs to thief scheduler
         th->current_sched = thief_sched;
@@ -399,7 +399,7 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         list_push_front(&thief_rq->th_list, &th->elem);
         // atomic_fetch_add_release(&thief_rq->size, 1);
         thief_rq->size++;
-        set_belonging_queue_of(th, thief_rq);
+        // set_belonging_queue_of(th, thief_rq);
         th->current_queue = thief_rq; // Update current_queue
         lll_internal_unlock(&thief_rq->th_list_lock);
 
@@ -503,7 +503,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             if (APTH_IS_VALID(th) && SCHED_OF(th) == sched && QUEUE_STATE_OF(th) == APTH_STATE_READY)
             {
                 atomic_store_release(&th->state, APTH_STATE_RUNNING);
-                transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), THQUEUE(sched, running));
+                transfer_th(th, th->current_queue, THQUEUE(sched, running));
             }
             else
                 // Thread was freed, stolen, or not ready - ignore the advice and pop from ready queue
@@ -608,13 +608,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // Remove from running queue
                 list_remove(&th->elem);
                 running_q->size--;
-                set_belonging_queue_of(th, NULL);
+                // set_belonging_queue_of(th, NULL);
                 th->current_queue = NULL;
 
                 // Insert into terminated queue
                 list_push_back(&term_q->th_list, &th->elem);
                 term_q->size++;
-                set_belonging_queue_of(th, term_q);
+                // set_belonging_queue_of(th, term_q);
                 th->current_queue = term_q;
 
                 // Change state WHILE HOLDING terminated queue lock

@@ -112,7 +112,7 @@ struct ALIGNED(8) apth_st
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_st, elem)
-    _Atomic(apth_thqueue_t) belongs_to_queue;
+    // _Atomic(apth_thqueue_t) belongs_to_queue;
     apth_sched_t home_sched;       // immutable: set at creation, for work stealing decisions
     apth_sched_t current_sched;    // mutable: which scheduler currently owns this APTH
     apth_thqueue_t current_queue;  // which queue this APTH is on (protected by queue lock)

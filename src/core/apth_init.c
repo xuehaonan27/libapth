@@ -60,7 +60,10 @@ __attribute__((weak)) void apth_configure(apth_init_t *cfg)
 void apth_init(apth_init_t *initvals)
 {
     if (LIBAPTH_INITIALIZED)
-        return apth_error(EPERM, EPERM);
+    {
+        errno = EPERM;
+        return;
+    }
     else
         LIBAPTH_INITIALIZED = true;
 
@@ -68,7 +71,7 @@ void apth_init(apth_init_t *initvals)
     if (apth_func_system_init() != 0)
     {
         apth_debug("fail to initialize syscall system");
-        return apth_error(-1, errno);
+        return;
     }
 
     apth_debug("enter");
@@ -77,14 +80,14 @@ void apth_init(apth_init_t *initvals)
     if (apth_signal_system_init() != 0)
     {
         apth_debug("fail to initialize signal system");
-        return apth_error(-1, errno);
+        return;
     }
 
     // Register process level signal catchers
     if (apth_install_kernel_signal_catchers() != 0)
     {
         apth_debug("fail to register process level signal catchers");
-        return apth_error(-1, errno);
+        return;
     }
 
     apth_fd_table_init();
@@ -100,7 +103,8 @@ void apth_init(apth_init_t *initvals)
         apth_shield
         {
             apth_func_system_drop();
-            return apth_error(EAGAIN, EAGAIN);
+            errno = EAGAIN;
+            return;
         }
     }
 
@@ -176,13 +180,16 @@ void apth_init(apth_init_t *initvals)
 }
 
 // Drop the libapth package.
-int apth_drop(void)
+void apth_drop(void)
 {
     set_DEBUG_USING_HOOKED(0);
 
     apth_debug("enter");
     if (!LIBAPTH_INITIALIZED)
-        return apth_error(EINVAL, EINVAL);
+    {
+        errno = EPERM;
+        return;
+    }
 
     if (apth_global_scheduler_pool_drop() != 0)
     {
@@ -205,5 +212,4 @@ int apth_drop(void)
     LIBAPTH_INITIALIZED = false;
 
     apth_debug("leave");
-    return 0;
 }

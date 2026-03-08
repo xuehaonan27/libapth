@@ -16,17 +16,17 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
 APTH_INTERNAL size_t visit_thqueue(apth_thqueue_t queue, visit_thqueue_th_func fn, void *);
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux);
 
-INLINE apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg)
-{
-    apth_thqueue_t q = atomic_load_acquire(&th->belongs_to_queue);
-    assert_msg(q != NULL, "calling belonging_queue_of from: %s", dbg_msg);
-    return q;
-}
+// INLINE apth_thqueue_t belonging_queue_of(apth_t th, const char *dbg_msg)
+// {
+//     apth_thqueue_t q = atomic_load_acquire(&th->belongs_to_queue);
+//     assert_msg(q != NULL, "calling belonging_queue_of from: %s", dbg_msg);
+//     return q;
+// }
 
-INLINE void set_belonging_queue_of(apth_t th, apth_thqueue_t q)
-{
-    atomic_store_release(&th->belongs_to_queue, q);
-}
+// INLINE void set_belonging_queue_of(apth_t th, apth_thqueue_t q)
+// {
+//     atomic_store_release(&th->belongs_to_queue, q);
+// }
 
 INLINE size_t thqueue_size(apth_thqueue_t queue)
 {
@@ -39,7 +39,7 @@ INLINE size_t thqueue_size(apth_thqueue_t queue)
 INLINE bool apth_is_in(apth_thqueue_t queue, apth_t th)
 {
     assert(queue != NULL);
-    return (belonging_queue_of(th, "apth_is_in") == queue);
+    return (th->current_queue == queue);
 }
 
 #endif // __LIBAPTH_INTERNAL_APTH_THQUEUE_H

@@ -34,7 +34,7 @@ int apth_initvals_init(apth_init_t *initvals, int workers,
                        void *(*main_apth)(void *), void *main_args,
                        apth_attr_t *main_attr);
 void apth_init(apth_init_t *initvals);
-int apth_drop(void);
+void apth_drop(void);
 
 // Thread identifier
 typedef struct apth_st *apth_t;
