@@ -4,6 +4,11 @@
 #include "utils/archplattoold.h"
 #include "internal/forward_declare.h"
 
+#ifndef APTH_CUR_USING_KEYWORD
+#include "hook_libc/hook_pthread.h"
+#include <pthread.h>
+#endif
+
 // TLS implementation selection.
 // If APTH_CUR_USING_KEYWORD is defined, use _Thread_local/__thread for faster
 // access. Otherwise, use pthread_getspecific/pthread_setspecific for compatibility

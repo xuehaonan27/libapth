@@ -13,6 +13,7 @@
     X(pthread_self)                \
     X(pthread_kill)                \
     X(pthread_key_create)          \
+    X(pthread_key_delete)          \
     X(pthread_getspecific)         \
     X(pthread_setspecific)         \
     X(pthread_attr_init)           \
@@ -31,6 +32,7 @@ APTH_DECLARE_FETCH_LIBCFUNC(pthread_t, pthread_self, void)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_kill, pthread_t thread, int sig)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_key_create, pthread_key_t *__key,
                             void (*__destr_function)(void *))
+APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_key_delete, pthread_key_t __key)
 APTH_DECLARE_FETCH_LIBCFUNC(void *, pthread_getspecific, pthread_key_t __key)
 APTH_DECLARE_FETCH_LIBCFUNC(int, pthread_setspecific, pthread_key_t __key,
                             const void *__pointer)
