@@ -7,7 +7,7 @@
 // Mutex internal structure
 struct apth_mutex_st
 {
-    lll_apth_t guard;        // NEW: Type 1 LLL (protects internal fields)
+    lll_apth_t guard;        // protects internal fields)
     apth_t owner;            // current lock owner, or NULL
     unsigned int lock_count; // recursion depth for RECURSIVE type
     int type;                // APTH_MUTEX_NORMAL, _ERRORCHECK, _RECURSIVE

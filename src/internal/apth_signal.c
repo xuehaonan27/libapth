@@ -174,9 +174,9 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
     if (sa->sa_flags & SA_RESETHAND)
     {
         struct sigaction dfl = {.sa_handler = SIG_DFL};
-        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
         APTH_GLOBAL_SIGACTIONS.actions[sig] = dfl;
-        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
     }
 
     // TODO: implement Plan B and give this function a conditional compilation option
@@ -184,7 +184,7 @@ static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *s
 
 APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
 {
-    lll_internal_lock(&th->siglock); // NEW: Use Type 2 LLL
+    lll_internal_lock(&th->siglock);
 
     // Fetch signals that in `pending & ~sigmask`
     for (int sig = 1; sig < APTH_NSIG; sig++)
@@ -199,9 +199,9 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         th->sigpendcnt--;
 
         // Search handler
-        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+        lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
         struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
-        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+        lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
 
         if (sa.sa_handler == SIG_IGN)
             continue; // this signal is ignored, skip
@@ -220,7 +220,7 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
         __apth_inject_signal_handler(th, sig, &sa);
     }
 
-    lll_internal_unlock(&th->siglock); // NEW: Use Type 2 LLL
+    lll_internal_unlock(&th->siglock);
 }
 
 // Process level pending signals, storing signals when all apths are blocking
@@ -318,13 +318,13 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 
         // Add to apth pending
         // sigdelset(&APTH_PROCESS_SIGPENDING, sig);
-        lll_internal_lock(&target->siglock); // NEW: Use Type 2 LLL
+        lll_internal_lock(&target->siglock);
         if (!sigismember(&target->sigpending, sig))
         {
             sigaddset(&target->sigpending, sig);
             target->sigpendcnt++;
         }
-        lll_internal_unlock(&target->siglock); // NEW: Use Type 2 LLL
+        lll_internal_unlock(&target->siglock);
     }
 }
 

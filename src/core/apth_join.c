@@ -4,7 +4,7 @@
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
-#include "utils/lll_new.inline.h" // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 /*
 ERRORS

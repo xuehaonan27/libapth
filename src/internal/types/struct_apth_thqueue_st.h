@@ -10,10 +10,9 @@
 struct apth_thqueue_st
 {
     struct list th_list;
-    lll_internal_t th_list_lock; // NEW: Type 2 LLL (replaces lll_t)
-    // apth_sched_t sched;
+    lll_internal_t th_list_lock;
     apth_state_t th_state; // State that apths belonging to this queue should be
-    size_t size;           // NEW: Non-atomic, protected by lock
+    size_t size;           // Non-atomic, protected by lock
 };
 
 typedef void drain_thqueue_th_func(apth_t th);

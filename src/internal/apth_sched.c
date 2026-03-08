@@ -390,7 +390,7 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         th->current_sched = thief_sched;
 
         // Update state to READY
-        atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
+        atomic_store_release(&th->state, APTH_STATE_READY);
 
         // Insert into thief's ready queue at front for immediate dispatch
         apth_thqueue_t thief_rq = THQUEUE(thief_sched, ready);
@@ -579,7 +579,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // If a thread overflows its stack, it will trigger a SIGSEGV when
         // accessing the protected guard page, which is handled by the OS.
 
-        // NEW: Check yield reason for EXIT (TERMINATED transition)
+        // Check yield reason for EXIT (TERMINATED transition)
         // For TERMINATED, we handle it specially to ensure atomicity
         if (th->yield_reason == APTH_YIELD_REASON_EXIT)
         {
@@ -639,7 +639,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 break;
             case APTH_STATE_RUNNING:
                 apth_debug("moving thread \"%s\" to ready queue", th->name);
-                atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
+                atomic_store_release(&th->state, APTH_STATE_READY);
                 transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
                 break;
             case APTH_STATE_WAITING:

@@ -7,7 +7,7 @@
 // Read-write lock internal structure
 struct apth_rwlock_st
 {
-    lll_apth_t guard;       // NEW: Type 1 LLL (protects internal fields)
+    lll_apth_t guard;       // protects internal fields)
     int readers;            // count of active readers
     int writers;            // count of active writers (0 or 1)
     int waiting_writers;    // count of writers waiting

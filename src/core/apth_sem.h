@@ -7,7 +7,7 @@
 // Semaphore internal structure
 struct apth_sem_st
 {
-    lll_apth_t guard;    // NEW: Type 1 LLL (protects internal fields)
+    lll_apth_t guard;    // protects internal fields)
     unsigned int value;  // current count
     struct list waiters; // FIFO queue of struct apth_sync_waiter
 };

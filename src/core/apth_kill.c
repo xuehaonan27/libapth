@@ -8,7 +8,7 @@
 #include "internal/apth_thqueue.h"
 #include "internal/apth_signal.h"
 #include "utils/apth_errno.h"
-#include "utils/lll_new.inline.h" // NEW: Use new LLL types
+#include "utils/lll_new.inline.h"
 
 static int apth_apth_exists(apth_t t)
 {
@@ -35,21 +35,21 @@ int apth_kill(apth_t t, int sig)
         return apth_apth_exists(t) ? 0 : apth_error(ESRCH, ESRCH);
 
     // Check global action
-    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
     struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
-    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock); // NEW: Use Type 2 LLL
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
 
     if (sa.sa_handler == SIG_IGN)
         return 0;
 
     // Atomically add `sig` to pending set of target apth `t`
-    lll_internal_lock(&t->siglock); // NEW: Use Type 2 LLL
+    lll_internal_lock(&t->siglock);
     if (!sigismember(&t->sigpending, sig))
     {
         sigaddset(&t->sigpending, sig);
         t->sigpendcnt++;
     }
-    lll_internal_unlock(&t->siglock); // NEW: Use Type 2 LLL
+    lll_internal_unlock(&t->siglock);
 
     // Allow killing signal to self.
     // If `t == self`, check delivery immediately

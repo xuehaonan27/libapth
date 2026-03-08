@@ -15,7 +15,7 @@ int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_apth_init(&rw->guard); // NEW: Use Type 1 LLL init
+    lll_apth_init(&rw->guard); init
     rw->readers = 0;
     rw->writers = 0;
     rw->waiting_writers = 0;
@@ -32,16 +32,16 @@ int apth_rwlock_destroy(apth_rwlock_t *rwlock)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_apth_lock(&rw->guard); // NEW: Use Type 1 LLL
+    lll_apth_lock(&rw->guard);
 
     if (rw->readers > 0 || rw->writers > 0 ||
         !list_empty(&rw->rd_waiters) || !list_empty(&rw->wr_waiters))
     {
-        lll_apth_unlock(&rw->guard); // NEW: Use Type 1 LLL
+        lll_apth_unlock(&rw->guard);
         return EBUSY;
     }
 
-    lll_apth_unlock(&rw->guard); // NEW: Use Type 1 LLL
+    lll_apth_unlock(&rw->guard);
 
     return 0;
 }
@@ -80,7 +80,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -136,7 +136,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -219,7 +219,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 
@@ -277,7 +277,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING); // NEW: Simple state transition
+    atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();
 

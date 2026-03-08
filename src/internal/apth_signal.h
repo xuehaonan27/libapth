@@ -17,7 +17,7 @@
 struct apth_global_sigaction
 {
     struct sigaction actions[APTH_NSIG]; // Signal handler registered by user
-    lll_internal_t lock;                 // NEW: Type 2 LLL for access protection
+    lll_internal_t lock;                 // for access protection
 };
 extern struct apth_global_sigaction APTH_GLOBAL_SIGACTIONS;
 
