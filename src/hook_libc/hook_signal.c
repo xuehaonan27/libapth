@@ -198,13 +198,9 @@ APTH_DEFINE_HOOK(int, pause, (void), ())
     lll_internal_unlock(&self->siglock); // NEW: Use Type 2 LLL
 
     // No signal pending, wait for any signal using a custom check function
-    apth_event_t ev = apth_event_func(
-        APTH_EVENT_MODE_STATIC,
-        __apth_sigsuspend_check,
-        self,
-        apth_time(0, 50000));
-    apth_wait_event(ev);
-    apth_event_free(ev);
+    struct apth_event_st ev = EVENT_FUNC(__apth_sigsuspend_check,
+                                         self, apth_time(0, 50000));
+    apth_wait_event(&ev);
 
     // Deliver pending signal
     apth_deliver_pending_signals(self);
@@ -221,13 +217,9 @@ APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
     self->sigmask = *mask;
 
     // Wait for a non-blocked signal delivered
-    apth_event_t ev = apth_event_func(
-        APTH_EVENT_MODE_STATIC,
-        __apth_sigsuspend_check,
-        self,
-        apth_time(0, 50000));
-    apth_wait_event(ev);
-    apth_event_free(ev);
+    struct apth_event_st ev = EVENT_FUNC(__apth_sigsuspend_check,
+                                         self, apth_time(0, 50000));
+    apth_wait_event(&ev);
 
     // Restore signal mask
     self->sigmask = oldmask;

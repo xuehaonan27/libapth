@@ -65,7 +65,6 @@ APTH_DEFINE_HOOK(
     struct timeval delay;
     fd_set rspare, wspare, espare;
     fd_set *rtmp, *wtmp, *etmp;
-    // int selected;
     int rc;
 
     delay.tv_sec = 0;
@@ -108,13 +107,11 @@ APTH_DEFINE_HOOK(
     }
 
     // Suspend currrent apth until one filedescriptor is ready or the timeout occurred.
-    apth_event_t ev_select;
     struct list event_list;
     list_init(&event_list);
     rc = -1;
-    apth_event_t ev;
-    ev = ev_select = apth_event_select(APTH_EVENT_MODE_STATIC, &rc, nfd, rfds, wfds, efds);
-    apth_event_list_add(&event_list, ev);
+    struct apth_event_st ev_select = EVENT_SELECT(&rc, nfd, rfds, wfds, efds);
+    apth_event_list_add(&event_list, &ev_select);
 
     struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
     if (timeout != NULL)
@@ -125,17 +122,14 @@ APTH_DEFINE_HOOK(
         apth_event_isolate(&ev_timeout);
 
     // Select return code semantics
-    if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
-    {
-        apth_event_free(ev_select);
+    if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
         return apth_error(-1, EBADF);
-    }
 
     // If the select event occurred, then RC should have been set in ev_args.SELECT.n
     // If timeout occurred and select event did not, return 0 and clear fd_set
     if (timeout != NULL &&
         ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
-        ev_select->ev_status != APTH_EV_STATUS_OCCURRED)
+        ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
     {
         if (rfds != NULL)
             FD_ZERO(rfds);
@@ -146,8 +140,6 @@ APTH_DEFINE_HOOK(
         rc = 0;
     }
 
-    apth_event_free(ev_select);
-
     return rc;
 }
 
@@ -156,7 +148,6 @@ APTH_DEFINE_HOOK(
     (int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, const struct timespec *ts, const sigset_t *mask),
     (nfds, rfds, wfds, efds, ts, mask))
 {
-    apth_event_t ev;
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_pselect(hooked): called from thread \"%s\"", cur->name);
 
@@ -255,12 +246,12 @@ APTH_DEFINE_HOOK(
     }
 
     // Suspend current apth until one filedescriptor is ready or the timeout occurred.
-    apth_event_t ev_select;
+    // apth_event_t ev_select;
     struct list event_list;
     list_init(&event_list);
     rc = -1;
-    ev = ev_select = apth_event_select(APTH_EVENT_MODE_STATIC, &rc, nfds, rfds, wfds, efds);
-    apth_event_list_add(&event_list, ev);
+    struct apth_event_st ev_select = EVENT_SELECT(&rc, nfds, rfds, wfds, efds);
+    apth_event_list_add(&event_list, &ev_select);
 
     struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
     if (ts != NULL)
@@ -271,9 +262,8 @@ APTH_DEFINE_HOOK(
         apth_event_isolate(&ev_timeout);
 
     // Select return code semantics
-    if (ev_select->ev_status == APTH_EV_STATUS_FAILED)
+    if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
     {
-        apth_event_free(ev_select);
         if (mask != NULL)
             sigprocmask(SIG_SETMASK, &origmask, NULL);
         return apth_error(-1, EBADF);
@@ -283,7 +273,7 @@ APTH_DEFINE_HOOK(
     // If timeout occurred and select event did not, return 0 and clear fd_set
     if (ts != NULL &&
         ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
-        ev_select->ev_status != APTH_EV_STATUS_OCCURRED)
+        ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
     {
         if (rfds != NULL)
             FD_ZERO(rfds);
@@ -293,8 +283,6 @@ APTH_DEFINE_HOOK(
             FD_ZERO(efds);
         rc = 0;
     }
-
-    apth_event_free(ev_select);
 
     // Restore original signal mask
     if (mask != NULL)

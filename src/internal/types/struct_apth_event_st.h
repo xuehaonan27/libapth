@@ -55,18 +55,6 @@ struct apth_event_time_st
     apth_time_t tv;
 };
 
-// Waiting on Mutex (no fields needed; wakeup is handled directly by unlock)
-struct apth_event_mutex_st
-{
-    char _pad; // C requires non-empty struct
-};
-
-// Waiting on Conditional variables (no fields needed; wakeup is handled directly by signal/broadcast)
-struct apth_event_cond_st
-{
-    char _pad; // C requires non-empty struct
-};
-
 // Waiting on another thread
 struct apth_event_tid_st
 {

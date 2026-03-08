@@ -12,10 +12,6 @@ APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
 APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
 APTH_INTERNAL int apth_wait_event_list(struct list *el);
 APTH_INTERNAL bool apth_wait_event(apth_event_t ev);
-APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
-                                             fd_set *rfds, fd_set *wfds, fd_set *efds);
-APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func,
-                                           void *arg, apth_time_t tv);
 APTH_INTERNAL bool apth_event_free(apth_event_t ev);
 APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal);
 
@@ -67,5 +63,29 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
               APTH_GOAL_UNTIL_TID_READY)) != (ARG_GOAL))             \
             PANIC("Goal of TID event wrong = " stringify(ARG_GOAL)); \
     } while (0)
+
+#define EVENT_FUNC(ARG_FUNC, ARG_ARG, ARG_TV) \
+    {.elem = {0},                             \
+     .ev_status = APTH_EV_STATUS_PENDING,     \
+     .ev_type = APTH_EVENT_TYPE_FUNC,         \
+     .ev_goal = APTH_GOAL_UNTIL_OCCURRED,     \
+     .epoll_registered = false,               \
+     .ev_args.FUNC.func = (ARG_FUNC),         \
+     .ev_args.FUNC.arg = (ARG_ARG),           \
+     .ev_args.FUNC.tv = (ARG_TV)}
+
+#define EVENT_SELECT(ARG_N, ARG_NFD, ARG_RFDS, ARG_WFDS, ARG_EFDS) \
+    {                                                              \
+        .elem = {0},                                               \
+        .ev_status = APTH_EV_STATUS_PENDING,                       \
+        .ev_type = APTH_EVENT_TYPE_SELECT,                         \
+        .ev_goal = APTH_GOAL_UNTIL_OCCURRED,                       \
+        .epoll_registered = false,                                 \
+        .ev_args.SELECT.n = (ARG_N),                               \
+        .ev_args.SELECT.nfd = (ARG_NFD),                           \
+        .ev_args.SELECT.rfds = (ARG_RFDS),                         \
+        .ev_args.SELECT.wfds = (ARG_WFDS),                         \
+        .ev_args.SELECT.efds = (ARG_EFDS),                         \
+    }
 
 #endif // __LIBAPTH_INTERNAL_APTH_EVENT_H

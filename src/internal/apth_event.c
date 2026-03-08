@@ -789,32 +789,6 @@ static apth_event_t prepare_ev(unsigned long spec MAYBE_UNUSED)
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd,
-                                             fd_set *rfds, fd_set *wfds, fd_set *efds)
-{
-    // Fiedescriptor set select event
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_SELECT;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    ev->ev_args.SELECT.n = n;
-    ev->ev_args.SELECT.nfd = nfd;
-    ev->ev_args.SELECT.rfds = rfds;
-    ev->ev_args.SELECT.wfds = wfds;
-    ev->ev_args.SELECT.efds = efds;
-    return ev;
-}
-
-APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv)
-{
-    apth_event_t ev = prepare_ev(spec);
-    ev->ev_type = APTH_EVENT_TYPE_FUNC;
-    ev->ev_goal = (int)(spec & APTH_GOAL_UNTIL_OCCURRED);
-    ev->ev_args.FUNC.func = func;
-    ev->ev_args.FUNC.arg = arg;
-    ev->ev_args.FUNC.tv = tv;
-    return ev;
-}
-
 APTH_INTERNAL bool apth_event_free(apth_event_t ev)
 {
     if (ev == NULL)
