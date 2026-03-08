@@ -20,6 +20,8 @@ struct apth_epoll_fd_slot
     int readable_count;  // Number of waiters waiting for EPOLLIN
     int writeable_count; // Number of waiters waiting for EPOLLOUT
     int exception_count; // Number of waiters waiting for EPOLLPRI
+
+    bool epoll_dirty;  // True if aggregate_events changed but epoll not yet updated
 };
 
 #define APTH_EPOLL_FD_SLOT_TABLE_SIZE FD_SETSIZE

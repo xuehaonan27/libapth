@@ -132,10 +132,11 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
     {
         // Event mask changed (e.g. previous is EPOLLIN, and now EPOLLOUT is added).
         // We need to MOD this event.
-        struct epoll_event ee;
-        ee.events = slot->aggregate_events;
-        ee.data.fd = fd;
-        epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+        // struct epoll_event ee;
+        // ee.events = slot->aggregate_events;
+        // ee.data.fd = fd;
+        // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+        slot->epoll_dirty = true;
     }
 
     ev->epoll_registered = true;
@@ -204,10 +205,11 @@ static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
-            struct epoll_event ee;
-            ee.events = new_aggregate;
-            ee.data.fd = fd;
-            epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+            // struct epoll_event ee;
+            // ee.events = new_aggregate;
+            // ee.data.fd = fd;
+            // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+            slot->epoll_dirty = true;
         }
     }
 
@@ -299,14 +301,42 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
-            struct epoll_event ee;
-            ee.events = new_aggregate;
-            ee.data.fd = fd;
-            epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+            // struct epoll_event ee;
+            // ee.events = new_aggregate;
+            // ee.data.fd = fd;
+            // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+            slot->epoll_dirty = true;
         }
     }
 
     return waked;
+}
+
+// Batch update all dirty epoll registrations
+// Call this after processing all waiters to minimize syscalls
+static void epoll_map_flush_dirty(apth_sched_t sched)
+{
+    FOR_ELEMENT_IN_LIST(sched->active_fd_slots, e)
+    {
+        struct apth_epoll_fd_slot *slot = list_entry(e, struct apth_epoll_fd_slot, elem);
+
+        if (slot->epoll_dirty && slot->registered)
+        {
+            struct epoll_event ee;
+            ee.events = slot->aggregate_events;
+            ee.data.fd = slot->fd;
+
+            if (epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, slot->fd, &ee) == 0)
+            {
+                slot->epoll_dirty = false;
+            }
+            else
+            {
+                // MOD failed - might be because FD was closed
+                apth_debug("epoll_ctl MOD failed for fd=%d: %s", slot->fd, strerror(errno));
+            }
+        }
+    }
 }
 
 // Fail ALL waiters for a given fd on this scheduler.
@@ -646,6 +676,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             }
         } while (wake_count > 0);
 
+        epoll_map_flush_dirty(sched);
+
         // If there's apth waked during phase 1, then use 0 timeout for epoll_wait
         if (notified_ths > 0)
             dopoll = true;
@@ -760,6 +792,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
                     }
                 } while (wake_count == MAX_WAKE_BATCH);
+
+                epoll_map_flush_dirty(sched);
             }
             else if (nready == 0 && !dopoll && has_timer)
             {
