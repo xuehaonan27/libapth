@@ -15,7 +15,7 @@ int apth_sem_init(apth_sem_t *sem, int pshared, unsigned int value)
 
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
 
-    lll_apth_init(&s->guard); init
+    lll_apth_init(&s->guard);
     s->value = value;
     list_init(&s->waiters);
     return 0;

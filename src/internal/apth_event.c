@@ -316,20 +316,10 @@ APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched)
 
 APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t goal)
 {
-    // NEW: With the new state management, we don't need to check for uncommitted state
+    // With the new state management, we don't need to check for uncommitted state
     // because TERMINATED state is set atomically while holding the queue lock.
     // For other states, we use simple atomic stores.
-
-    if (state == APTH_STATE_NEW && goal == APTH_GOAL_UNTIL_TID_NEW)
-        return true;
-    if (state == APTH_STATE_READY && goal == APTH_GOAL_UNTIL_TID_READY)
-        return true;
-    if (state == APTH_STATE_WAITING && goal == APTH_GOAL_UNTIL_TID_WAITING)
-        return true;
-    if (state == APTH_STATE_TERMINATED && goal == APTH_GOAL_UNTIL_TID_DEAD)
-        return true;
-
-    return false;
+    return ((int)state == (int)goal);
 }
 
 APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool dopoll)

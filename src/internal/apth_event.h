@@ -58,8 +58,11 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
     {                                                                \
         if (((ARG_GOAL) &                                            \
              (APTH_GOAL_UNTIL_TID_NEW |                              \
-              APTH_GOAL_UNTIL_TID_DEAD |                             \
-              APTH_GOAL_UNTIL_TID_READY)) != (ARG_GOAL))             \
+              APTH_GOAL_UNTIL_TID_READY |                            \
+              APTH_GOAL_UNTIL_TID_WAITING |                          \
+              APTH_GOAL_UNTIL_TID_TERMINATED |                       \
+              APTH_GOAL_UNTIL_TID_WAKED |                            \
+              APTH_GOAL_UNTIL_TID_RUNNING)) != (ARG_GOAL))           \
             PANIC("Goal of TID event wrong = " stringify(ARG_GOAL)); \
     } while (0)
 

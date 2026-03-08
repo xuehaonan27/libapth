@@ -52,7 +52,7 @@ int apth_join(apth_t tid, void **value)
     // If the `tid` is not terminated, then wait it until so
     if (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
     {
-        struct apth_event_st ev = EVENT_TID(tid, APTH_GOAL_UNTIL_TID_DEAD);
+        struct apth_event_st ev = EVENT_TID(tid, APTH_GOAL_UNTIL_TID_TERMINATED);
         apth_wait_event(&ev);
     }
 

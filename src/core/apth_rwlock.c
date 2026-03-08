@@ -15,7 +15,7 @@ int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
 
-    lll_apth_init(&rw->guard); init
+    lll_apth_init(&rw->guard);
     rw->readers = 0;
     rw->writers = 0;
     rw->waiting_writers = 0;
