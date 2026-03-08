@@ -7,6 +7,7 @@
 #include "apth_sched.h"
 #include "internal/types.h"
 #include "internal/apth_event.h"
+#include "internal/apth_fd.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_time.h"
 #include "internal/apth_global_sched_pool.h"
@@ -104,6 +105,10 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     // Create wake eventfd and register it with our epoll so other threads can
     // interrupt a blocking epoll_wait when new work arrives.
     sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+
+    apth_fd_register(sched->epoll_fd);
+    apth_fd_register(sched->wake_eventfd);
+
     if (sched->wake_eventfd < 0)
     {
         apth_func_raw(close)(sched->epoll_fd);

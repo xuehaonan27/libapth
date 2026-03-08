@@ -103,49 +103,112 @@ enum
 #include <sys/socket.h>              // for socklen_t
 #include <sys/poll.h>                // for nfds_t
 #include <bits/types/struct_iovec.h> // for struct iovec
+#include <bits/types/stack_t.h>
+#include <bits/types/struct_sigstack.h>
+#include <bits/types/struct_rusage.h>
+#include <signal.h> // for sigaction
 
-#define APTH_EXPOSE_DECLARE_SYSCALL(rettype, name, ...) rettype name(__VA_ARGS__);
+#define APTH_EXPOSE_DECLARE_SYSCALL(rettype, name, ...) extern rettype name(__VA_ARGS__);
 
-APTH_EXPOSE_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
-APTH_EXPOSE_DECLARE_SYSCALL(int, usleep, unsigned int usec)
-APTH_EXPOSE_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
-APTH_EXPOSE_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
-APTH_EXPOSE_DECLARE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
-APTH_EXPOSE_DECLARE_SYSCALL(pid_t, fork, void)
-APTH_EXPOSE_DECLARE_SYSCALL(int, system, const char *cmd)
+// ==================== Low Level I/O ====================
+APTH_EXPOSE_DECLARE_SYSCALL(int, open, const char *pathname, int flags, ... /* mode_t mode */)
+APTH_EXPOSE_DECLARE_SYSCALL(int, open64, const char *pathname, int flags, ... /* mode_t mode */)
+APTH_EXPOSE_DECLARE_SYSCALL(int, openat, int dirfd, const char *pathname, int flags, ... /* mode_t mode */)
+APTH_EXPOSE_DECLARE_SYSCALL(int, openat64, int filedes, const char *filename, int flags, ... /* mode_t mode */)
+APTH_EXPOSE_DECLARE_SYSCALL(int, creat, const char *pathname, mode_t mode)
+APTH_EXPOSE_DECLARE_SYSCALL(int, creat64, const char *filename, mode_t mode)
+APTH_EXPOSE_DECLARE_SYSCALL(int, close, int fd)
+APTH_EXPOSE_DECLARE_SYSCALL(int, close_range, unsigned int lowfd, unsigned int maxfd, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(void, closefrom, int lowfd)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, __read_chk, int fd, void *buf, size_t nbytes, size_t buflen)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pread, int fd, void *buf, size_t count, off_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, __pread_chk, int fd, void *buf, size_t nbytes, off_t offset, size_t buflen)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pread64, int fd, void *buf, size_t count, off64_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, __pread64_chk, int fd, void *buf, size_t nbytes, off64_t offset, size_t buflen)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwrite, int fd, const void *buf, size_t count, off_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwrite64, int filedes, const void *buffer, size_t size, off64_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, preadv, int fd, const struct iovec *iov, int iovcnt, off_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, preadv64, int fd, const struct iovec *iov, int iovcnt, off64_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwritev, int fd, const struct iovec *iov, int iovcnt, off_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwritev64, int fd, const struct iovec *iov, int iovcnt, off64_t offset)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, preadv2, int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, preadv64v2, int fd, const struct iovec *iov, int iovcnt, off64_t offset, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwritev2, int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwritev64v2, int fd, const struct iovec *iov, int iovcnt, off64_t offset, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, copy_file_range, int inputfd, off64_t *inputpos, int outputfd,
+                            off64_t *outputpos, size_t length, unsigned int flags /* must be zero */)
+APTH_EXPOSE_DECLARE_SYSCALL(int, dup, int old)
+APTH_EXPOSE_DECLARE_SYSCALL(int, dup2, int old, int new)
+APTH_EXPOSE_DECLARE_SYSCALL(int, dup3, int old, int new, int flags)
 APTH_EXPOSE_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
                             fd_set *efds, struct timeval *timeout)
 APTH_EXPOSE_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
                             fd_set *efds, const struct timespec *ts, const sigset_t *mask)
+APTH_EXPOSE_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
+APTH_EXPOSE_DECLARE_SYSCALL(int, pipe, int pipefd[2])
+APTH_EXPOSE_DECLARE_SYSCALL(int, fcntl, int fd, int cmd, ... /* arg */)
+
+// ==================== Process ====================
+APTH_EXPOSE_DECLARE_SYSCALL(int, system, const char *cmd)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, fork, void)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, _Fork, void)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, vfork, void)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, waitpid, pid_t wpid, int *status, int options)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, wait, int *status_ptr)
+APTH_EXPOSE_DECLARE_SYSCALL(pid_t, wait4, pid_t pid, int *status_ptr, int options, struct rusage *usage)
+APTH_EXPOSE_DECLARE_SYSCALL(void, exit, int status)
+
+// ==================== Signal ====================
+typedef void (*sighandler_t)(int);
+APTH_EXPOSE_DECLARE_SYSCALL(sighandler_t, signal, int sig, sighandler_t handler)
+APTH_EXPOSE_DECLARE_SYSCALL(sighandler_t, sysv_signal, int sig, sighandler_t handler)
+APTH_EXPOSE_DECLARE_SYSCALL(sighandler_t, __sysv_signal, int sig, sighandler_t handler)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigaction, int signum, const struct sigaction *restrict act,
+                            struct sigaction *restrict oldact)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigwait, const sigset_t *set, int *sigp)
+APTH_EXPOSE_DECLARE_SYSCALL(int, raise, int sig)
+APTH_EXPOSE_DECLARE_SYSCALL(int, gsignal, int signum)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigprocmask, int how, const sigset_t *restrict set,
+                            sigset_t *restrict oldset)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigpending, sigset_t *set)
+APTH_EXPOSE_DECLARE_SYSCALL(int, pause, void)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigsuspend, const sigset_t *mask)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigaltstack, const stack_t *restrict ss, stack_t *restrict oss)
+APTH_EXPOSE_DECLARE_SYSCALL(int, sigstack, struct sigstack *stack, struct sigstack *oldstack)
+
+// ==================== Socket ====================
 APTH_EXPOSE_DECLARE_SYSCALL(int, socket, int domain, int type, int protocol)
+APTH_EXPOSE_DECLARE_SYSCALL(int, shutdown, int fd, int how)
+APTH_EXPOSE_DECLARE_SYSCALL(int, socketpair, int domain, int style, int protocol, int filedes[2])
 APTH_EXPOSE_DECLARE_SYSCALL(int, connect, int fd, const struct sockaddr *address, socklen_t address_len)
-APTH_EXPOSE_DECLARE_SYSCALL(int, close, int fd)
 APTH_EXPOSE_DECLARE_SYSCALL(int, accept, int fd, struct sockaddr *addr, socklen_t *addrlen)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, read, int fd, void *buf, size_t nbytes)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, write, int fd, const void *buf, size_t nbytes)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, readv, int fd, const struct iovec *iov, int iovcnt)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, writev, int fd, const struct iovec *iov, int iovcnt)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
-                            int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, __recv_chk, int sockfd, void *buf, size_t len, size_t buflen, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
 APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
                             int flags, struct sockaddr *src_addr, socklen_t *addrlen)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, send, int sockfd, const void *buf, size_t len, int flags)
-APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, recv, int sockfd, void *buf, size_t len, int flags)
-APTH_EXPOSE_DECLARE_SYSCALL(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
-APTH_EXPOSE_DECLARE_SYSCALL(int, setsockopt, int fd, int level, int option_name,
-                            const void *option_value, socklen_t option_len)
-APTH_EXPOSE_DECLARE_SYSCALL(int, setenv, const char *n, const char *value, int overwrite)
-APTH_EXPOSE_DECLARE_SYSCALL(int, unsetenv, const char *n)
-APTH_EXPOSE_DECLARE_SYSCALL(char *, getenv, const char *n)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, __recvfrom_chk, int __fd, void *__restrict __buf, size_t __n,
+                            size_t __buflen, int __flags, struct sockaddr *__addr,
+                            socklen_t *__restrict __addr_len)
+APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
+                            int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
 
+// ==================== Time ====================
+APTH_EXPOSE_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct timespec *rmtp)
+APTH_EXPOSE_DECLARE_SYSCALL(int, usleep, unsigned int usec)
+APTH_EXPOSE_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 #undef APTH_EXPOSE_DECLARE_SYSCALL
 
 // ==================== Functions ====================
 
 #include <stdbool.h>
-#include <stdlib.h> /* malloc, free — needed by APTH_MAIN_BEGIN */
-#include <sched.h>  // For cpu_set_t
-#include <time.h>   // For clockid_t
+#include <stdlib.h>               /* malloc, free — needed by APTH_MAIN_BEGIN */
+#include <sched.h>                // For cpu_set_t
+#include <bits/types/clockid_t.h> // For clockid_t
 
 int apth_cancel(apth_t th);
 void apth_cleanup_push(void (*func)(void *), void *arg);

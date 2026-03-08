@@ -17,22 +17,14 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
     // POSIX compliance
     if (length == 0)
         return 0;
+
+    apth_fd_register_optional(inputfd);
+    apth_fd_register_optional(outputfd);
+
     if (!apth_util_fd_valid(inputfd))
         return apth_error(-1, EBADF);
     if (!apth_util_fd_valid(outputfd))
         return apth_error(-1, EBADF);
-
-    // Acquire both file descriptors
-    int input_orig_mode = apth_fd_acquire(inputfd);
-    if (input_orig_mode < 0)
-        return apth_error(-1, EBADF);
-
-    int output_orig_mode = apth_fd_acquire(outputfd);
-    if (output_orig_mode < 0)
-    {
-        apth_fd_release(inputfd);
-        return apth_error(-1, EBADF);
-    }
 
     ssize_t rv;
     for (;;)
@@ -54,10 +46,6 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
         // rv >= 0 (success) or rv < 0 (real error)
         break;
     }
-
-    // Restore file descriptor modes
-    apth_fd_release(outputfd);
-    apth_fd_release(inputfd);
 
     apth_debug("apth_func_copy_file_range: leave to thread \"%s\"", cur->name);
     return rv;

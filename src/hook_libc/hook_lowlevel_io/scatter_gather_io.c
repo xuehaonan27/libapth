@@ -14,11 +14,8 @@ APTH_DEFINE_HOOK(ssize_t, readv,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -42,9 +39,6 @@ APTH_DEFINE_HOOK(ssize_t, readv,
         // either situation, we should return to caller
         break;
     }
-
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
 
     apth_debug("apth_func_readv: leave to thread \"%s\"", cur->name);
     return rv;
@@ -122,11 +116,8 @@ APTH_DEFINE_HOOK(ssize_t, writev,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -139,10 +130,7 @@ APTH_DEFINE_HOOK(ssize_t, writev,
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
-        {
-            apth_fd_release(fd);
             return apth_error(-1, errno);
-        }
     }
     else
     {
@@ -197,9 +185,6 @@ APTH_DEFINE_HOOK(ssize_t, writev,
     if (iovcnt > (int)APTH_WRITEV_TIOV_STACK_SIZE)
         free(tiov);
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_writev: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -215,11 +200,8 @@ APTH_DEFINE_HOOK(ssize_t, preadv,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -244,9 +226,6 @@ APTH_DEFINE_HOOK(ssize_t, preadv,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_preadv: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -261,11 +240,8 @@ APTH_DEFINE_HOOK(ssize_t, preadv64,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -290,9 +266,6 @@ APTH_DEFINE_HOOK(ssize_t, preadv64,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_preadv64: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -307,11 +280,8 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -325,10 +295,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
-        {
-            apth_fd_release(fd);
             return apth_error(-1, errno);
-        }
     }
     else
     {
@@ -388,9 +355,6 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
     if (iovcnt > (int)APTH_PWRITEV_TIOV_STACK_SIZE)
         free(tiov);
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_pwritev: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -405,11 +369,8 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -423,10 +384,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
-        {
-            apth_fd_release(fd);
             return apth_error(-1, errno);
-        }
     }
     else
     {
@@ -486,9 +444,6 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
     if (iovcnt > (int)APTH_PWRITEV64_TIOV_STACK_SIZE)
         free(tiov);
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_pwritev64: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -501,11 +456,8 @@ APTH_DEFINE_HOOK(ssize_t, preadv2, (int fd, const struct iovec *iov, int iovcnt,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -530,9 +482,6 @@ APTH_DEFINE_HOOK(ssize_t, preadv2, (int fd, const struct iovec *iov, int iovcnt,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_preadv2: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -547,11 +496,8 @@ APTH_DEFINE_HOOK(ssize_t, preadv64v2,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -576,9 +522,6 @@ APTH_DEFINE_HOOK(ssize_t, preadv64v2,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_preadv64v2: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -593,11 +536,8 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -611,10 +551,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
-        {
-            apth_fd_release(fd);
             return apth_error(-1, errno);
-        }
     }
     else
     {
@@ -674,9 +611,6 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
     if (iovcnt > (int)APTH_PWRITEV2_TIOV_STACK_SIZE)
         free(tiov);
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_pwritev2: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -691,11 +625,8 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
     // POSIX compliance
     if (iovcnt <= 0 || iovcnt > UIO_MAXIOV)
         return apth_error(-1, EINVAL);
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Provide temporary iovec structure for partial-write tracking
@@ -709,10 +640,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
     {
         tiovcnt = (sizeof(struct iovec) * UIO_MAXIOV);
         if ((tiov = (struct iovec *)malloc(tiovcnt)) == NULL)
-        {
-            apth_fd_release(fd);
             return apth_error(-1, errno);
-        }
     }
     else
     {
@@ -771,9 +699,6 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
     // Cleanup
     if (iovcnt > (int)APTH_PWRITEV64V2_TIOV_STACK_SIZE)
         free(tiov);
-
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
 
     apth_debug("apth_func_pwritev64v2: leave to thread \"%s\"", cur->name);
     return rv;

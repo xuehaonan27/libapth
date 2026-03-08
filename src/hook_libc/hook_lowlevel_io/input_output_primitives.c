@@ -15,11 +15,8 @@ APTH_DEFINE_HOOK(ssize_t, read,
     // POSIX compliance
     if (nbytes == 0)
         return 0;
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -41,9 +38,6 @@ APTH_DEFINE_HOOK(ssize_t, read,
         // Either situation we should return
         break;
     }
-
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
 
     apth_debug("apth_func_read: leave to thread \"%s\"", cur->name);
     return rv;
@@ -71,11 +65,8 @@ APTH_DEFINE_HOOK(ssize_t, write,
     // POSIX compliance
     if (nbytes == 0)
         return 0;
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv = 0;
@@ -114,9 +105,6 @@ APTH_DEFINE_HOOK(ssize_t, write,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_write: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -133,11 +121,8 @@ APTH_DEFINE_HOOK(ssize_t, pread,
     // POSIX compliance
     if (count == 0)
         return 0;
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -159,8 +144,6 @@ APTH_DEFINE_HOOK(ssize_t, pread,
         // Either situation we should return
         break;
     }
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
 
     apth_debug("apth_func_pread: leave to thread \"%s\"", cur->name);
     return rv;
@@ -188,11 +171,8 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
     // POSIX compliance
     if (count == 0)
         return 0;
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -214,8 +194,6 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
         // Either situation we should return
         break;
     }
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
 
     apth_debug("apth_func_pread64: leave to thread \"%s\"", cur->name);
     return rv;
@@ -241,11 +219,8 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
     // POSIX compliance
     if (count == 0)
         return 0;
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv = 0;
@@ -285,9 +260,6 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
         break;
     }
 
-    // Restore filedescriptor mode
-    apth_fd_release(fd);
-
     apth_debug("apth_func_pwrite: leave to thread \"%s\"", cur->name);
     return rv;
 }
@@ -304,11 +276,8 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
     // POSIX compliance
     if (size == 0)
         return 0;
+    apth_fd_register_optional(filedes);
     if (!apth_util_fd_valid(filedes))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(filedes);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv = 0;
@@ -347,9 +316,6 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
 
         break;
     }
-
-    // Restore filedescriptor mode
-    apth_fd_release(filedes);
 
     apth_debug("apth_func_pwrite64: leave to thread \"%s\"", cur->name);
     return rv;

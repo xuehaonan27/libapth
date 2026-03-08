@@ -8,7 +8,7 @@
 #include "hook_utils.h"
 #ifndef __USE_LARGEFILE64
 #define __USE_LARGEFILE64
-#include <sys/types.h>     // For off64_t
+#include <sys/types.h> // For off64_t
 #endif
 // #include <linux/openat2.h> // For struct open_how
 #include <sys/uio.h>
@@ -70,7 +70,15 @@
     X(select)                         \
     X(pselect)                        \
     X(poll)                           \
-    X(pipe)
+    X(pipe)                           \
+    X(fcntl)
+
+#ifdef __O_TMPFILE
+#define __OPEN_NEEDS_MODE(oflag) \
+    (((oflag) & O_CREAT) != 0 || ((oflag) & __O_TMPFILE) == __O_TMPFILE)
+#else
+#define __OPEN_NEEDS_MODE(oflag) (((oflag) & O_CREAT) != 0)
+#endif
 
 // ==================== 13.1 Opening and Closing Files ====================
 // Although GLIBC will handle open and its 64 bits variants with complex conditional
@@ -174,5 +182,8 @@ APTH_DECLARE_HOOK(int, poll, struct pollfd *fds, nfds_t nfds, int timeout)
 // ==================== 15.1 Creating a Pipe ====================
 // TOOD: implementation
 APTH_DECLARE_HOOK(int, pipe, int pipefd[2])
+
+APTH_DECLARE_FETCH_LIBCFUNC(int, fcntl, int fd, int cmd, ... /* arg */)
+APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ... /* arg */);
 
 #endif // __LIBAPTH_HOOK_LIBC_HOOK_LOWLEVEL_IO_H

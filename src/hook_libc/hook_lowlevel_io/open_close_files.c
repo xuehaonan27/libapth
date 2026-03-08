@@ -41,6 +41,15 @@ APTH_INTERNAL int apth_func(open)(const char *pathname, int flags, ...)
     return retval;
 }
 
+APTH_INTERNAL int open(const char *pathname, int flags, ...)
+{
+    va_list arg_list;
+    va_start(arg_list, flags);
+    int retval = __variadic_open(pathname, flags, arg_list);
+    va_end(arg_list);
+    return retval;
+}
+
 APTH_FETCH_LIBCFUNC(open64)
 
 static int __variadic_open64(const char *pathname, int flags, va_list vargs)

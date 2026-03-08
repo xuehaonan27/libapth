@@ -12,87 +12,114 @@ struct apth_fd_entry APTH_FD_TABLE[APTH_FD_TABLE_SIZE];
 APTH_INTERNAL void apth_fd_table_init(void)
 {
     memset(APTH_FD_TABLE, 0, sizeof(APTH_FD_TABLE));
+    apth_fd_register(0);
+    apth_fd_register(1);
+    apth_fd_register(2);
 }
 
 APTH_INTERNAL void apth_fd_register(int fd)
 {
     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
         return;
-    int flags = fcntl(fd, F_GETFL, 0);
+
+    // Get current flags
+    int flags = apth_func_raw(fcntl)(fd, F_GETFL, 0);
+    if (flags == -1)
+        return;
+
+    // Store original flags (for informational purposes only)
     APTH_FD_TABLE[fd].orig_flags = flags;
+
+    // Set to non-blocking if not already
+    if (!(flags & O_NONBLOCK))
+    {
+        if (apth_func_raw(fcntl)(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            apth_debug("Failed to set O_NONBLOCK on fd=%d", fd);
+            PANIC("Failed to set O_NONBLOCK on fd=%d", fd);
+            return;
+        }
+    }
+
+    // Mark as managed (no refcount needed)
     atomic_store_release(&APTH_FD_TABLE[fd].managed, 1);
-    atomic_store_release(&APTH_FD_TABLE[fd].refcount, 0);
+    apth_debug("Registered fd=%d (orig_flags=0x%x) now flags=0x%x", fd, flags, apth_func_raw(fcntl)(fd, F_GETFL, 0));
 }
 
 APTH_INTERNAL void apth_fd_unregister(int fd)
 {
     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
         return;
-    // Restore original flags
-    // (if there's still someone using this fd, meaning rc > 0 but
-    // theoratically this shouldn't happen)
-    if (atomic_load_acquire(&APTH_FD_TABLE[fd].managed))
+
+    // Just mark as unmanaged - don't restore flags
+    // The FD is being closed anyway, so no point in restoring
+    atomic_store_release(&APTH_FD_TABLE[fd].managed, 0);
+    apth_debug("Unregistered fd=%d", fd);
+}
+
+APTH_INTERNAL void apth_fd_register_optional(int fd)
+{
+    if (atomic_load_acquire(&APTH_FD_TABLE[fd].managed) == 0)
     {
-        fcntl(fd, F_SETFL, APTH_FD_TABLE[fd].orig_flags);
-        atomic_store_release(&APTH_FD_TABLE[fd].managed, 0);
-        atomic_store_release(&APTH_FD_TABLE[fd].refcount, 0);
+        // Not managed but we are going to use it
+        apth_fd_register(fd);
     }
 }
 
-// Before performing I/O operation. Set to NONBLOCK if the fd is used first time
-APTH_INTERNAL int apth_fd_acquire(int fd)
-{
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
-        return -1;
+// // Before performing I/O operation. Set to NONBLOCK if the fd is used first time
+// APTH_INTERNAL int apth_fd_acquire(int fd)
+// {
+//     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+//         return -1;
 
-    struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
+//     struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
 
-    // Check if this is the first time we're seeing this fd (refcount == 0)
-    int old_ref = atomic_fetch_add_acq_rel(&e->refcount, 1);
+//     // Check if this is the first time we're seeing this fd (refcount == 0)
+//     int old_ref = atomic_fetch_add_acq_rel(&e->refcount, 1);
 
-    if (old_ref == 0)
-    {
-        // First user of this fd - need to set it to NONBLOCK
-        // This happens either on first use, or after fd was closed and reopened
-        e->orig_flags = fcntl(fd, F_GETFL, 0);
-        if (e->orig_flags == -1)
-        {
-            // Invalid fd - decrement refcount and return error
-            atomic_fetch_sub_acq_rel(&e->refcount, 1);
-            return -1;
-        }
+//     if (old_ref == 0)
+//     {
+//         // First user of this fd - need to set it to NONBLOCK
+//         // This happens either on first use, or after fd was closed and reopened
+//         e->orig_flags = fcntl(fd, F_GETFL, 0);
+//         if (e->orig_flags == -1)
+//         {
+//             // Invalid fd - decrement refcount and return error
+//             atomic_fetch_sub_acq_rel(&e->refcount, 1);
+//             return -1;
+//         }
 
-        // Set to NONBLOCK if not already
-        if (!(e->orig_flags & O_NONBLOCK))
-        {
-            if (fcntl(fd, F_SETFL, e->orig_flags | O_NONBLOCK) == -1)
-            {
-                // fcntl failed - decrement refcount and return error
-                atomic_fetch_sub_acq_rel(&e->refcount, 1);
-                return -1;
-            }
-        }
+//         // Set to NONBLOCK if not already
+//         if (!(e->orig_flags & O_NONBLOCK))
+//         {
+//             if (fcntl(fd, F_SETFL, e->orig_flags | O_NONBLOCK) == -1)
+//             {
+//                 // fcntl failed - decrement refcount and return error
+//                 atomic_fetch_sub_acq_rel(&e->refcount, 1);
+//                 return -1;
+//             }
+//         }
 
-        atomic_store_release(&e->managed, 1);
-    }
+//         atomic_store_release(&e->managed, 1);
+//     }
 
-    return (e->orig_flags & O_NONBLOCK) ? APTH_FDMODE_NONBLOCK : APTH_FDMODE_BLOCK;
-}
+//     return (e->orig_flags & O_NONBLOCK) ? APTH_FDMODE_NONBLOCK : APTH_FDMODE_BLOCK;
+// }
 
-// Perform after I/O operation: just decrement refcount
-// No need to restore flags here - fd stays NONBLOCK while managed
-// Flags are only restored in apth_fd_unregister() when fd is closed
-APTH_INTERNAL void apth_fd_release(int fd)
-{
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
-        return;
+// // Perform after I/O operation: just decrement refcount
+// // No need to restore flags here - fd stays NONBLOCK while managed
+// // Flags are only restored in apth_fd_unregister() when fd is closed
+// APTH_INTERNAL void apth_fd_release(int fd)
+// {
+//     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+//         return;
 
-    struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
+//     struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
 
-    // Just decrement refcount, no fcntl() needed
-    // This eliminates syscalls in the hot path
-    atomic_fetch_sub_acq_rel(&e->refcount, 1);
-}
+//     // Just decrement refcount, no fcntl() needed
+//     // This eliminates syscalls in the hot path
+//     atomic_fetch_sub_acq_rel(&e->refcount, 1);
+// }
 
 // Notify ALL schedulers (including the caller's own) that `fd` has been closed.
 // Each scheduler will process the notification at the start of its next event
@@ -133,8 +160,13 @@ APTH_INTERNAL bool apth_util_fd_valid(int fd)
 {
     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
         return false;
-    if (fcntl(fd, F_GETFL) == -1 && errno == EBADF)
+    int flags = apth_func_raw(fcntl)(fd, F_GETFL);
+    if (flags == -1 && errno == EBADF)
         return false;
+    if ((flags & O_NONBLOCK) == 0)
+    {
+        PANIC("fd=%d not in NONBLOCK mode!", fd);
+    }
     return true;
 }
 

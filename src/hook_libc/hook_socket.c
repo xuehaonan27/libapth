@@ -58,12 +58,8 @@ APTH_DEFINE_HOOK(
     apth_debug("apth_func_connect: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    // Acquire fd and set to non-blocking mode (no fcntl in hot path)
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Try to connect
@@ -72,7 +68,7 @@ APTH_DEFINE_HOOK(
         ;
 
     // If it is still on progress wait until socket is really writeable
-    if (rv == -1 && errno == EINPROGRESS && orig_mode != APTH_FDMODE_NONBLOCK)
+    if (rv == -1 && errno == EINPROGRESS)
     {
         struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
         apth_wait_event(&ev);
@@ -82,20 +78,12 @@ APTH_DEFINE_HOOK(
         socklen_t errlen;
         errlen = sizeof(err);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen) == -1)
-        {
-            apth_fd_release(fd);
             return -1;
-        }
-
-        apth_fd_release(fd);
 
         if (err == 0)
             return 0;
         return apth_error(rv, err);
     }
-
-    // Release fd (just decrements refcount, no fcntl)
-    apth_fd_release(fd);
 
     apth_debug("apth_func_connect: leave to thread \"%s\"", cur->name);
     return rv;
@@ -110,12 +98,8 @@ APTH_DEFINE_HOOK(int, accept,
     apth_debug("apth_func_accept: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
+    apth_fd_register_optional(fd);
     if (!apth_util_fd_valid(fd))
-        return apth_error(-1, EBADF);
-
-    // Acquire fd and set to non-blocking mode (no fcntl in hot path)
-    int orig_mode = apth_fd_acquire(fd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     // Poll socket via accept
@@ -138,9 +122,6 @@ APTH_DEFINE_HOOK(int, accept,
         break;
     }
 
-    // Release listening fd (just decrements refcount, no fcntl)
-    apth_fd_release(fd);
-
     // Register the newly accepted connection fd
     if (rv != -1)
         apth_fd_register(rv);
@@ -162,11 +143,8 @@ APTH_DEFINE_HOOK(
     // POSIX compliance
     if (nbytes == 0)
         return 0;
+    apth_fd_register_optional(sockfd);
     if (!apth_util_fd_valid(sockfd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(sockfd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv;
@@ -190,9 +168,6 @@ APTH_DEFINE_HOOK(
         // return to caller, a short recv is valid POSIX
         break;
     }
-
-    // Restore filedescriptor mode
-    apth_fd_release(sockfd);
 
     apth_debug("apth_func_recvfrom: leave to thread \"%s\"", cur->name);
     return rv;
@@ -221,11 +196,8 @@ APTH_DEFINE_HOOK(
     // POSIX compliance
     if (nbytes == 0)
         return 0;
+    apth_fd_register_optional(sockfd);
     if (!apth_util_fd_valid(sockfd))
-        return apth_error(-1, EBADF);
-
-    int orig_mode = apth_fd_acquire(sockfd);
-    if (orig_mode < 0) // APTH_FDMODE_ERROR
         return apth_error(-1, EBADF);
 
     ssize_t rv = 0;
@@ -262,9 +234,6 @@ APTH_DEFINE_HOOK(
 
         break;
     }
-
-    // Restore filedescriptor mode
-    apth_fd_release(sockfd);
 
     apth_debug("apth_func_sendto: leave to thread \"%s\"", cur->name);
     return rv;

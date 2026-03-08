@@ -39,7 +39,7 @@ APTH_DECLARE_HOOK(ssize_t, recvfrom, int sockfd, void *buf, size_t nbytes,
                   int flags, struct sockaddr *src_addr, socklen_t *addrlen)
 APTH_DECLARE_HOOK(ssize_t, __recvfrom_chk, int __fd, void *__restrict __buf, size_t __n,
                   size_t __buflen, int __flags, struct sockaddr *__addr,
-                  socklen_t *__restrict __addr_len);
+                  socklen_t *__restrict __addr_len)
 APTH_DECLARE_HOOK(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
                   int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
 
