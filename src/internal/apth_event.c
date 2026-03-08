@@ -804,26 +804,6 @@ APTH_INTERNAL apth_event_t apth_event_select(unsigned long spec, int *n, int nfd
     return ev;
 }
 
-APTH_INTERNAL apth_event_t apth_event_tid(unsigned long spec, apth_t tid)
-{
-    // Thread id event
-    apth_event_t ev = prepare_ev(spec);
-    int goal;
-    ev->ev_type = APTH_EVENT_TYPE_TID;
-    if (spec & APTH_GOAL_UNTIL_TID_NEW)
-        goal = APTH_GOAL_UNTIL_TID_NEW;
-    else if (spec & APTH_GOAL_UNTIL_TID_READY)
-        goal = APTH_GOAL_UNTIL_TID_READY;
-    else if (spec & APTH_GOAL_UNTIL_TID_DEAD)
-        goal = APTH_GOAL_UNTIL_TID_DEAD;
-    else
-        goal = APTH_GOAL_UNTIL_TID_READY; // TODO:check: is this right?
-    ev->ev_goal = goal;
-    ev->ev_args.TID.tid = tid;
-
-    return ev;
-}
-
 APTH_INTERNAL apth_event_t apth_event_func(unsigned long spec, apth_event_custom_func_t func, void *arg, apth_time_t tv)
 {
     apth_event_t ev = prepare_ev(spec);

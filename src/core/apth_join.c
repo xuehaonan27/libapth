@@ -23,8 +23,6 @@ ERRORS
 // TODO: what will happen if `tid` was switched to DETACHED while cur is waiting its termination?
 int apth_join(apth_t tid, void **value)
 {
-    apth_event_t ev;
-
     apth_debug("apth_join: joining thread %p (\"%s\")", tid, tid == NULL ? "-ANY-" : tid->name);
     // apth_sched_t sched = CUR_SCHED;
     apth_t self = CUR_APTH;
@@ -54,8 +52,8 @@ int apth_join(apth_t tid, void **value)
     // If the `tid` is not terminated, then wait it until so
     if (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
     {
-        ev = apth_event_tid(APTH_GOAL_UNTIL_TID_DEAD | APTH_EVENT_MODE_STATIC, tid);
-        apth_wait_event(ev);
+        struct apth_event_st ev = EVENT_TID(tid, APTH_GOAL_UNTIL_TID_DEAD);
+        apth_wait_event(&ev);
     }
 
     // TODO: if `tid` was switched to DETACHED when we are waiting ...
