@@ -1,5 +1,5 @@
 #include "apth.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "internal/apth_cancel.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"

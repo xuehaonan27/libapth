@@ -33,7 +33,7 @@ typedef struct
 int apth_initvals_init(apth_init_t *initvals, int workers,
                        void *(*main_apth)(void *), void *main_args,
                        apth_attr_t *main_attr);
-int apth_init(apth_init_t *initvals);
+void apth_init(apth_init_t *initvals);
 int apth_drop(void);
 
 // Thread identifier
@@ -429,8 +429,7 @@ void apth_configure(apth_init_t *cfg);
         __initvals__.main_apth = __apth_main_impl__;                            \
         __initvals__.main_args = (void *)__margs__;                             \
         apth_init(&__initvals__);                                               \
-        perror("Should not reach here");                                        \
-        return 0;                                                               \
+        return -1;                                                              \
     }                                                                           \
     static void *__apth_main_impl__(void *__apth_args__)                        \
     {                                                                           \

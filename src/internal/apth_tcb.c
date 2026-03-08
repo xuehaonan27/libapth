@@ -1,4 +1,5 @@
 #include "apth_tcb.h"
+#include "internal/apth_sched.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
@@ -10,7 +11,7 @@
 #include <unistd.h>
 
 // The most lower 2 bits should be 0, meaning TCB should be at least 4 bytes aligned.
-#define IS_VALID_APTH_T(t) (((uintptr_t)(t) & 0x3) == 0)
+#define APTH_ALIGNED_ASSURE(t) (((uintptr_t)(t) & 0x3) == 0)
 
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t guardsize)
 {
@@ -22,7 +23,7 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
     if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
         return APTH_NULL;
 
-    assert_msg(IS_VALID_APTH_T(t), "t not aligned to 4 bytes: %p", t);
+    assert_msg(APTH_ALIGNED_ASSURE(t), "t not aligned to 4 bytes: %p", t);
 
     memset(t, '\0', sizeof(struct apth_st));
 

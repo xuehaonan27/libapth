@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #define handle_error_en(en, msg) \
     do                           \
@@ -23,6 +24,10 @@ thread_func(void *ignored_argument)
     static char child_msg[] = "child: going to exit by myself\n";
     write(2, child_msg, sizeof(child_msg));
     apth_exit(NULL);
+
+    // Make compiler happy
+    perror("Should not reach here");
+    return (void *)(intptr_t)(-1);
 }
 
 APTH_CONFIG(cfg,
@@ -43,5 +48,9 @@ APTH_MAIN_BEGIN(argc, argv)
     static char main_msg[] = "main: going to call apth_exit\n";
     write(2, main_msg, sizeof(main_msg));
     apth_exit(NULL);
+    
+    // Just make compiler happy
+    perror("Should not reach here");
+    return (void *)(intptr_t)(-1);
 }
 APTH_MAIN_END

@@ -302,11 +302,11 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
         struct __apth_pass_signal aux;
         aux.sig = sig;
         if (target == APTH_NULL)
-            target = find_first_in_thqueue(sched->ready_queue, __apth_could_receive_this_signal, &aux);
+            target = find_first_in_thqueue(THQUEUE(sched, ready), __apth_could_receive_this_signal, &aux);
         if (target == APTH_NULL)
-            target = find_first_in_thqueue(sched->waked_queue, __apth_could_receive_this_signal, &aux);
+            target = find_first_in_thqueue(THQUEUE(sched, waked), __apth_could_receive_this_signal, &aux);
         if (target == APTH_NULL)
-            target = find_first_in_thqueue(sched->new_queue, __apth_could_receive_this_signal, &aux);
+            target = find_first_in_thqueue(THQUEUE(sched, new), __apth_could_receive_this_signal, &aux);
 
         if (target == APTH_NULL)
         {

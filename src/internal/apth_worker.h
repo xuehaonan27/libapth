@@ -3,22 +3,8 @@
 
 #include "apth.h"
 #include "internal/forward_declare.h"
-#include "utils/list.inline.h"
-#include "utils/lll_new.h"
+#include "internal/types/struct_apth_worker_st.h"
 #include "utils/archplattoold.h"
-#include <pthread.h>
-
-// Pthread worker occupying CPU and carrying APTH loads
-struct apth_worker_st
-{
-    int worker_id;       // worker ID
-    pthread_t tid;       // a worker pthread
-    pthread_attr_t attr; // Worker pthread attribute
-    apth_sched_t sched;  // Hold scheduler
-    struct list_elem elem;
-#define apth_worker_t_list_entry(LIST_ELEM) \
-    list_entry(LIST_ELEM, struct apth_worker_st, elem)
-};
 
 // Argument passed to worker's pthread
 struct apth_worker_pthread_arg

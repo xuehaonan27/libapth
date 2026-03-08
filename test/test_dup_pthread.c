@@ -6,7 +6,7 @@
  */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#endif // _GNU_SOURCE
+#endif
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +35,11 @@ static void *test_func(void *arg)
 
     /* Write test data */
     const char *data = "Hello, dup test!";
-    write(fd1, data, strlen(data));
+    if (write(fd1, data, strlen(data)) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        atomic_store(&g_pass, 0);
+        return NULL;
+    }
 
     /* Test dup() */
     fd2 = dup(fd1);

@@ -1,56 +1,7 @@
 #ifndef __LIBAPTH_INTERNAL_APTH_SCHED_H
 #define __LIBAPTH_INTERNAL_APTH_SCHED_H
 
-#include "apth.h"
-#include "internal/forward_declare.h"
-#include "internal/apth_ctx.h"
-#include "internal/apth_time.h"
-#include "internal/apth_fd_slot.h"
-#include "utils/lll_new.h"
-
-// Per-thread scheduler. Note that we do not treat scheduler as a separated
-// thread but a background role. Besides, since the main thread only runs on
-// one of schedulers, holding a special reference field to the main thread is
-// meaningless here.
-// TODO: actually, only `ready_list_lock` is really needed. Since work stealing
-// will only occurs at ready list.
-struct apth_perpthr_scheduler
-{
-    sched_id id;                     // scheduler ID
-    struct apth_cxt_st sched_ctx_st; // scheduler context (as trampoline)
-#define SCHED_CTX(S) ((apth_cxt_t) & ((S)->sched_ctx_st))
-    apth_thqueue_t new_queue;        // new threads
-    apth_thqueue_t ready_queue;      // threads ready to run
-    apth_thqueue_t waiting_queue;    // threads waiting for an event
-    apth_thqueue_t terminated_queue; // terminated threads
-    apth_thqueue_t waked_queue;      // threads waked by event(s)
-    apth_thqueue_t running_queue;    // should assert size == 1
-    apth_worker_t worker;            // pthread worker carrying this scheduler
-    unsigned int switches;           // context switch times
-    _Atomic(unsigned int) thrcnt;    // APTH threads now running on this scheduler
-    apth_time_t running;             // time the scheduler runs
-    apth_t cur;                      // current APTH
-    _Atomic(apth_t) advised_next_th; // advised thread to run next
-    volatile _Atomic(bool) opening;  // scheduler is opening
-    apth_time_t apth_loadticknext;   // scheduler load next tick
-    float loadval;                   // scheduler load value
-    int epoll_fd;                    // epoll instance for this scheduler
-    int wake_eventfd;                // eventfd used to wake the scheduler from epoll_wait
-
-    struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
-    struct list active_fd_slots;                                            // slots with waiters
-    int active_fd_count;
-
-    // Pending fd close notifications from other schedulers (or self).
-    // When an fd is closed, the closing scheduler pushes the fd number into
-    // every scheduler's pending list. Each scheduler drains its list at the
-    // beginning of its event manager loop, failing all local waiters for
-    // those fds.
-#define APTH_PENDING_FD_CLOSE_MAX 128
-    int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
-    _Atomic(int) pending_fd_close_count;
-    lll_internal_t pending_fd_close_lock; // Type 2 LLL
-};
+#include "internal/types/struct_apth_sched_st.h"
 
 APTH_INTERNAL void sched_key_t_init(void);
 APTH_INTERNAL void sched_key_t_drop(void);

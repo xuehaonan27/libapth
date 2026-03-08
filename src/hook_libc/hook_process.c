@@ -8,7 +8,8 @@
 #include "hook_pthread.h"
 #include "common.h" // For APTH_PATH_BINSH
 #include "internal/apth_event.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
+#include "internal/apth_sched.h"
 #include "utils/atomic_wrapper.h"
 #include <sys/stat.h> // For stat
 

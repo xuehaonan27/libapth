@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #define handle_error_en(en, msg) \
     do                           \
@@ -28,14 +29,24 @@ thread_func(void *ignored_argument)
     if (waited_sig != SIGUSR1)
     {
         static char err_msg[] = "child do not get SIGUSR1\n";
-        write(2, err_msg, sizeof(err_msg));
+        if (write(2, err_msg, sizeof(err_msg)) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
     }
     else
     {
         static char child_msg[] = "child got the signal SIGUSR1\n";
-        write(2, child_msg, sizeof(child_msg));
+        if (write(2, child_msg, sizeof(child_msg)) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
     }
     apth_exit(CHILD_RESULT);
+
+    // Make compiler happy
+    perror("Should not reach here");
+    return (void *)(intptr_t)(-1);
 }
 
 APTH_CONFIG(cfg,
@@ -56,7 +67,10 @@ APTH_MAIN_BEGIN(argc, argv)
     apth_kill(thr, SIGUSR1);
 
     static char main_msg[] = "main sent signal SIGUSR1\n";
-    write(2, main_msg, sizeof(main_msg));
+    if (write(2, main_msg, sizeof(main_msg)) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
 
     void *cdata;
     apth_join(thr, &cdata);
@@ -64,13 +78,23 @@ APTH_MAIN_BEGIN(argc, argv)
     if (cdata != CHILD_RESULT)
     {
         static char main_err_msg[] = "main got wrong child result\n";
-        write(2, main_err_msg, sizeof(main_err_msg));
+        if (write(2, main_err_msg, sizeof(main_err_msg)) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
     }
     else
     {
         static char main_join_msg[] = "main joined the child\n";
-        write(2, main_join_msg, sizeof(main_join_msg));
+        if (write(2, main_join_msg, sizeof(main_join_msg)) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
     }
     apth_exit(NULL);
+
+    // Make compiler happy
+    perror("Should not reach here");
+    return (void *)(intptr_t)(-1);
 }
 APTH_MAIN_END

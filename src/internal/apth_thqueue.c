@@ -5,21 +5,18 @@
 #include "utils/atomic_wrapper.h"
 #include "utils/lll_new.inline.h"
 
-APTH_INTERNAL void thqueue_init(apth_thqueue_t *queue_ptr, apth_sched_t sched, apth_state_t state)
+APTH_INTERNAL void thqueue_init(apth_thqueue_t queue, apth_state_t state)
 {
-    apth_thqueue_t queue;
-    if ((queue = malloc(sizeof(struct apth_thqueue_st))) == NULL)
-    {
-        PANIC("nomem");
-    }
+    // apth_thqueue_t queue;
+    // if ((queue = malloc(sizeof(struct apth_thqueue_st))) == NULL)
+    // {
+    //     PANIC("nomem");
+    // }
 
     list_init(&queue->th_list);
     lll_internal_init(&queue->th_list_lock);
-    queue->sched = sched;
     queue->th_state = state;
     queue->size = 0;
-
-    *queue_ptr = queue;
 }
 
 APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)

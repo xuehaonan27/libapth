@@ -6,6 +6,7 @@
 #include "lll_new.h"
 #include "hook_libc/hooked_funcs.h"
 #include "internal/forward_declare.h"
+#include "internal/types.h"
 #include "utils/archplattoold.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"

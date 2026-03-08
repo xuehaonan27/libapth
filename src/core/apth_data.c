@@ -1,6 +1,6 @@
 #include "internal/apth_data.h"
 #include "apth.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "utils/archplattoold.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/apth_errno.h"

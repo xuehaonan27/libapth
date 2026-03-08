@@ -7,6 +7,7 @@
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_tcb.h"
 #include "internal/apth_cancel.h"
+#include "internal/apth_sched.h"
 #include "internal/apth_thqueue.h"
 #include "attr/apth_attr.h"
 #include "utils/debug.h"
@@ -179,7 +180,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Finally insert it into the new queue where
     // the scheduler will pick it up for dispatching
     // push_apth_to_new(t, sched);
-    push_apth_to(sched->new_queue, t);
+    push_apth_to(THQUEUE(sched, new), t);
 
     // Wake the scheduler in case it's blocked in epoll_wait waiting for work
     apth_sched_wake(sched);

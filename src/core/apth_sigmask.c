@@ -4,7 +4,7 @@
 #include <signal.h>
 
 #include "apth.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "internal/apth_signal.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/apth_errno.h"

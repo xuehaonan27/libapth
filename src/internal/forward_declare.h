@@ -4,9 +4,10 @@
 #include "utils/archplattoold.h"
 
 typedef int sched_id;
-typedef struct apth_perpthr_scheduler *apth_sched_t;
+typedef struct apth_sched_st *apth_sched_t;
 typedef struct apth_worker_st *apth_worker_t;
 typedef struct apth_thqueue_st *apth_thqueue_t;
+typedef struct apth_event_st *apth_event_t;
 
 // NEW: Use current_sched from ownership system
 // INLINE apth_sched_t sched_of(apth_t th)

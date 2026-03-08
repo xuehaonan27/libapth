@@ -1,6 +1,6 @@
 #include "apth.h"
 #include "common.h"
-#include "internal/apth_sched.h"
+#include "internal/types.h"
 
 apth_t apth_self(void)
 {

@@ -1,5 +1,5 @@
 #include "apth.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "utils/debug.h"
 #include "utils/archplattoold.h"
 #include "utils/apth_errno.h"

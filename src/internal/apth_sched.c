@@ -5,7 +5,8 @@
 
 #include "common.h" // For WORKER_SPAWNED
 #include "apth_sched.h"
-// #include "internal/apth_tcb.h"
+#include "internal/types.h"
+#include "internal/apth_event.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_time.h"
 #include "internal/apth_global_sched_pool.h"
@@ -80,12 +81,12 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_debug("enter");
     sched->id = worker->worker_id;
 
-    thqueue_init(&sched->new_queue, sched, APTH_STATE_NEW);
-    thqueue_init(&sched->ready_queue, sched, APTH_STATE_READY);
-    thqueue_init(&sched->waiting_queue, sched, APTH_STATE_WAITING);
-    thqueue_init(&sched->terminated_queue, sched, APTH_STATE_TERMINATED);
-    thqueue_init(&sched->waked_queue, sched, APTH_STATE_WAKED);
-    thqueue_init(&sched->running_queue, sched, APTH_STATE_RUNNING);
+    thqueue_init(THQUEUE(sched, new), APTH_STATE_NEW);
+    thqueue_init(THQUEUE(sched, ready), APTH_STATE_READY);
+    thqueue_init(THQUEUE(sched, waiting), APTH_STATE_WAITING);
+    thqueue_init(THQUEUE(sched, terminated), APTH_STATE_TERMINATED);
+    thqueue_init(THQUEUE(sched, waked), APTH_STATE_WAKED);
+    thqueue_init(THQUEUE(sched, running), APTH_STATE_RUNNING);
 
     sched->worker = worker;
     sched->switches = 0;
@@ -205,7 +206,7 @@ APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
     if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
     {
         apth_time_t ttmp;
-        int numready = thqueue_size(sched->ready_queue);
+        int numready = thqueue_size(THQUEUE(sched, ready));
         apth_time_set(&ttmp, now);
         do
         {
@@ -232,19 +233,19 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 {
     apth_sched_t sched = CUR_SCHED;
 
-    drain_thqueue(sched->new_queue, __drain_free_th);
-    drain_thqueue(sched->ready_queue, __drain_free_th);
-    drain_thqueue(sched->waiting_queue, __drain_free_th);
-    drain_thqueue(sched->terminated_queue, __drain_free_th);
-    drain_thqueue(sched->waked_queue, __drain_free_th);
-    drain_thqueue(sched->running_queue, __drain_free_th);
+    drain_thqueue(THQUEUE(sched, new), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, ready), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, waiting), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, terminated), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, waked), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, running), __drain_free_th);
 
-    free(sched->new_queue);
-    free(sched->ready_queue);
-    free(sched->waiting_queue);
-    free(sched->terminated_queue);
-    free(sched->waked_queue);
-    free(sched->running_queue);
+    // free(sched->new_queue);
+    // free(sched->ready_queue);
+    // free(sched->waiting_queue);
+    // free(sched->terminated_queue);
+    // free(sched->waked_queue);
+    // free(sched->running_queue);
 
     // TODO: report scheduler statistics if in debugging mode
 
@@ -342,11 +343,11 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
             continue;
 
         // Speculative lock-free check: skip if victim has 0 or 1 ready threads
-        if (thqueue_size(victim_sched->ready_queue) <= 1)
+        if (thqueue_size(THQUEUE(victim_sched, ready)) <= 1)
             continue;
 
         // Attempt to steal from the BACK of victim's ready queue
-        apth_thqueue_t victim_rq = victim_sched->ready_queue;
+        apth_thqueue_t victim_rq = THQUEUE(victim_sched, ready);
 
         lll_internal_lock(&victim_rq->th_list_lock);
 
@@ -392,7 +393,7 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
 
         // Insert into thief's ready queue at front for immediate dispatch
-        apth_thqueue_t thief_rq = thief_sched->ready_queue;
+        apth_thqueue_t thief_rq = THQUEUE(thief_sched, ready);
 
         lll_internal_lock(&thief_rq->th_list_lock);
         list_push_front(&thief_rq->th_list, &th->elem);
@@ -428,7 +429,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     // Allocate and initialize the scheduler
     apth_sched_t sched;
-    if ((sched = (apth_sched_t)malloc(sizeof(struct apth_perpthr_scheduler))) == NULL)
+    if ((sched = (apth_sched_t)malloc(sizeof(struct apth_sched_st))) == NULL)
         return apth_error(NULL, ENOMEM);
     if (!apth_scheduler_init(sched, me))
     {
@@ -481,11 +482,11 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_debug("new loop");
         // Move all new threads to ready list
         apth_t th;
-        while ((th = transfer_one_th(sched->new_queue, sched->ready_queue, false, "transfer_one_th moving new")) != APTH_NULL)
+        while ((th = transfer_one_th(THQUEUE(sched, new), THQUEUE(sched, ready), false, "transfer_one_th moving new")) != APTH_NULL)
             ;
 
         apth_debug("moving waked apths");
-        while ((th = transfer_one_th(sched->waked_queue, sched->ready_queue, true, "transfer_one_th moving waked")) != APTH_NULL)
+        while ((th = transfer_one_th(THQUEUE(sched, waked), THQUEUE(sched, ready), true, "transfer_one_th moving waked")) != APTH_NULL)
             ;
 
         // Update statistics
@@ -501,8 +502,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Validate before using it
             if (APTH_IS_VALID(th) && SCHED_OF(th) == sched && QUEUE_STATE_OF(th) == APTH_STATE_READY)
             {
-                atomic_store_release(&th->state, APTH_STATE_RUNNING); // NEW: Simple state transition
-                transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), sched->running_queue);
+                atomic_store_release(&th->state, APTH_STATE_RUNNING);
+                transfer_th(th, belonging_queue_of(th, "transfer_th advised th"), THQUEUE(sched, running));
             }
             else
                 // Thread was freed, stolen, or not ready - ignore the advice and pop from ready queue
@@ -511,7 +512,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         if (th == APTH_NULL)
             // Move one apth from ready queue to running queue
-            th = transfer_one_th(sched->ready_queue, sched->running_queue, false, "transfer_one_th popping candidate");
+            th = transfer_one_th(THQUEUE(sched, ready), THQUEUE(sched, running), false, "transfer_one_th popping candidate");
 
         apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
 
@@ -590,7 +591,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             if (IS_DETACHED(th))
             {
                 // For detached threads, just remove and free
-                remove_apth_from(sched->running_queue, th);
+                remove_apth_from(THQUEUE(sched, running), th);
                 atomic_store_release(&th->state, APTH_STATE_TERMINATED);
                 apth_tcb_free(th);
             }
@@ -598,8 +599,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             {
                 // For joinable threads, transfer to terminated queue
                 // and set state WHILE HOLDING the terminated queue lock
-                apth_thqueue_t running_q = sched->running_queue;
-                apth_thqueue_t term_q = sched->terminated_queue;
+                apth_thqueue_t running_q = THQUEUE(sched, running);
+                apth_thqueue_t term_q = THQUEUE(sched, terminated);
 
                 lll_internal_lock(&running_q->th_list_lock);
                 lll_internal_lock(&term_q->th_list_lock);
@@ -639,11 +640,11 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             case APTH_STATE_RUNNING:
                 apth_debug("moving thread \"%s\" to ready queue", th->name);
                 atomic_store_release(&th->state, APTH_STATE_READY); // NEW: Simple state transition
-                transfer_th(th, sched->running_queue, sched->ready_queue);
+                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
                 break;
             case APTH_STATE_WAITING:
                 apth_debug("moving thread \"%s\" to waiting queue", th->name);
-                transfer_th(th, sched->running_queue, sched->waiting_queue);
+                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, waiting));
                 break;
             case APTH_STATE_TERMINATED:
                 // This case should not happen anymore since we handle EXIT via yield reason
@@ -658,7 +659,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         th = APTH_NULL;
 
         // Manage events in the waiting queue
-        if (thqueue_size(sched->ready_queue) == 0 && thqueue_size(sched->new_queue) == 0)
+        if (thqueue_size(THQUEUE(sched, ready)) == 0 && thqueue_size(THQUEUE(sched, new)) == 0)
         {
             // Try stealing before blocking
             apth_t stolen = try_steal_work(sched);

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 APTH_CONFIG(cfg,
             cfg->workers = 1;)
@@ -17,11 +18,11 @@ static char *child_msgs[5] = {
 
 static void *child_apth(void *arg)
 {
-    int id = (int)arg;
+    int id = (int)(intptr_t)arg;
 
     write(2, child_msgs[id], strlen(child_msgs[id]));
 
-    return (void *)id;
+    return (void *)(intptr_t)id;
 }
 
 APTH_MAIN_BEGIN(argc, argv)
@@ -38,7 +39,7 @@ APTH_MAIN_BEGIN(argc, argv)
         apth_attr_init(&child_attr);
         if (i == 2)
             apth_attr_setdetachstate(&child_attr, APTH_CREATE_DETACHED);
-        apth_create(&tids[i], &child_attr, child_apth, (void *)i);
+        apth_create(&tids[i], &child_attr, child_apth, (void *)(intptr_t)i);
         apth_attr_destroy(&child_attr);
     }
     sleep(2);
@@ -50,10 +51,10 @@ APTH_MAIN_BEGIN(argc, argv)
 
     for (int i = 0; i < 5; i++)
     {
-        fprintf(stderr, "child apth %d yields %d\n", i, (int)cdatas[i]);
+        fprintf(stderr, "child apth %d yields %d\n", i, (int)(intptr_t)cdatas[i]);
         if (i == 2)
         {
-            if ((int)cdatas[i] != 0 || errno != EINVAL)
+            if ((int)(intptr_t)cdatas[i] != 0 || errno != EINVAL)
             {
                 static char err_2_msg[] = "child apth 2 yields EINVAL\n";
                 write(2, err_2_msg, sizeof(err_2_msg));
@@ -61,7 +62,7 @@ APTH_MAIN_BEGIN(argc, argv)
         }
         else
         {
-            if ((int)cdatas[i] != i)
+            if ((int)(intptr_t)cdatas[i] != i)
             {
                 static char err_other_msg[] = "child apth should yield identity, but not\n";
                 write(2, err_other_msg, sizeof(err_other_msg));

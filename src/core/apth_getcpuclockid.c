@@ -1,9 +1,7 @@
 #include "apth.h"
 #include "common.h"
 #include "hook_libc/hooked_funcs.h"
-#include "internal/apth_tcb.h"
-#include "internal/apth_sched.h"
-#include "internal/apth_worker.h"
+#include "internal/types.h"
 #include "utils/apth_errno.h"
 
 /* Get the CPU-time clock ID for a thread.

@@ -17,7 +17,11 @@ void sigsegv_handler(int sig)
 {
     (void)sig;
     sigsegv_caught = 1;
-    write(2, "\nSIGSEGV caught - guard page working!\n", 38);
+    if (write(2, "\nSIGSEGV caught - guard page working!\n", 38) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        perror("[FAIL] write() failed");
+        exit(-1);
+    }
     longjmp(jump_buffer, 1);
 }
 
@@ -30,20 +34,28 @@ void overflow_stack(volatile int depth)
     // Touch the memory to ensure it's actually allocated
     for (int i = 0; i < 4096; i += 256)
     {
-        buffer[i] = (char)(depth & 0xFF);
+        buffer[i] = (char)(depth & 0x7F);
     }
 
     if (depth % 100 == 0)
     {
         char msg[64];
         int len = snprintf(msg, sizeof(msg), "Depth: %d\n", depth);
-        write(2, msg, len);
+        if (write(2, msg, len) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            perror("[FAIL] write() failed");
+            exit(-1);
+        }
     }
 
     // Prevent tail call optimization by using the buffer
-    if (buffer[0] == 0xFF)
+    if (buffer[0] == 0x7F)
     {
-        write(2, "Impossible\n", 11);
+        if (write(2, "Impossible\n", 11) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            perror("[FAIL] write() failed");
+            exit(-1);
+        }
     }
 
     overflow_stack(depth + 1); // Recurse indefinitely
@@ -55,7 +67,10 @@ void overflow_stack(volatile int depth)
 void *overflow_thread(void *arg)
 {
     (void)arg;
-    write(2, "Thread starting - will overflow stack...\n", 41);
+    if (write(2, "Thread starting - will overflow stack...\n", 41) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
 
     if (setjmp(jump_buffer) == 0)
     {
@@ -63,7 +78,10 @@ void *overflow_thread(void *arg)
     }
     else
     {
-        write(2, "Returned from longjmp after SIGSEGV\n", 36);
+        if (write(2, "Returned from longjmp after SIGSEGV\n", 36) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
     }
 
     return NULL;
@@ -85,19 +103,31 @@ APTH_MAIN_BEGIN(argc, argv)
 
     if (sigaction(SIGSEGV, &sa, NULL) != 0)
     {
-        write(2, "Failed to install SIGSEGV handler\n", 34);
+        if (write(2, "Failed to install SIGSEGV handler\n", 34) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
         exit(1);
     }
 
-    write(2, "Testing guard page mechanism...\n", 32);
-    write(2, "Creating thread that will overflow its stack\n", 45);
+    if (write(2, "Testing guard page mechanism...\n", 32) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
+    if (write(2, "Creating thread that will overflow its stack\n", 45) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
 
     apth_t th;
 
     // Create thread with default attributes (includes guard page)
     if (apth_create(&th, NULL, overflow_thread, NULL) != 0)
     {
-        write(2, "Failed to create thread\n", 24);
+        if (write(2, "Failed to create thread\n", 24) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
         exit(1);
     }
 
@@ -107,12 +137,18 @@ APTH_MAIN_BEGIN(argc, argv)
     // Check if SIGSEGV was caught
     if (sigsegv_caught)
     {
-        write(2, "SUCCESS: Guard page triggered SIGSEGV as expected!\n", 51);
+        if (write(2, "SUCCESS: Guard page triggered SIGSEGV as expected!\n", 51) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
         exit(0);
     }
     else
     {
-        write(2, "ERROR: Guard page did not trigger SIGSEGV!\n", 43);
+        if (write(2, "ERROR: Guard page did not trigger SIGSEGV!\n", 43) < 0) {
+            fprintf(stderr, "[FAIL] write() failed\n");
+            return NULL;
+        }
         exit(1);
     }
 }

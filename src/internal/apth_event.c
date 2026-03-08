@@ -1,19 +1,16 @@
 #include "apth_event.h"
 #include "hook_libc/hooked_funcs.h"
 #include "internal/apth_cancel.h"
-#include "internal/apth_tcb.h"
+// #include "internal/apth_tcb.h"
 #include "internal/apth_fd.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
-#include "internal/apth_sched.h"
-// #include "internal/apth_sched.inline.h"
+// #include "internal/apth_sched.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_state.h"
-// #include "internal/apth_state.inline.h"
 #include "internal/apth_time.h"
-#include "internal/apth_thqueue.h"
-#include "internal/apth_worker.h"
-// #include "internal/apth_worker.inline.h"
+// #include "internal/apth_thqueue.h"
+// #include "internal/apth_worker.h"
 #include "utils/lll_new.inline.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
@@ -369,9 +366,9 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         apth_t wake_batch[MAX_WAKE_BATCH];
         int wake_count = 0;
 
-        lll_internal_lock(&sched->waiting_queue->th_list_lock);
+        lll_internal_lock(&THQUEUE(sched, waiting)->th_list_lock);
 
-        FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
+        FOR_ELEMENT_IN_LIST(THQUEUE(sched, waiting)->th_list, e)
         {
             apth_t th = apth_t_list_entry(e);
             bool any_occurred = false;
@@ -499,7 +496,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     break;
 
                 case APTH_EVENT_TYPE_TID:
-                    if ((event->ev_args.TID.tid == NULL && thqueue_size(sched->terminated_queue) != 0) ||
+                    if ((event->ev_args.TID.tid == NULL && thqueue_size(THQUEUE(sched, terminated)) != 0) ||
                         (event->ev_args.TID.tid != NULL &&
                          apth_state_matches_event_goal(atomic_load_acquire(&event->ev_args.TID.tid->state), event->ev_goal)))
                     {
@@ -543,7 +540,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             }
         }
 
-        lll_internal_unlock(&sched->waiting_queue->th_list_lock);
+        lll_internal_unlock(&THQUEUE(sched, waiting)->th_list_lock);
 
         // Move apth discovered during phase 1 from waiting queue to waked queue.
         // Loop until we have transferred all of them: if wake_count hit MAX_WAKE_BATCH
@@ -562,7 +559,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 }
                 // Move to waked queue
                 atomic_store_release(&th->state, APTH_STATE_WAKED); // NEW: Simple state transition
-                transfer_th(th, sched->waiting_queue, sched->waked_queue);
+                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
             }
 
             // If the batch was full, there may be more apths in the waiting queue
@@ -570,8 +567,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             if (wake_count == MAX_WAKE_BATCH)
             {
                 wake_count = 0;
-                lll_internal_lock(&sched->waiting_queue->th_list_lock);
-                FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
+                lll_internal_lock(&THQUEUE(sched, waiting)->th_list_lock);
+                FOR_ELEMENT_IN_LIST(THQUEUE(sched, waiting)->th_list, e)
                 {
                     apth_t th = apth_t_list_entry(e);
                     bool any_occurred = atomic_load_acquire(&th->cancelreq);
@@ -590,7 +587,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     if (any_occurred && wake_count < MAX_WAKE_BATCH)
                         wake_batch[wake_count++] = th;
                 }
-                lll_internal_unlock(&sched->waiting_queue->th_list_lock);
+                lll_internal_unlock(&THQUEUE(sched, waiting)->th_list_lock);
                 notified_ths += wake_count;
             }
             else
@@ -677,8 +674,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 do
                 {
                     wake_count = 0;
-                    lll_internal_lock(&sched->waiting_queue->th_list_lock);
-                    FOR_ELEMENT_IN_LIST(sched->waiting_queue->th_list, e)
+                    lll_internal_lock(&THQUEUE(sched, waiting)->th_list_lock);
+                    FOR_ELEMENT_IN_LIST(THQUEUE(sched, waiting)->th_list, e)
                     {
                         apth_t th = apth_t_list_entry(e);
                         bool should_wake = false;
@@ -694,7 +691,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         if (should_wake && wake_count < MAX_WAKE_BATCH)
                             wake_batch[wake_count++] = th;
                     }
-                    lll_internal_unlock(&sched->waiting_queue->th_list_lock);
+                    lll_internal_unlock(&THQUEUE(sched, waiting)->th_list_lock);
 
                     for (int i = 0; i < wake_count; i++)
                     {
@@ -710,7 +707,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                         }
                         atomic_store_release(&th->state, APTH_STATE_WAKED); // NEW: Simple state transition
-                        transfer_th(th, sched->waiting_queue, sched->waked_queue);
+                        transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
                     }
                 } while (wake_count == MAX_WAKE_BATCH);
             }
@@ -737,7 +734,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
                         atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED); // NEW: Simple state transition
-                        transfer_th(nexttimer_th, sched->waiting_queue, sched->waked_queue);
+                        transfer_th(nexttimer_th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
                     }
                 }
             }

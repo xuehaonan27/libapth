@@ -1,7 +1,7 @@
 #include "common.h" // For WORKER_SPAWNED
 #include "apth.h"
 #include "hook_libc/hooked_funcs.h"
-#include "internal/apth_sched.h"
+#include "internal/types.h"
 #include "internal/apth_worker.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_fd.h"
@@ -57,7 +57,7 @@ __attribute__((weak)) void apth_configure(apth_init_t *cfg)
 }
 
 // Initialize the libapth package.
-int apth_init(apth_init_t *initvals)
+void apth_init(apth_init_t *initvals)
 {
     if (LIBAPTH_INITIALIZED)
         return apth_error(EPERM, EPERM);
@@ -162,12 +162,17 @@ int apth_init(apth_init_t *initvals)
 #endif // APTH_HOLD_INITIALIZER_PTHREAD
 
     SET_CUR_SCHED(NULL);
-    // set_cur_worker(NULL);
 
+#ifdef APTH_HOLD_INITIALIZER_PTHREAD
+    // Holding initializer thread, then all things cleared when we execute
+    // to here. Call LIBC `exit` to exit the whole process.
+    apth_func_raw(exit)(0); // TODO: return what the main APTH returns
+#else
+    // Do not hold initializer thread, then we should silently exit here.
     // Call `pthread_exit`, the initializer pthread should exit but others
-    // should continue to run
+    // should continue to run.
     apth_func_raw(pthread_exit)(NULL);
-    return 0;
+#endif
 }
 
 // Drop the libapth package.

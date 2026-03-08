@@ -2,7 +2,7 @@
 #define __LIBAPTH_INTERNAL_APTH_SYNC_WAITER_H
 
 #include "apth.h"
-#include "internal/apth_event.h"
+#include "internal/types.h"
 #include "utils/list.h"
 
 // Waiter node for sync primitives (stack-allocated on the waiting thread).

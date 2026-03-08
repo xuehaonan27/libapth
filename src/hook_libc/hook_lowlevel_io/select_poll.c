@@ -6,7 +6,7 @@
 #include "hook_libc/hook_lowlevel_io.h"
 #include "apth.h"
 #include "internal/apth_event.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "utils/list.inline.h"
 
 APTH_DEFINE_HOOK(

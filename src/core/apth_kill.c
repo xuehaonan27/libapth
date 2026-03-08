@@ -4,7 +4,7 @@
 #include <signal.h>
 
 #include "apth.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
 #include "internal/apth_thqueue.h"
 #include "internal/apth_signal.h"
 #include "utils/apth_errno.h"
@@ -17,11 +17,11 @@ static int apth_apth_exists(apth_t t)
 
     apth_sched_t sched = CUR_SCHED;
 
-    bool found_in_new = apth_is_in(sched->new_queue, t);
-    bool found_in_ready = apth_is_in(sched->ready_queue, t);
-    bool found_in_waiting = apth_is_in(sched->waiting_queue, t);
-    bool found_in_terminated = apth_is_in(sched->terminated_queue, t);
-    bool found_in_waked = apth_is_in(sched->waked_queue, t);
+    bool found_in_new = apth_is_in(THQUEUE(sched, new), t);
+    bool found_in_ready = apth_is_in(THQUEUE(sched, ready), t);
+    bool found_in_waiting = apth_is_in(THQUEUE(sched, waiting), t);
+    bool found_in_terminated = apth_is_in(THQUEUE(sched, terminated), t);
+    bool found_in_waked = apth_is_in(THQUEUE(sched, waked), t);
 
     return found_in_new || found_in_ready || found_in_waiting || found_in_terminated || found_in_waked;
 }

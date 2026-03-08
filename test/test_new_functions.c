@@ -15,6 +15,7 @@ void *worker_thread(void *arg)
 APTH_CONFIG(cfg, cfg->workers = 2;)
 
 APTH_MAIN_BEGIN(argc, argv)
+{
     (void)argc;
     (void)argv;
 
@@ -125,4 +126,5 @@ APTH_MAIN_BEGIN(argc, argv)
 
     printf("=== All tests passed! ===\n");
     exit(0);
+}
 APTH_MAIN_END

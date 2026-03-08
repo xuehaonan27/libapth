@@ -24,7 +24,7 @@
 static void *
 thread_func(void *arg)
 {
-    int id = (int)arg;
+    int id = (int)(intptr_t)arg;
     char child_msg_buffer[1024];
 
     snprintf(child_msg_buffer, sizeof(child_msg_buffer), "CHILD APTH %d", id);
@@ -33,8 +33,11 @@ thread_func(void *arg)
     int retlen = snprintf(
         child_msg_buffer, sizeof(child_msg_buffer),
         "Hi from child apth %d\n", id);
-    write(2, child_msg_buffer, retlen);
-    return (void *)id;
+    if (write(2, child_msg_buffer, retlen) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
+    return (void *)(intptr_t)id;
 }
 
 pthread_t tids[N_CHILDREN];
@@ -42,9 +45,14 @@ void *cdatas[N_CHILDREN];
 
 int main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
     static char main_hi[] = "Hi from main apth\n";
 
-    write(2, main_hi, sizeof(main_hi));
+    if (write(2, main_hi, sizeof(main_hi)) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return -1;
+    }
 
     for (int i = 0; i < N_CHILDREN; i++)
     {
@@ -58,7 +66,7 @@ int main(int argc, char **argv)
 
         pthread_attr_setstacksize(&child_attr, 2048);
 
-        pthread_create(&tids[i], &child_attr, thread_func, (void *)i);
+        pthread_create(&tids[i], &child_attr, thread_func, (void *)(intptr_t)i);
         pthread_attr_destroy(&child_attr);
     }
 
@@ -68,11 +76,14 @@ int main(int argc, char **argv)
     }
     for (int i = 0; i < N_CHILDREN; i++)
     {
-        if ((int)cdatas[i] != i)
+        if ((int)(intptr_t)cdatas[i] != i)
         {
 
             static char err_other_msg[] = "child apth should yield identity, but not\n";
-            write(2, err_other_msg, sizeof(err_other_msg));
+            if (write(2, err_other_msg, sizeof(err_other_msg)) < 0) {
+                fprintf(stderr, "[FAIL] write() failed\n");
+                return -1;
+            }
         }
     }
 }

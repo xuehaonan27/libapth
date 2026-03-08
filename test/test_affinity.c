@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #define handle_error_en(en, msg) \
     do                           \
@@ -26,9 +27,12 @@ static char *child_msgs[3] = {
 static void *
 thread_func(void *arg)
 {
-    int id = (int)arg;
-    write(2, child_msgs[id], strlen(child_msgs[id]));
-    return (void *)id;
+    int id = (int)(intptr_t)arg;
+    if (write(2, child_msgs[id], strlen(child_msgs[id])) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
+    return (void *)(intptr_t)id;
 }
 
 APTH_CONFIG(cfg,
@@ -40,7 +44,10 @@ APTH_MAIN_BEGIN(argc, argv)
     void *cdatas[3];
 
     static char main_hi[] = "Hi from main apth\n";
-    write(2, main_hi, sizeof(main_hi));
+    if (write(2, main_hi, sizeof(main_hi)) < 0) {
+        fprintf(stderr, "[FAIL] write() failed\n");
+        return NULL;
+    }
 
     for (int i = 0; i < 3; i++)
     {
@@ -57,7 +64,7 @@ APTH_MAIN_BEGIN(argc, argv)
         };
         apth_attr_setname_np(&child_attr, child_names[i]);
 
-        apth_create(&tids[i], &child_attr, thread_func, (void *)i);
+        apth_create(&tids[i], &child_attr, thread_func, (void *)(intptr_t)i);
         apth_attr_destroy(&child_attr);
     }
     // sleep(2);
@@ -67,11 +74,14 @@ APTH_MAIN_BEGIN(argc, argv)
     }
     for (int i = 0; i < 3; i++)
     {
-        if ((int)cdatas[i] != i)
+        if ((int)(intptr_t)cdatas[i] != i)
         {
 
             static char err_other_msg[] = "child apth should yield identity, but not\n";
-            write(2, err_other_msg, sizeof(err_other_msg));
+            if (write(2, err_other_msg, sizeof(err_other_msg)) < 0) {
+                fprintf(stderr, "[FAIL] write() failed\n");
+                return NULL;
+            }
         }
     }
 }

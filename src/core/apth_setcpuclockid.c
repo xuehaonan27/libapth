@@ -1,6 +1,6 @@
 #include "apth.h"
-#include "internal/apth_tcb.h"
 #include "utils/apth_errno.h"
+#include "internal/types.h"
 #include <bits/types/clockid_t.h>
 
 /* Set the CPU-time clock ID for a thread.

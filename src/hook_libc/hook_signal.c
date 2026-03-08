@@ -1,5 +1,6 @@
 #include "hook_signal.h"
-#include "internal/apth_tcb.h"
+#include "internal/types.h"
+#include "internal/apth_event.h"
 #include "internal/apth_signal.h"
 #include "utils/lll_new.inline.h"
 

@@ -1,6 +1,6 @@
 #include "apth.h"
-#include "internal/apth_tcb.h"
-#include "internal/apth_thqueue.h"
+#include "internal/types.h"
+#include "internal/apth_event.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -74,7 +74,7 @@ int apth_join(apth_t tid, void **value)
     lll_internal_lock(&tid->ownership_lock);
 
     // Get the terminated queue from the APTH's current scheduler
-    apth_thqueue_t term_queue = tid->current_sched->terminated_queue;
+    apth_thqueue_t term_queue = THQUEUE(tid->current_sched, terminated);
     lll_internal_lock(&term_queue->th_list_lock);
 
     // Check if the thread is still in the terminated queue
