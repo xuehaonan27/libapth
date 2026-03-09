@@ -11,6 +11,8 @@
 
 static bool LIBAPTH_INITIALIZED = false;
 
+struct __apth_main_args __LIBAPTH_MAIN_ARGS;
+
 int apth_initvals_init(apth_init_t *initvals, int workers,
                        void *(*main_apth)(void *), void *main_args,
                        apth_attr_t *main_attr)

@@ -13,6 +13,7 @@
 #include "utils/atomic_wrapper.h"
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <malloc.h>
 
 // Fast waiter allocation from pool
 static struct apth_epoll_waiter *alloc_waiter(apth_sched_t sched)

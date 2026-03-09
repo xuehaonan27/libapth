@@ -206,7 +206,6 @@ APTH_EXPOSE_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 // ==================== Functions ====================
 
 #include <stdbool.h>
-#include <stdlib.h>               /* malloc, free — needed by APTH_MAIN_BEGIN */
 #include <sched.h>                // For cpu_set_t
 #include <bits/types/clockid_t.h> // For clockid_t
 
@@ -408,6 +407,8 @@ struct __apth_main_args
     char **argv;
 };
 
+extern struct __apth_main_args __LIBAPTH_MAIN_ARGS;
+
 /*
  * apth_config_defaults - fill *cfg with the built-in default values.
  *
@@ -479,30 +480,28 @@ void apth_configure(apth_init_t *cfg);
  *       exit(0);
  *   APTH_MAIN_END
  */
-#define APTH_MAIN_BEGIN(argc_name, argv_name)                                   \
-    static void *__apth_main_impl__(void *__apth_args__);                       \
-    int main(int __apth_argc__, char *__apth_argv__[])                          \
-    {                                                                           \
-        struct __apth_main_args *__margs__ =                                    \
-            (struct __apth_main_args *)malloc(sizeof(struct __apth_main_args)); \
-        __margs__->argc = __apth_argc__;                                        \
-        __margs__->argv = __apth_argv__;                                        \
-        apth_init_t __initvals__;                                               \
-        apth_configure(&__initvals__);                                          \
-        __initvals__.main_apth = __apth_main_impl__;                            \
-        __initvals__.main_args = (void *)__margs__;                             \
-        apth_init(&__initvals__);                                               \
-        return -1;                                                              \
-    }                                                                           \
-    static void *__apth_main_impl__(void *__apth_args__)                        \
-    {                                                                           \
-        int argc_name =                                                         \
-            ((struct __apth_main_args *)__apth_args__)->argc;                   \
-        char **argv_name =                                                      \
-            ((struct __apth_main_args *)__apth_args__)->argv;                   \
-        free(__apth_args__);                                                    \
-        (void)argc_name;                                                        \
-        (void)argv_name;                                                        \
+#define APTH_MAIN_BEGIN(argc_name, argv_name)                      \
+    static void *__apth_main_impl__(void *__apth_args__);          \
+    int main(int __apth_argc__, char *__apth_argv__[])             \
+    {                                                              \
+        struct __apth_main_args *__margs__ = &__LIBAPTH_MAIN_ARGS; \
+        __margs__->argc = __apth_argc__;                           \
+        __margs__->argv = __apth_argv__;                           \
+        apth_init_t __initvals__;                                  \
+        apth_configure(&__initvals__);                             \
+        __initvals__.main_apth = __apth_main_impl__;               \
+        __initvals__.main_args = (void *)__margs__;                \
+        apth_init(&__initvals__);                                  \
+        return -1;                                                 \
+    }                                                              \
+    static void *__apth_main_impl__(void *__apth_args__)           \
+    {                                                              \
+        int argc_name =                                            \
+            ((struct __apth_main_args *)__apth_args__)->argc;      \
+        char **argv_name =                                         \
+            ((struct __apth_main_args *)__apth_args__)->argv;      \
+        (void)argc_name;                                           \
+        (void)argv_name;                                           \
         if (1)
 
 /* Closes the function body opened by APTH_MAIN_BEGIN. */

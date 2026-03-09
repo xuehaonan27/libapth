@@ -3,6 +3,7 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
+#include <malloc.h>
 
 APTH_DEFINE_HOOK(ssize_t, readv,
                  (int fd, const struct iovec *iov, int iovcnt),

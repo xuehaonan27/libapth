@@ -12,6 +12,7 @@
 #include "internal/apth_sched.h"
 #include "utils/atomic_wrapper.h"
 #include <sys/stat.h> // For stat
+#include <sys/wait.h> // For wait flags
 
 // APTH variant of system(3)
 APTH_DEFINE_HOOK(int, system, (const char *cmd), (cmd))

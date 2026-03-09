@@ -1,5 +1,6 @@
 #include "apth_attr.h"
 #include "utils/apth_errno.h"
+#include <malloc.h>
 
 int apth_attr_setaffinity_np(apth_attr_t *attr, size_t cpusetsize, const cpu_set_t *cpuset)
 {
