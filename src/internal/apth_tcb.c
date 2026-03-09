@@ -15,11 +15,12 @@
 
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t guardsize)
 {
-    apth_debug("enter");
     apth_t t;
 
-    if (stacksize > 0 && stacksize < APTH_STACK_SIZE_DEFAULT)
-        stacksize = APTH_STACK_SIZE_DEFAULT;
+    if (stacksize <= 0)
+        return APTH_NULL;
+    if (stacksize < APTH_MIN_STACK)
+        stacksize = APTH_MIN_STACK;
     if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
         return APTH_NULL;
 
@@ -32,74 +33,68 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
     t->stack_mem_start = NULL;
     t->magic = APTH_MAGIC; // Set magic number for validation
     t->stackloan = (stackaddr != NULL ? true : false);
-
-    if (stacksize > 0)
-    {
-        if (stackaddr != NULL)
-        {
-            // User-provided stack - we don't set up guard pages for loaned stacks
-            // as we don't control the memory allocation
-#if APTH_STACKGROWTH < 0
-            t->stack_mem_start = (char *)stackaddr - stacksize;
-#else
-            t->stack_mem_start = (char *)stackaddr;
-#endif
-            t->guardsize = 0; // No guard page for loaned stacks
-        }
-        else
-        {
-            // Allocate our own stack with guard page support
-            size_t total_size = stacksize;
-            size_t guard_pages = 0;
-
-            if (guardsize > 0)
-            {
-                // Round guardsize up to page boundary
-                size_t pagesize = page_size();
-                guard_pages = (guardsize + pagesize - 1) / pagesize;
-                guardsize = guard_pages * pagesize;
-                t->guardsize = guardsize;
-                total_size += guardsize;
-            }
-
-            // Use mmap for better control over memory protection
-            void *mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
-                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (mem == MAP_FAILED)
-            {
-                apth_shield
-                {
-                    free(t);
-                }
-                return APTH_NULL;
-            }
-
-            t->stack_mem_start = (char *)mem;
-
-            // Set up guard page if requested
-            if (guardsize > 0)
-            {
-#if APTH_STACKGROWTH < 0
-                // Stack grows downward: guard page at the lowest address
-                if (mprotect(t->stack_mem_start, guardsize, PROT_NONE) != 0)
-                {
-                    apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
-                    // Continue anyway - we'll just not have hardware protection
-                }
-#else
-                // Stack grows upward: guard page at the highest address
-                if (mprotect(t->stack_mem_start + stacksize, guardsize, PROT_NONE) != 0)
-                {
-                    apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
-                }
-#endif
-            }
-        }
-    }
-
     list_init(&t->event_list);
 
-    apth_debug("leave");
+    if (t->stackloan)
+    {
+        // User-provided stack - we don't set up guard pages for loaned stacks
+        // as we don't control the memory allocation
+#if APTH_STACKGROWTH < 0
+        t->stack_mem_start = (char *)stackaddr - stacksize;
+#else
+        t->stack_mem_start = (char *)stackaddr;
+#endif
+        t->guardsize = 0; // No guard page for loaned stacks
+    }
+    else
+    {
+        // Allocate our own stack with guard page support
+        size_t total_size = stacksize;
+        size_t guard_pages = 0;
+
+        if (guardsize > 0)
+        {
+            // Round guardsize up to page boundary
+            size_t pagesize = page_size();
+            guard_pages = (guardsize + pagesize - 1) / pagesize;
+            guardsize = guard_pages * pagesize;
+            t->guardsize = guardsize;
+            total_size += guardsize;
+        }
+
+        // Use mmap for better control over memory protection
+        void *mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (mem == MAP_FAILED)
+        {
+            apth_shield
+            {
+                free(t);
+            }
+            return APTH_NULL;
+        }
+
+        t->stack_mem_start = (char *)mem;
+
+        // Set up guard page if requested
+        if (guardsize > 0)
+        {
+#if APTH_STACKGROWTH < 0
+            // Stack grows downward: guard page at the lowest address
+            if (mprotect(t->stack_mem_start, guardsize, PROT_NONE) != 0)
+            {
+                apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
+                // Continue anyway - we'll just not have hardware protection
+            }
+#else
+            // Stack grows upward: guard page at the highest address
+            if (mprotect(t->stack_mem_start + stacksize, guardsize, PROT_NONE) != 0)
+            {
+                apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
+            }
+#endif
+        }
+    }
     return t;
 }
 
