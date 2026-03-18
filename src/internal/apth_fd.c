@@ -170,14 +170,29 @@ APTH_INTERNAL bool apth_util_fd_valid(int fd)
     return true;
 }
 
+// Number of words needed to cover nfd file descriptors
+#if defined(__linux__) && defined(__NFDBITS)
+#define FDS_NWORDS(nfd) (((nfd) + __NFDBITS - 1) / __NFDBITS)
+#endif
+
 APTH_INTERNAL void apth_util_fds_merge(int nfd,
                                        fd_set *ifds1, fd_set *ofds1,
                                        fd_set *ifds2, fd_set *ofds2,
                                        fd_set *ifds3, fd_set *ofds3)
 {
-    int s;
-
-    for (s = 0; s < nfd; s++)
+#if defined(__linux__) && defined(__NFDBITS)
+    int nwords = FDS_NWORDS(nfd);
+    for (int i = 0; i < nwords; i++)
+    {
+        if (ifds1 != NULL)
+            ofds1->fds_bits[i] |= ifds1->fds_bits[i];
+        if (ifds2 != NULL)
+            ofds2->fds_bits[i] |= ifds2->fds_bits[i];
+        if (ifds3 != NULL)
+            ofds3->fds_bits[i] |= ifds3->fds_bits[i];
+    }
+#else
+    for (int s = 0; s < nfd; s++)
     {
         if (ifds1 != NULL && FD_ISSET(s, ifds1))
             FD_SET(s, ofds1);
@@ -186,7 +201,7 @@ APTH_INTERNAL void apth_util_fds_merge(int nfd,
         if (ifds3 != NULL && FD_ISSET(s, ifds3))
             FD_SET(s, ofds3);
     }
-    return;
+#endif
 }
 
 // test whether fds in the input fd sets occurred in the output fds
@@ -195,20 +210,30 @@ APTH_INTERNAL bool apth_util_fds_test(int nfd,
                                       fd_set *ifds2, fd_set *ofds2,
                                       fd_set *ifds3, fd_set *ofds3)
 {
-    int s;
-
-    for (s = 0; s < nfd; s++)
+#if defined(__linux__) && defined(__NFDBITS)
+    int nwords = FDS_NWORDS(nfd);
+    for (int i = 0; i < nwords; i++)
+    {
+        if (ifds1 != NULL && (ifds1->fds_bits[i] & ofds1->fds_bits[i]))
+            return true;
+        if (ifds2 != NULL && (ifds2->fds_bits[i] & ofds2->fds_bits[i]))
+            return true;
+        if (ifds3 != NULL && (ifds3->fds_bits[i] & ofds3->fds_bits[i]))
+            return true;
+    }
+    return false;
+#else
+    for (int s = 0; s < nfd; s++)
     {
         if (ifds1 != NULL && FD_ISSET(s, ifds1) && FD_ISSET(s, ofds1))
             return true;
-        if (ifds2 != NULL)
-            if (FD_ISSET(s, ifds2) && FD_ISSET(s, ofds2))
-                return true;
-        if (ifds3 != NULL)
-            if (FD_ISSET(s, ifds3) && FD_ISSET(s, ofds3))
-                return true;
+        if (ifds2 != NULL && FD_ISSET(s, ifds2) && FD_ISSET(s, ofds2))
+            return true;
+        if (ifds3 != NULL && FD_ISSET(s, ifds3) && FD_ISSET(s, ofds3))
+            return true;
     }
     return false;
+#endif
 }
 
 // Clear fds in input fd sets if not occurred in output fd sets and return
@@ -219,11 +244,37 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
                                        fd_set *ifds2, fd_set *ofds2,
                                        fd_set *ifds3, fd_set *ofds3)
 {
-    int s;
-    int n;
+    int n = 0;
 
-    n = 0;
-    for (s = 0; s < nfd; s++)
+#if defined(__linux__) && defined(__NFDBITS)
+    int nwords = FDS_NWORDS(nfd);
+    for (int i = 0; i < nwords; i++)
+    {
+        if (ifds1 != NULL)
+        {
+            // Keep only bits that are in both input and output
+            __fd_mask kept = ifds1->fds_bits[i] & ofds1->fds_bits[i];
+            __fd_mask cleared = ifds1->fds_bits[i] & ~kept;
+            ifds1->fds_bits[i] &= ~cleared;
+            n += __builtin_popcountl(kept);
+        }
+        if (ifds2 != NULL)
+        {
+            __fd_mask kept = ifds2->fds_bits[i] & ofds2->fds_bits[i];
+            __fd_mask cleared = ifds2->fds_bits[i] & ~kept;
+            ifds2->fds_bits[i] &= ~cleared;
+            n += __builtin_popcountl(kept);
+        }
+        if (ifds3 != NULL)
+        {
+            __fd_mask kept = ifds3->fds_bits[i] & ofds3->fds_bits[i];
+            __fd_mask cleared = ifds3->fds_bits[i] & ~kept;
+            ifds3->fds_bits[i] &= ~cleared;
+            n += __builtin_popcountl(kept);
+        }
+    }
+#else
+    for (int s = 0; s < nfd; s++)
     {
         if (ifds1 != NULL && FD_ISSET(s, ifds1))
         {
@@ -247,5 +298,7 @@ APTH_INTERNAL int apth_util_fds_select(int nfd,
                 n++;
         }
     }
+#endif
+
     return n;
 }

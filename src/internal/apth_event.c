@@ -563,25 +563,27 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     break;
 
                 case APTH_EVENT_TYPE_SIGS:
-                    // Signal check, do this here, no need for second loop
-                    for (int sig = 1; sig < APTH_NSIG; sig++)
+                    // Quick check: skip entirely if no signals are pending
+                    if (th->sigpendcnt > 0)
                     {
-                        if (sigismember(event->ev_args.SIGS.sigs, sig))
+                        // Lock once, find matching signal, unlock once.
+                        // Avoids up to NSIG-1 unnecessary lock/unlock cycles.
+                        lll_internal_lock(&th->siglock);
+                        for (int sig = 1; sig < APTH_NSIG; sig++)
                         {
-                            lll_internal_lock(&th->siglock);
-                            if (sigismember(&th->sigpending, sig))
+                            if (sigismember(event->ev_args.SIGS.sigs, sig) &&
+                                sigismember(&th->sigpending, sig))
                             {
                                 if (event->ev_args.SIGS.sig)
                                     *(event->ev_args.SIGS.sig) = sig;
                                 sigdelset(&th->sigpending, sig);
                                 th->sigpendcnt--;
-                                lll_internal_unlock(&th->siglock);
                                 event->ev_status = APTH_EV_STATUS_OCCURRED;
                                 any_occurred = true;
                                 break;
                             }
-                            lll_internal_unlock(&th->siglock);
                         }
+                        lll_internal_unlock(&th->siglock);
                     }
                     break;
 
