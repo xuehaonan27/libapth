@@ -22,6 +22,8 @@ struct apth_epoll_fd_slot
     int exception_count; // Number of waiters waiting for EPOLLPRI
 
     bool epoll_dirty;  // True if aggregate_events changed but epoll not yet updated
+    bool on_dirty_list; // True if linked into scheduler's dirty_fd_slots list
+    struct list_elem dirty_elem; // Link into scheduler's dirty_fd_slots list
 };
 
 #define APTH_EPOLL_FD_SLOT_TABLE_SIZE FD_SETSIZE

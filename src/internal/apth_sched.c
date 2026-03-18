@@ -141,10 +141,12 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
         sched->fd_slot_table[i].readable_count = 0;
         sched->fd_slot_table[i].writeable_count = 0;
         sched->fd_slot_table[i].exception_count = 0;
-        sched->fd_slot_table[i].epoll_dirty = false; // ADD THIS
+        sched->fd_slot_table[i].epoll_dirty = false;
+        sched->fd_slot_table[i].on_dirty_list = false;
     }
     list_init(&sched->active_fd_slots);
     sched->active_fd_count = 0;
+    list_init(&sched->dirty_fd_slots);
 
     // Initialize waiter memory pool
     list_init(&sched->free_waiters);

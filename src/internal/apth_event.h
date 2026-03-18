@@ -20,6 +20,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
      .ev_type = APTH_EVENT_TYPE_FD,                                 \
      .ev_goal = (ARG_GOAL),                                         \
      .epoll_registered = false,                                     \
+     .epoll_waiter = NULL,                                          \
      .ev_args.FD.fd = (ARG_FD)};                                    \
     do                                                              \
     {                                                               \
@@ -36,6 +37,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
      .ev_type = APTH_EVENT_TYPE_SIGS,     \
      .ev_goal = 0,                        \
      .epoll_registered = false,           \
+     .epoll_waiter = NULL,                \
      .ev_args.SIGS.sigs = (ARG_SIGS),     \
      .ev_args.SIGS.sig = (ARG_SIG)}
 
@@ -45,6 +47,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
      .ev_type = APTH_EVENT_TYPE_TIME,     \
      .ev_goal = APTH_GOAL_UNTIL_OCCURRED, \
      .epoll_registered = false,           \
+     .epoll_waiter = NULL,                \
      .ev_args.TIME.tv = (TV)}
 
 #define EVENT_TID(ARG_TID, ARG_GOAL)                                 \
@@ -53,6 +56,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
      .ev_type = APTH_EVENT_TYPE_TID,                                 \
      .ev_goal = (ARG_GOAL),                                          \
      .epoll_registered = false,                                      \
+     .epoll_waiter = NULL,                                           \
      .ev_args.TID.tid = (ARG_TID)};                                  \
     do                                                               \
     {                                                                \
@@ -72,6 +76,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
      .ev_type = APTH_EVENT_TYPE_FUNC,         \
      .ev_goal = APTH_GOAL_UNTIL_OCCURRED,     \
      .epoll_registered = false,               \
+     .epoll_waiter = NULL,                    \
      .ev_args.FUNC.func = (ARG_FUNC),         \
      .ev_args.FUNC.arg = (ARG_ARG),           \
      .ev_args.FUNC.tv = (ARG_TV)}
@@ -83,6 +88,7 @@ APTH_INTERNAL bool apth_state_matches_event_goal(apth_state_t state, apth_goal_t
         .ev_type = APTH_EVENT_TYPE_SELECT,                         \
         .ev_goal = APTH_GOAL_UNTIL_OCCURRED,                       \
         .epoll_registered = false,                                 \
+        .epoll_waiter = NULL,                                      \
         .ev_args.SELECT.n = (ARG_N),                               \
         .ev_args.SELECT.nfd = (ARG_NFD),                           \
         .ev_args.SELECT.rfds = (ARG_RFDS),                         \

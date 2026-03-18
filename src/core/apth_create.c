@@ -113,6 +113,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Events
     list_init(&t->event_list);
+    t->wake_pending = false;
 
     // Signals
     sigemptyset(&t->sigpending);

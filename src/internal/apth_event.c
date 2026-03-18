@@ -70,6 +70,7 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
         return -1;
     w->th = th;
     w->ev = ev;
+    ev->epoll_waiter = w; // Back-pointer for O(1) removal
 
     // Calculate waiter's event mask
     uint32_t needed = 0;
@@ -124,6 +125,7 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
                 list_remove(&slot->elem);
                 sched->active_fd_count--;
             }
+            ev->epoll_waiter = NULL;
             free_waiter(sched, w);
             return -1;
         }
@@ -131,13 +133,13 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
     }
     else if (slot->aggregate_events != old_aggregate)
     {
-        // Event mask changed (e.g. previous is EPOLLIN, and now EPOLLOUT is added).
-        // We need to MOD this event.
-        // struct epoll_event ee;
-        // ee.events = slot->aggregate_events;
-        // ee.data.fd = fd;
-        // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
+        // Event mask changed - mark dirty for batched MOD
         slot->epoll_dirty = true;
+        if (!slot->on_dirty_list)
+        {
+            list_push_back(&sched->dirty_fd_slots, &slot->dirty_elem);
+            slot->on_dirty_list = true;
+        }
     }
 
     ev->epoll_registered = true;
@@ -147,7 +149,7 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
 
 // Remove an (apth, event) pair from slot of fd.
 // If this is the last waiter, then unregister it from epoll
-static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_event_t ev)
+static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th __attribute__((unused)), apth_event_t ev)
 {
     if (fd < 0 || fd >= APTH_EPOLL_FD_SLOT_TABLE_SIZE)
         return;
@@ -156,25 +158,22 @@ static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_
 
     struct apth_epoll_fd_slot *slot = &sched->fd_slot_table[fd];
 
-    // Find and remove correspond waiter from the list
-    FOR_ELEMENT_IN_LIST(slot->waiters, e)
+    // O(1) removal using back-pointer
+    struct apth_epoll_waiter *w = ev->epoll_waiter;
+    if (w != NULL)
     {
-        struct apth_epoll_waiter *w = apth_epoll_waiter_list_entry(e);
-        if (w->th == th && w->ev == ev)
-        {
-            // Decrement refcounts based on what this waiter was waiting for
-            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-                slot->readable_count--;
-            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-                slot->writeable_count--;
-            if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-                slot->exception_count--;
+        // Decrement refcounts based on what this waiter was waiting for
+        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
+            slot->readable_count--;
+        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
+            slot->writeable_count--;
+        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
+            slot->exception_count--;
 
-            list_remove(&w->elem);
-            free_waiter(sched, w);
-            slot->waiter_count--;
-            break;
-        }
+        list_remove(&w->elem);
+        free_waiter(sched, w);
+        ev->epoll_waiter = NULL;
+        slot->waiter_count--;
     }
 
     if (slot->waiter_count == 0)
@@ -206,28 +205,31 @@ static void epoll_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
-            // struct epoll_event ee;
-            // ee.events = new_aggregate;
-            // ee.data.fd = fd;
-            // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
             slot->epoll_dirty = true;
+            if (!slot->on_dirty_list)
+            {
+                list_push_back(&sched->dirty_fd_slots, &slot->dirty_elem);
+                slot->on_dirty_list = true;
+            }
         }
     }
 
     ev->epoll_registered = false;
 }
 
-// We fd return by epoll is ready, wake up all matching waiters.
-// Returns count of apths waked.
-static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
+// When fd returned by epoll is ready, wake up all matching waiters.
+// Collects unique affected threads into wake_batch for direct processing,
+// using th->wake_pending flag to deduplicate.
+static void epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents,
+                              apth_t *wake_batch, int *wake_count, int wake_max)
 {
     if (fd < 0 || fd >= APTH_EPOLL_FD_SLOT_TABLE_SIZE)
-        return 0;
+        return;
 
     struct apth_epoll_fd_slot *slot = &sched->fd_slot_table[fd];
     int waked = 0;
 
-    // Tranverse all waiters of this fd, and check satisfied event
+    // Traverse all waiters of this fd, and check satisfied event
     struct list_elem *e = list_begin(&slot->waiters);
     while (e != list_end(&slot->waiters))
     {
@@ -258,17 +260,22 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
 
         if (matched)
         {
-            // Mark the event as OCCURRED.
+            // Mark the event as OCCURRED and clear back-pointer.
             w->ev->ev_status = APTH_EV_STATUS_OCCURRED;
+            w->ev->epoll_waiter = NULL;
+            w->ev->epoll_registered = false;
             apth_debug("[epoll] fd=%d event occurred for apth \"%s\"", fd, w->th->name);
+
+            // Collect unique threads into wake_batch using wake_pending flag
+            if (!w->th->wake_pending && *wake_count < wake_max)
+            {
+                w->th->wake_pending = true;
+                wake_batch[(*wake_count)++] = w->th;
+            }
 
             // Remove from waiter list.
             list_remove(&w->elem);
             slot->waiter_count--;
-
-            // Remember apth need to be waked, but do not move it here.
-            // An apth might have several events. Moving the apth should be handled
-            // outside of this function
             free_waiter(sched, w);
             waked++;
         }
@@ -283,10 +290,16 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         slot->registered = false;
         list_remove(&slot->elem);
         sched->active_fd_count--;
-        slot->aggregate_events = 0; // This cost much!
+        slot->aggregate_events = 0;
         slot->readable_count = 0;
         slot->writeable_count = 0;
         slot->exception_count = 0;
+        if (slot->on_dirty_list)
+        {
+            list_remove(&slot->dirty_elem);
+            slot->on_dirty_list = false;
+            slot->epoll_dirty = false;
+        }
     }
     else if (waked > 0)
     {
@@ -302,26 +315,27 @@ static int epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents)
         if (new_aggregate != slot->aggregate_events)
         {
             slot->aggregate_events = new_aggregate;
-            // struct epoll_event ee;
-            // ee.events = new_aggregate;
-            // ee.data.fd = fd;
-            // epoll_ctl(sched->epoll_fd, EPOLL_CTL_MOD, fd, &ee);
             slot->epoll_dirty = true;
+            if (!slot->on_dirty_list)
+            {
+                list_push_back(&sched->dirty_fd_slots, &slot->dirty_elem);
+                slot->on_dirty_list = true;
+            }
         }
     }
-
-    return waked;
 }
 
-// Batch update all dirty epoll registrations
-// Call this after processing all waiters to minimize syscalls
+// Batch update all dirty epoll registrations.
+// Only iterates slots that are actually dirty, not all active slots.
 static void epoll_map_flush_dirty(apth_sched_t sched)
 {
-    FOR_ELEMENT_IN_LIST(sched->active_fd_slots, e)
+    struct list_elem *e = list_begin(&sched->dirty_fd_slots);
+    while (e != list_end(&sched->dirty_fd_slots))
     {
-        struct apth_epoll_fd_slot *slot = list_entry(e, struct apth_epoll_fd_slot, elem);
+        struct apth_epoll_fd_slot *slot = list_entry(e, struct apth_epoll_fd_slot, dirty_elem);
+        struct list_elem *next = list_next(e);
 
-        if (slot->epoll_dirty && slot->registered)
+        if (slot->registered)
         {
             struct epoll_event ee;
             ee.events = slot->aggregate_events;
@@ -333,10 +347,15 @@ static void epoll_map_flush_dirty(apth_sched_t sched)
             }
             else
             {
-                // MOD failed - might be because FD was closed
                 apth_debug("epoll_ctl MOD failed for fd=%d: %s", slot->fd, strerror(errno));
             }
         }
+
+        // Remove from dirty list regardless of success
+        list_remove(e);
+        slot->on_dirty_list = false;
+
+        e = next;
     }
 }
 
@@ -364,6 +383,7 @@ static void epoll_map_fail_all_waiters_for_fd(apth_sched_t sched, int fd)
 
         w->ev->ev_status = APTH_EV_STATUS_FAILED;
         w->ev->epoll_registered = false;
+        w->ev->epoll_waiter = NULL;
 
         apth_debug("[fd_close] fd=%d event FAILED for apth \"%s\"", fd, w->th->name);
 
@@ -383,6 +403,12 @@ static void epoll_map_fail_all_waiters_for_fd(apth_sched_t sched, int fd)
         slot->registered = false;
         list_remove(&slot->elem);
         sched->active_fd_count--;
+    }
+    if (slot->on_dirty_list)
+    {
+        list_remove(&slot->dirty_elem);
+        slot->on_dirty_list = false;
+        slot->epoll_dirty = false;
     }
 }
 
@@ -461,6 +487,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             if (list_empty(&th->event_list))
                 goto check_wake;
 
+
+
             FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
             {
                 apth_event_t event = apth_event_t_list_entry(ev_e);
@@ -474,9 +502,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 switch (event->ev_type)
                 {
                 case APTH_EVENT_TYPE_FD:
-                    // Register to epoll mapping table (if not registered yet)
-                    // If registration fails (e.g., fd was closed), mark the event as FAILED
-                    // so the apth doesn't wait forever on a dead fd.
+                    // FD events are eagerly registered in apth_wait_event/apth_wait_event_list.
+                    // This is a fallback for edge cases (e.g., failed eager registration).
                     if (epoll_map_add_waiter(sched, event->ev_args.FD.fd, th, event) < 0)
                     {
                         event->ev_status = APTH_EV_STATUS_FAILED;
@@ -683,6 +710,9 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         if (notified_ths > 0)
             dopoll = true;
 
+        // Reset wake_count for Phase 2 reuse
+        wake_count = 0;
+
         // ==================== Phase 2: epoll_wait handle I/O events ====================
 
         int timeout_ms;
@@ -746,53 +776,30 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                         continue;
                     }
 
-                    // wake all waiters
-                    epoll_map_wake_fd(sched, ready_fd, revents);
+                    // Wake all waiters; collect affected threads directly
+                    epoll_map_wake_fd(sched, ready_fd, revents,
+                                     wake_batch, &wake_count, MAX_WAKE_BATCH);
                 }
 
-                // epoll_map_wake_fd already marked event as OCCURRED,
-                // but not move apth to waked_queue yet.
-                // Now traverse waiting queue and move apths with OCCURRED events,
-                // looping until all have been transferred (handles >MAX_WAKE_BATCH case).
-                do
+                // epoll_map_wake_fd already collected unique affected threads
+                // into wake_batch via wake_pending flag. Process them directly
+                // without rescanning the entire waiting queue.
+                for (int i = 0; i < wake_count; i++)
                 {
-                    wake_count = 0;
-                    lll_internal_lock(&THQUEUE(sched, waiting)->th_list_lock);
-                    FOR_ELEMENT_IN_LIST(THQUEUE(sched, waiting)->th_list, e)
+                    apth_t th = wake_batch[i];
+                    th->wake_pending = false;
+                    // Remove remaining pending FD events from epoll
+                    FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
                     {
-                        apth_t th = apth_t_list_entry(e);
-                        bool should_wake = false;
-                        FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
-                        {
-                            apth_event_t event = apth_event_t_list_entry(ev_e);
-                            if (event->ev_status != APTH_EV_STATUS_PENDING)
-                            {
-                                should_wake = true;
-                                break;
-                            }
-                        }
-                        if (should_wake && wake_count < MAX_WAKE_BATCH)
-                            wake_batch[wake_count++] = th;
+                        apth_event_t event = apth_event_t_list_entry(ev_e);
+                        if (event->ev_type == APTH_EVENT_TYPE_FD &&
+                            event->ev_status == APTH_EV_STATUS_PENDING)
+                            epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                     }
-                    lll_internal_unlock(&THQUEUE(sched, waiting)->th_list_lock);
-
-                    for (int i = 0; i < wake_count; i++)
-                    {
-                        apth_t th = wake_batch[i];
-                        // Clear other epoll registrations of the apth
-                        // No need for caring about other types of events, just take care of FD events
-                        // we must remove these FD events from scheduler's waiter list
-                        FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
-                        {
-                            apth_event_t event = apth_event_t_list_entry(ev_e);
-                            if (event->ev_type == APTH_EVENT_TYPE_FD &&
-                                event->ev_status == APTH_EV_STATUS_PENDING)
-                                epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
-                        }
-                        atomic_store_release(&th->state, APTH_STATE_WAKED);
-                        transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
-                    }
-                } while (wake_count == MAX_WAKE_BATCH);
+                    atomic_store_release(&th->state, APTH_STATE_WAKED);
+                    transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
+                }
+                wake_count = 0;
 
                 epoll_map_flush_dirty(sched);
             }
@@ -873,6 +880,18 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     // list_append(&self->event_list, el);
     self->event_list = *el;
 
+    // Eagerly register FD events to epoll before yielding.
+    // This avoids redundant Phase 1 work for already-registered FD events.
+    {
+        apth_sched_t sched = SCHED_OF(self);
+        FOR_ELEMENT_IN_LIST(self->event_list, pre_e)
+        {
+            apth_event_t pre_ev = apth_event_t_list_entry(pre_e);
+            if (pre_ev->ev_type == APTH_EVENT_TYPE_FD)
+                epoll_map_add_waiter(sched, pre_ev->ev_args.FD.fd, self, pre_ev);
+        }
+    }
+
     // Move apth into waiting state and transfer control to scheduler
     atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
@@ -915,8 +934,11 @@ APTH_INTERNAL bool apth_wait_event(apth_event_t ev)
     // Link event into current thread
     apth_event_list_add(&self->event_list, ev);
 
+    // Eagerly register FD event to epoll
+    if (ev->ev_type == APTH_EVENT_TYPE_FD)
+        epoll_map_add_waiter(SCHED_OF(self), ev->ev_args.FD.fd, self, ev);
+
     // Move thread into waiting state and transfer control to scheduler
-    // Move to waiting state
     atomic_store_release(&self->state, APTH_STATE_WAITING);
     self->yield_reason = APTH_YIELD_REASON_WAIT;
     apth_yield();

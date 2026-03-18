@@ -6,6 +6,9 @@
 #include "internal/apth_time.h"
 #include "utils/list.h"
 
+// Forward declaration for back-pointer
+struct apth_epoll_waiter;
+
 // Event status code
 typedef enum
 {
@@ -79,6 +82,7 @@ struct apth_event_st
     enum apth_event_type ev_type;
     apth_goal_t ev_goal;
     bool epoll_registered;
+    struct apth_epoll_waiter *epoll_waiter; // Back-pointer for O(1) removal
     union
     {
         struct apth_event_fd_st FD;

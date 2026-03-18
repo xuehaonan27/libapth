@@ -40,6 +40,7 @@ struct apth_sched_st
     struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
     struct list active_fd_slots;                                            // slots with waiters
     int active_fd_count;
+    struct list dirty_fd_slots;                                             // slots needing epoll MOD
 
 // Memory pool for apth_epoll_waiter structures to avoid malloc/free
 #define APTH_WAITER_POOL_SIZE 256

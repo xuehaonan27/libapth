@@ -101,6 +101,9 @@ struct ALIGNED(8) apth_st
     struct apth_key_data *specific[APTH_KEY_1STLEVEL_SIZE];
     bool specific_used; // flag which is set when specific data is set.
 
+    /* Event manager flags */
+    bool wake_pending;   // Set by epoll_map_wake_fd, cleared after transfer to waked queue
+
     /* APTH Ownership */
     struct list_elem elem;
 #define apth_t_list_entry(LIST_ELEM) \
