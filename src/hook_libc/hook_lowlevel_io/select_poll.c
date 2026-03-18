@@ -2,12 +2,73 @@
 #define _GNU_SOURCE
 #endif
 #include <signal.h>
+#include <malloc.h>
 
 #include "hook_libc/hook_lowlevel_io.h"
 #include "apth.h"
 #include "internal/apth_event.h"
 #include "internal/types.h"
 #include "utils/list.inline.h"
+
+// Maximum number of decomposed FD events before falling back to SELECT event.
+// Keeps stack usage bounded (128 * sizeof(struct apth_event_st) ≈ 12KB).
+#define SELECT_DECOMPOSE_MAX 128
+
+// Count set fds across all three fd_sets, up to nfd.
+static int select_count_fds(int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds)
+{
+    int count = 0;
+#if defined(__linux__) && defined(__NFDBITS)
+    int nwords = ((nfd) + __NFDBITS - 1) / __NFDBITS;
+    for (int i = 0; i < nwords; i++)
+    {
+        if (rfds != NULL)
+            count += __builtin_popcountl(rfds->fds_bits[i]);
+        if (wfds != NULL)
+            count += __builtin_popcountl(wfds->fds_bits[i]);
+        if (efds != NULL)
+            count += __builtin_popcountl(efds->fds_bits[i]);
+    }
+#else
+    for (int s = 0; s < nfd; s++)
+    {
+        if (rfds != NULL && FD_ISSET(s, rfds))
+            count++;
+        if (wfds != NULL && FD_ISSET(s, wfds))
+            count++;
+        if (efds != NULL && FD_ISSET(s, efds))
+            count++;
+    }
+#endif
+    return count;
+}
+
+// Decompose fd_sets into individual FD events. Returns number of events created.
+// A single fd in multiple sets generates multiple events (each with its own goal).
+static int select_decompose_events(int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds,
+                                   struct apth_event_st *evs, int max_evs)
+{
+    int idx = 0;
+    for (int s = 0; s < nfd && idx < max_evs; s++)
+    {
+        if (rfds != NULL && FD_ISSET(s, rfds))
+        {
+            struct apth_event_st ev = EVENT_FD(s, APTH_GOAL_UNTIL_FD_READABLE);
+            evs[idx++] = ev;
+        }
+        if (wfds != NULL && FD_ISSET(s, wfds) && idx < max_evs)
+        {
+            struct apth_event_st ev = EVENT_FD(s, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            evs[idx++] = ev;
+        }
+        if (efds != NULL && FD_ISSET(s, efds) && idx < max_evs)
+        {
+            struct apth_event_st ev = EVENT_FD(s, APTH_GOAL_UNTIL_FD_EXCEPTION);
+            evs[idx++] = ev;
+        }
+    }
+    return idx;
+}
 
 APTH_DEFINE_HOOK(
     int, select,
@@ -106,38 +167,91 @@ APTH_DEFINE_HOOK(
         return rc;
     }
 
-    // Suspend currrent apth until one filedescriptor is ready or the timeout occurred.
+    // Suspend current apth until one filedescriptor is ready or the timeout occurred.
+    // Decompose fd_sets into individual FD events for epoll-based waiting,
+    // eliminating the per-iteration raw select() syscall in the event manager.
+    int fd_count = select_count_fds(nfd, rfds, wfds, efds);
+
     struct list event_list;
     list_init(&event_list);
     rc = -1;
-    struct apth_event_st ev_select = EVENT_SELECT(&rc, nfd, rfds, wfds, efds);
-    apth_event_list_add(&event_list, &ev_select);
 
-    struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
-    if (timeout != NULL)
-        apth_event_list_add(&event_list, &ev_timeout);
-
-    apth_wait_event_list(&event_list);
-    if (timeout != NULL)
-        apth_event_isolate(&ev_timeout);
-
-    // Select return code semantics
-    if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
-        return apth_error(-1, EBADF);
-
-    // If the select event occurred, then RC should have been set in ev_args.SELECT.n
-    // If timeout occurred and select event did not, return 0 and clear fd_set
-    if (timeout != NULL &&
-        ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
-        ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
+    if (fd_count > 0 && fd_count <= SELECT_DECOMPOSE_MAX)
     {
-        if (rfds != NULL)
-            FD_ZERO(rfds);
-        if (wfds != NULL)
-            FD_ZERO(wfds);
-        if (efds != NULL)
-            FD_ZERO(efds);
-        rc = 0;
+        // Decompose into individual FD events
+        struct apth_event_st evs[fd_count];
+        int nev = select_decompose_events(nfd, rfds, wfds, efds, evs, fd_count);
+        for (int i = 0; i < nev; i++)
+            apth_event_list_add(&event_list, &evs[i]);
+
+        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
+        if (timeout != NULL)
+            apth_event_list_add(&event_list, &ev_timeout);
+
+        apth_wait_event_list(&event_list);
+
+        // Check if any FD event occurred or all failed
+        bool any_occurred = false;
+        bool any_failed = false;
+        for (int i = 0; i < nev; i++)
+        {
+            if (evs[i].ev_status == APTH_EV_STATUS_OCCURRED)
+                any_occurred = true;
+            else if (evs[i].ev_status == APTH_EV_STATUS_FAILED)
+                any_failed = true;
+        }
+
+        if (any_failed && !any_occurred)
+            return apth_error(-1, EBADF);
+
+        if (any_occurred)
+        {
+            // Do a final raw select to get precise output fd_sets
+            struct timeval zero_tv = {0, 0};
+            while ((rc = apth_func_raw(select)(nfd, rfds, wfds, efds, &zero_tv)) < 0 && errno == EINTR)
+                ;
+            if (rc < 0)
+                return apth_error(-1, errno);
+        }
+        else
+        {
+            // Timeout: no fds ready
+            if (rfds != NULL)
+                FD_ZERO(rfds);
+            if (wfds != NULL)
+                FD_ZERO(wfds);
+            if (efds != NULL)
+                FD_ZERO(efds);
+            rc = 0;
+        }
+    }
+    else
+    {
+        // Fallback: use SELECT event for large fd counts
+        struct apth_event_st ev_select = EVENT_SELECT(&rc, nfd, rfds, wfds, efds);
+        apth_event_list_add(&event_list, &ev_select);
+
+        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
+        if (timeout != NULL)
+            apth_event_list_add(&event_list, &ev_timeout);
+
+        apth_wait_event_list(&event_list);
+
+        if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
+            return apth_error(-1, EBADF);
+
+        if (timeout != NULL &&
+            ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
+            ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
+        {
+            if (rfds != NULL)
+                FD_ZERO(rfds);
+            if (wfds != NULL)
+                FD_ZERO(wfds);
+            if (efds != NULL)
+                FD_ZERO(efds);
+            rc = 0;
+        }
     }
 
     return rc;
@@ -246,42 +360,97 @@ APTH_DEFINE_HOOK(
     }
 
     // Suspend current apth until one filedescriptor is ready or the timeout occurred.
-    // apth_event_t ev_select;
+    int fd_count = select_count_fds(nfds, rfds, wfds, efds);
+
     struct list event_list;
     list_init(&event_list);
     rc = -1;
-    struct apth_event_st ev_select = EVENT_SELECT(&rc, nfds, rfds, wfds, efds);
-    apth_event_list_add(&event_list, &ev_select);
 
-    struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
-    if (ts != NULL)
-        apth_event_list_add(&event_list, &ev_timeout);
-
-    apth_wait_event_list(&event_list);
-    if (ts != NULL)
-        apth_event_isolate(&ev_timeout);
-
-    // Select return code semantics
-    if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
+    if (fd_count > 0 && fd_count <= SELECT_DECOMPOSE_MAX)
     {
-        if (mask != NULL)
-            sigprocmask(SIG_SETMASK, &origmask, NULL);
-        return apth_error(-1, EBADF);
+        // Decompose into individual FD events
+        struct apth_event_st evs[fd_count];
+        int nev = select_decompose_events(nfds, rfds, wfds, efds, evs, fd_count);
+        for (int i = 0; i < nev; i++)
+            apth_event_list_add(&event_list, &evs[i]);
+
+        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
+        if (ts != NULL)
+            apth_event_list_add(&event_list, &ev_timeout);
+
+        apth_wait_event_list(&event_list);
+
+        bool any_occurred = false;
+        bool any_failed = false;
+        for (int i = 0; i < nev; i++)
+        {
+            if (evs[i].ev_status == APTH_EV_STATUS_OCCURRED)
+                any_occurred = true;
+            else if (evs[i].ev_status == APTH_EV_STATUS_FAILED)
+                any_failed = true;
+        }
+
+        if (any_failed && !any_occurred)
+        {
+            if (mask != NULL)
+                sigprocmask(SIG_SETMASK, &origmask, NULL);
+            return apth_error(-1, EBADF);
+        }
+
+        if (any_occurred)
+        {
+            struct timeval zero_tv = {0, 0};
+            while ((rc = apth_func_raw(select)(nfds, rfds, wfds, efds, &zero_tv)) < 0 && errno == EINTR)
+                ;
+            if (rc < 0)
+            {
+                if (mask != NULL)
+                    sigprocmask(SIG_SETMASK, &origmask, NULL);
+                return apth_error(-1, errno);
+            }
+        }
+        else
+        {
+            if (rfds != NULL)
+                FD_ZERO(rfds);
+            if (wfds != NULL)
+                FD_ZERO(wfds);
+            if (efds != NULL)
+                FD_ZERO(efds);
+            rc = 0;
+        }
     }
-
-    // If the select event occurred, then RC should have been set in ev_args.SELECT.n
-    // If timeout occurred and select event did not, return 0 and clear fd_set
-    if (ts != NULL &&
-        ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
-        ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
+    else
     {
-        if (rfds != NULL)
-            FD_ZERO(rfds);
-        if (wfds != NULL)
-            FD_ZERO(wfds);
-        if (efds != NULL)
-            FD_ZERO(efds);
-        rc = 0;
+        // Fallback: use SELECT event for large fd counts
+        struct apth_event_st ev_select = EVENT_SELECT(&rc, nfds, rfds, wfds, efds);
+        apth_event_list_add(&event_list, &ev_select);
+
+        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
+        if (ts != NULL)
+            apth_event_list_add(&event_list, &ev_timeout);
+
+        apth_wait_event_list(&event_list);
+
+        if (ev_select.ev_status == APTH_EV_STATUS_FAILED)
+        {
+            if (mask != NULL)
+                sigprocmask(SIG_SETMASK, &origmask, NULL);
+            return apth_error(-1, EBADF);
+        }
+
+        if (ts != NULL &&
+            ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
+            ev_select.ev_status != APTH_EV_STATUS_OCCURRED)
+        {
+            if (rfds != NULL)
+                FD_ZERO(rfds);
+            if (wfds != NULL)
+                FD_ZERO(wfds);
+            if (efds != NULL)
+                FD_ZERO(efds);
+            rc = 0;
+        }
     }
 
     // Restore original signal mask
