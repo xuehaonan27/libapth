@@ -16,7 +16,6 @@ enum
 
 struct apth_fd_entry
 {
-    int orig_flags;       // Original fcntl flags
     _Atomic(int) managed; // Whether this filedescriptor is managed by libapth
 };
 

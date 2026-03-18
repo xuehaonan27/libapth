@@ -27,9 +27,6 @@ APTH_INTERNAL void apth_fd_register(int fd)
     if (flags == -1)
         return;
 
-    // Store original flags (for informational purposes only)
-    APTH_FD_TABLE[fd].orig_flags = flags;
-
     // Set to non-blocking if not already
     if (!(flags & O_NONBLOCK))
     {
@@ -43,7 +40,9 @@ APTH_INTERNAL void apth_fd_register(int fd)
 
     // Mark as managed (no refcount needed)
     atomic_store_release(&APTH_FD_TABLE[fd].managed, 1);
+#ifdef APTH_DEBUG
     apth_debug("Registered fd=%d (orig_flags=0x%x) now flags=0x%x", fd, flags, apth_func_raw(fcntl)(fd, F_GETFL, 0));
+#endif
 }
 
 APTH_INTERNAL void apth_fd_unregister(int fd)
