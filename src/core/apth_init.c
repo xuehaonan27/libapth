@@ -5,6 +5,7 @@
 #include "internal/apth_worker.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_preempt.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -93,6 +94,9 @@ void apth_init(apth_init_t *initvals)
     }
 
     apth_fd_table_init();
+
+    // Initialize preemption system
+    apth_preempt_init();
 
     // worker_key_t_init();
     sched_key_t_init();
@@ -204,6 +208,8 @@ void apth_drop(void)
         apth_debug("fail to drop global scheduler pool");
         PANIC("fail to drop global signal system");
     }
+
+    apth_preempt_drop();
 
     if (apth_func_system_drop() != 0)
     {

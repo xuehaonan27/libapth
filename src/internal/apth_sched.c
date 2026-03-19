@@ -13,6 +13,7 @@
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_thqueue.h"
 #include "internal/apth_signal.h"
+#include "internal/apth_preempt.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
@@ -485,6 +486,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     // TODO: initialize other parts of the worker
 
+    // Arm preemption timer for this worker
+    apth_preempt_arm();
+
     // Here we atomically substract WORKER_SPAWNED by 1
     atomic_fetch_sub(&WORKER_SPAWNED, 1);
 
@@ -716,6 +720,9 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         lll_internal_unlock(&GLOBAL_POOL.pool_lock);
         apth_drop();
     }
+
+    // Disarm preemption before cleanup
+    apth_preempt_disarm();
 
     // Do cleaning
     apth_debug("WORKER %d cleaning self", me->worker_id);
