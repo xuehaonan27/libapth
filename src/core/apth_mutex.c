@@ -98,9 +98,23 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
 
+    // Lock-free fast path for NORMAL mutexes: CAS owner from NULL to self.
+    // Avoids acquiring the guard lock entirely in the uncontended case.
+    if (m->type == APTH_MUTEX_NORMAL)
+    {
+        apth_t expected = NULL;
+        if (__atomic_compare_exchange_n(&m->owner, &expected, self, false,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+        {
+            m->lock_count = 1;
+            return 0;
+        }
+        // Contended — fall through to slow path
+    }
+
     lll_apth_lock(&m->guard);
 
-    // Fast path: mutex is free
+    // Fast path under guard: mutex is free
     if (m->owner == NULL)
     {
         m->owner = self;
@@ -285,6 +299,23 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
+
+    // Lock-free fast path for NORMAL mutexes with no waiters.
+    // Try CAS owner from self to NULL. If waiters list is non-empty
+    // concurrently, the waiter's lock() will see owner==NULL and CAS it,
+    // so no wakeup is lost.
+    if (m->type == APTH_MUTEX_NORMAL)
+    {
+        apth_t expected = self;
+        if (__atomic_compare_exchange_n(&m->owner, &expected, NULL, false,
+                                        __ATOMIC_RELEASE, __ATOMIC_RELAXED))
+        {
+            m->lock_count = 0;
+            return 0;
+        }
+        // CAS failed: either wrong owner (bug) or concurrent waiter
+        // enqueue changed the owner — fall through to guarded path
+    }
 
     lll_apth_lock(&m->guard);
 

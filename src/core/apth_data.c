@@ -6,7 +6,8 @@
 #include "utils/apth_errno.h"
 #include <stdlib.h>
 
-static struct apth_keytab_st APTH_KEYS[APTH_KEYS_MAX];
+// Global key table — also accessed by internal/apth_data.c for destructor calls
+struct apth_keytab_st APTH_KEYS[APTH_KEYS_MAX];
 
 int apth_key_create(apth_key_t *key, void (*destr)(void *))
 {

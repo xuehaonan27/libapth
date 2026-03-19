@@ -1,5 +1,6 @@
 #include "common.h" // For MAIN_APTH_EXITED
 #include "internal/apth_cancel.h"
+#include "internal/apth_data.h"
 #include "internal/types.h"
 #include "internal/apth_sched.h"
 #include "utils/debug.h"
@@ -34,6 +35,9 @@ APTH_INTERNAL void apth_do_cancel(void *result)
 
     // Execute cleanups
     apth_thread_cleanup(self);
+
+    // Run TLS destructors (POSIX: after cleanup handlers, before thread dies)
+    apth_key_destroydata(self);
 
     self->join_arg = result;
     // Don't set state here. Scheduler will set it to TERMINATED

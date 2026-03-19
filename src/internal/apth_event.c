@@ -255,8 +255,21 @@ static void epoll_map_wake_fd(apth_sched_t sched, int fd, uint32_t revents,
 
         // EPOLLERR and EPOLLHUP always matches.
         // If fd errs or peer closes, then all waiters need to be waked.
+        // Decrement refcounts that weren't already decremented above.
         if (revents & (EPOLLERR | EPOLLHUP))
+        {
+            if (!matched)
+            {
+                // Haven't decremented yet for this waiter's goals
+                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
+                    slot->readable_count--;
+                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
+                    slot->writeable_count--;
+                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
+                    slot->exception_count--;
+            }
             matched = true;
+        }
 
         if (matched)
         {
