@@ -126,7 +126,7 @@ static void __apth_sig_default_action(apth_t th, int sig)
 static void __apth_inject_signal_handler(apth_t th, int sig, struct sigaction *sa)
 {
     // NOTE: here we first implement Plan A
-    assert_msg(!APTH_IS_FAKE_SCHED(CUR_APTH), "we should theoratically be an apth now");
+    assert_msg(CUR_APTH != NULL, "we should theoretically be an apth now");
     // Uh, although physically not yet. That does not matter though, because
     // we are meant to use scheduler's stack here. What matters is that
     // logically we should be an apth here (cur_apth set to th), because we
@@ -292,7 +292,7 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
         apth_t target = APTH_NULL;
 
         // First check apth that's going to be scheduled
-        if (sched->cur != NULL && !APTH_IS_FAKE_SCHED(sched->cur))
+        if (sched->cur != NULL)
         {
             if (!sigismember(&sched->cur->sigmask, sig))
                 target = sched->cur;

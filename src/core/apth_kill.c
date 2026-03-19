@@ -54,7 +54,7 @@ int apth_kill(apth_t t, int sig)
     // Allow killing signal to self.
     // If `t == self`, check delivery immediately
     apth_t self = CUR_APTH;
-    if (t == self && !APTH_IS_FAKE_SCHED(self))
+    if (t == self && self != NULL)
         apth_deliver_pending_signals(self);
 
     // If `t` is in waiting queue and the signal is not blocked, we could

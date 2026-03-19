@@ -51,13 +51,8 @@ typedef struct {
 
 // #define LLL_NOT_ACQUIRED (0) // LLL is not acquired
 
-#define APTH_FAKE_SCHED_MARK_IN_PLACE (0x1)
-
-// #define APTH_LLL_POINTER_MASK_IN_PLACE (~(APTH_FAKE_SCHED_MARK_IN_PLACE | APTH_LLL_ROBBED_MARK_IN_PLACE))
-
-#define APTH_FAKE_SCHED(sched) ((apth_t)((uintptr_t)(sched) | APTH_FAKE_SCHED_MARK_IN_PLACE))
-#define APTH_IS_FAKE_SCHED(val) (((uintptr_t)(val) & APTH_FAKE_SCHED_MARK_IN_PLACE) != 0)
-// #define APTH_DECODE_FAKE_SCHED(val) ((void *)((uintptr_t)(val) & APTH_LLL_POINTER_MASK_IN_PLACE))
-// #define APTH_LLL_IS_ROBBED(val) (((uintptr_t)(val) & APTH_LLL_ROBBED_MARK_IN_PLACE) != 0)
+// Scheduler-vs-thread context check.
+// When the scheduler is running (no user apth dispatched), CUR_APTH == NULL.
+#define APTH_IS_SCHED_CONTEXT(val) ((val) == NULL)
 
 #endif // __LIBAPTH_UTILS_LLL_NEW_H

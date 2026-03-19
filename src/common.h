@@ -39,13 +39,16 @@ extern pthread_key_t __CUR_SCHED_KEY;
 #define SCHED_OF(T) ((T)->current_sched)
 #define QUEUE_STATE_OF(T) ((T)->current_queue->th_state)
 
+// CUR_APTH returns the currently running apth_t, or NULL when the scheduler
+// itself is running (no user thread dispatched).  Code that needs to
+// distinguish scheduler context from thread context should simply compare
+// against NULL instead of the old APTH_IS_FAKE_SCHED() tagged-pointer hack.
 #define CUR_APTH (CUR_SCHED->cur)
 
-#define SET_CUR_APTH(T)              \
-    do                               \
-    {                                \
-        assert((T) != (apth_t)NULL); \
-        CUR_SCHED->cur = (T);        \
+#define SET_CUR_APTH(T)       \
+    do                        \
+    {                         \
+        CUR_SCHED->cur = (T); \
     } while (0)
 
 #define APTH_TCB_NAMELEN 31

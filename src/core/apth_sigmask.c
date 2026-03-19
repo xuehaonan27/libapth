@@ -14,7 +14,7 @@ int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
     apth_t cur = CUR_APTH;
 
     // If is scheduler context, operate with pthread level mask
-    if (APTH_IS_FAKE_SCHED(cur))
+    if (cur == NULL)
         return apth_func_raw(pthread_sigmask)(how, set, oldset);
 
     if (oldset != NULL)

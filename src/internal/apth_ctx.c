@@ -36,7 +36,7 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
 
     // After the context has been switched
     apth_t cur = CUR_APTH;
-    if (!APTH_IS_FAKE_SCHED(cur))
+    if (cur != NULL)
     {
         unsigned int cc_h = atomic_load_acquire(&cur->cancelhandling);
         // When cancellation is enabled in async mode we cancel the thread immediately

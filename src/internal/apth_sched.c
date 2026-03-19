@@ -105,16 +105,15 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     // Create wake eventfd and register it with our epoll so other threads can
     // interrupt a blocking epoll_wait when new work arrives.
     sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-
-    apth_fd_register(sched->epoll_fd);
-    apth_fd_register(sched->wake_eventfd);
-
     if (sched->wake_eventfd < 0)
     {
         apth_func_raw(close)(sched->epoll_fd);
         sched->epoll_fd = -1;
         return apth_error(false, errno);
     }
+
+    apth_fd_register(sched->epoll_fd);
+    apth_fd_register(sched->wake_eventfd);
     {
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLET;
@@ -461,7 +460,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // Set TLS
     // set_cur_worker(me);
     SET_CUR_SCHED(sched);
-    SET_CUR_APTH(APTH_FAKE_SCHED(sched));
+    SET_CUR_APTH(NULL);
 
     sigset_t sigs;
     apth_time_t snapshot;
@@ -481,7 +480,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     // Wait for the main apth to be spawned, before we can continue
     while (get_MAIN_APTH() == APTH_NULL)
-        ;
+        sched_yield();
 
     for (;;)
     {
@@ -582,7 +581,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             apth_deliver_pending_signals(th);
         apth_ctx_switch(SCHED_CTX(sched), CTX(th));
         // Prepare for thread insertion and event management phase
-        SET_CUR_APTH(APTH_FAKE_SCHED(sched));
+        SET_CUR_APTH(NULL);
 
         // Update scheduler times
         apth_time_set(&snapshot, APTH_TIME_NOW);
@@ -699,7 +698,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     if (is_main_worker(me))
     {
-        apth_debug("MAIN WORKER %d ENDING THE PROCESS...", me->worker_id, me->tid);
+        apth_debug("MAIN WORKER %d ENDING THE PROCESS...", me->worker_id);
 
         // First we should isolate ourself from the pool
         lll_internal_lock(&GLOBAL_POOL.pool_lock);

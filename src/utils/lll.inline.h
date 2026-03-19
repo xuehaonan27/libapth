@@ -29,7 +29,7 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
     apth_t self = CUR_APTH;
 
     // Sanity check: only APTHs can acquire Type 1 locks
-    assert_msg(!APTH_IS_FAKE_SCHED(self), "Type 1 LLL can only be acquired by APTHs");
+    assert_msg(self != NULL, "Type 1 LLL can only be acquired by APTHs, not scheduler context");
 
     // Fast path: try to acquire
     apth_t expected = NULL;
@@ -65,7 +65,7 @@ INLINE_ALWAYS int __lll_apth_trylock(lll_apth_t *lock)
     apth_t self = CUR_APTH;
 
     // Sanity check: only APTHs can acquire Type 1 locks
-    assert_msg(!APTH_IS_FAKE_SCHED(self), "Type 1 LLL can only be acquired by APTHs");
+    assert_msg(self != NULL, "Type 1 LLL can only be acquired by APTHs, not scheduler context");
 
     apth_t expected = NULL;
     if (atomic_compare_exchange_acquire(&lock->owner, &expected, self))
@@ -108,7 +108,7 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
 {
 #endif
     apth_t self = CUR_APTH;
-    bool is_scheduler = APTH_IS_FAKE_SCHED(self);
+    bool is_scheduler = (self == NULL);
 
     // Fast path: try to acquire
     unsigned char expected = 0;

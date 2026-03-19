@@ -128,7 +128,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     else
     {
         apth_t creator = CUR_APTH;
-        if (!APTH_IS_FAKE_SCHED(creator))
+        if (creator != NULL)
             t->sigmask = creator->sigmask;
         else
             sigemptyset(&t->sigmask);

@@ -130,7 +130,7 @@ void apth_init(apth_init_t *initvals)
 
     // set_cur_worker(worker0);
     SET_CUR_SCHED(sched);
-    SET_CUR_APTH(APTH_FAKE_SCHED(sched));
+    SET_CUR_APTH(NULL);
 
     apth_debug("worker0 = %p", worker0);
     apth_debug("sched = %p", sched);

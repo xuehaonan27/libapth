@@ -114,7 +114,7 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 {
     apth_t self = CUR_APTH;
-    if (APTH_IS_FAKE_SCHED(self))
+    if (self == NULL)
         return apth_func_raw(raise)(sig);
     return apth_kill(self, sig);
 }
@@ -146,7 +146,7 @@ APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
     if (set == NULL)
         return apth_error(-1, EFAULT);
     apth_t cur = CUR_APTH;
-    if (APTH_IS_FAKE_SCHED(cur))
+    if (cur == NULL)
         return apth_func_raw(sigpending)(set);
 
     lll_internal_lock(&cur->siglock);

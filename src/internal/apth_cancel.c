@@ -9,7 +9,7 @@
 APTH_INTERNAL void apth_cancel_point(void)
 {
     apth_t cur = CUR_APTH;
-    assert(!APTH_IS_FAKE_SCHED(cur));
+    assert(cur != NULL);
 
     if (atomic_load_acquire(&cur->cancelreq) && (cur->cancelhandling & CANCELSTATE_BITMASK) == 0)
     {

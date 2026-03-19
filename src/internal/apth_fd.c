@@ -58,6 +58,8 @@ APTH_INTERNAL void apth_fd_unregister(int fd)
 
 APTH_INTERNAL void apth_fd_register_optional(int fd)
 {
+    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+        return;
     if (atomic_load_acquire(&APTH_FD_TABLE[fd].managed) == 0)
     {
         // Not managed but we are going to use it

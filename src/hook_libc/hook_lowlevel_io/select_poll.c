@@ -184,9 +184,12 @@ APTH_DEFINE_HOOK(
         for (int i = 0; i < nev; i++)
             apth_event_list_add(&event_list, &evs[i]);
 
-        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
+        struct apth_event_st ev_timeout;
         if (timeout != NULL)
+        {
+            ev_timeout = (struct apth_event_st)EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
             apth_event_list_add(&event_list, &ev_timeout);
+        }
 
         apth_wait_event_list(&event_list);
 
@@ -231,9 +234,12 @@ APTH_DEFINE_HOOK(
         struct apth_event_st ev_select = EVENT_SELECT(&rc, nfd, rfds, wfds, efds);
         apth_event_list_add(&event_list, &ev_select);
 
-        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
+        struct apth_event_st ev_timeout;
         if (timeout != NULL)
+        {
+            ev_timeout = (struct apth_event_st)EVENT_TIME(apth_timeout(timeout->tv_sec, timeout->tv_usec));
             apth_event_list_add(&event_list, &ev_timeout);
+        }
 
         apth_wait_event_list(&event_list);
 
@@ -374,9 +380,12 @@ APTH_DEFINE_HOOK(
         for (int i = 0; i < nev; i++)
             apth_event_list_add(&event_list, &evs[i]);
 
-        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
+        struct apth_event_st ev_timeout;
         if (ts != NULL)
+        {
+            ev_timeout = (struct apth_event_st)EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
             apth_event_list_add(&event_list, &ev_timeout);
+        }
 
         apth_wait_event_list(&event_list);
 
@@ -426,9 +435,12 @@ APTH_DEFINE_HOOK(
         struct apth_event_st ev_select = EVENT_SELECT(&rc, nfds, rfds, wfds, efds);
         apth_event_list_add(&event_list, &ev_select);
 
-        struct apth_event_st ev_timeout = EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
+        struct apth_event_st ev_timeout;
         if (ts != NULL)
+        {
+            ev_timeout = (struct apth_event_st)EVENT_TIME(apth_timeout(ts->tv_sec, ts->tv_nsec / 1000));
             apth_event_list_add(&event_list, &ev_timeout);
+        }
 
         apth_wait_event_list(&event_list);
 
