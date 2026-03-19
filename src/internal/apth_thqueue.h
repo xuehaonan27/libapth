@@ -31,9 +31,8 @@ APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_t
 INLINE size_t thqueue_size(apth_thqueue_t queue)
 {
     assert(queue != NULL);
-    // Size is not longer atomic, but reading without lock is acceptable
-    // for approximate size checks (e.g., work stealing heuristics)
-    return queue->size;
+    // Atomic relaxed load: safe for speculative checks without lock
+    return atomic_load_relaxed(&queue->size);
 }
 
 INLINE bool apth_is_in(apth_thqueue_t queue, apth_t th)

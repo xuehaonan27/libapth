@@ -12,7 +12,7 @@ struct apth_thqueue_st
     struct list th_list;
     lll_internal_t th_list_lock;
     apth_state_t th_state; // State that apths belonging to this queue should be
-    size_t size;           // Non-atomic, protected by lock
+    _Atomic(size_t) size;  // Atomic: written under lock, read speculatively without lock
 };
 
 typedef void drain_thqueue_th_func(apth_t th);
