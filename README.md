@@ -121,6 +121,86 @@ scheduling is used.
 | `APTH_PREEMPT_QUANTUM_MS` | Preemption time quantum in milliseconds (default: `10`). Used by `APTH_PREEMPT_SIGNAL` mode. |
 | `APTH_PREEMPT_INSTRUMENT_THRESHOLD` | Function-entry count threshold for instrumentation mode (default: `10000`). After this many function entries, the thread yields. Used by `APTH_PREEMPT_INSTRUMENT` mode. |
 
+#### Compiler Instrumentation Preemption Guide
+
+The `APTH_PREEMPT_INSTRUMENT` mode uses GCC/Clang's `-finstrument-functions`
+flag to insert a preemption check at every function entry in user code. This
+is deterministic and signal-free, but requires both the library and user code
+to be compiled with specific flags.
+
+**How it works:**
+
+When a C/C++ file is compiled with `-finstrument-functions`, the compiler
+inserts calls to `__cyg_profile_func_enter` at the beginning of every
+function. LIBAPTH provides this hook (as a weak symbol): it increments a
+per-worker counter and yields to the scheduler when the counter exceeds
+`APTH_PREEMPT_INSTRUMENT_THRESHOLD` (default 10000 function entries). This
+gives CPU-bound threads a fair share of execution time without relying on
+signals or timers.
+
+**Step 1: Build LIBAPTH with instrumentation preemption**
+
+Edit the `Makefile` to replace the preemption flag (remove
+`-DAPTH_PREEMPT_SIGNAL` if present, they are mutually exclusive):
+
+```makefile
+CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
+    -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
+    -DAPTH_CUR_USING_KEYWORD \
+    -DAPTH_HOLD_INITIALIZER_PTHREAD \
+    -DAPTH_PREEMPT_INSTRUMENT
+```
+
+Then rebuild:
+```shell
+make clean && make all
+```
+
+**Step 2: Compile user code with `-finstrument-functions`**
+
+```shell
+gcc -finstrument-functions -O2 -o myapp myapp.c -lapth -pthread -ldl
+```
+
+Or if using `LD_PRELOAD`:
+```shell
+gcc -finstrument-functions -O2 -o myapp myapp.c -pthread
+LD_PRELOAD=/path/to/libapth.so ./myapp
+```
+
+**Step 3 (optional): Tune the threshold**
+
+The default threshold of 10000 function entries works well for most
+workloads. Lower values yield more frequently (better fairness, higher
+overhead); higher values yield less frequently (lower overhead, less fair).
+
+To change at compile time, add to the library's `CFLAGS`:
+```makefile
+    -DAPTH_PREEMPT_INSTRUMENT_THRESHOLD=5000
+```
+
+**Important notes:**
+
+- Only user code needs `-finstrument-functions`. LIBAPTH's own sources
+  are compiled without it (the library's hook functions are marked
+  `__attribute__((no_instrument_function))` to avoid infinite recursion).
+- The `__cyg_profile_func_enter` and `__cyg_profile_func_exit` symbols
+  provided by LIBAPTH are weak. If your application provides its own
+  instrumentation hooks (e.g., for profiling), you will need to call
+  `apth_preempt_check()` manually from your hook, or use
+  `APTH_PREEMPT_SIGNAL` mode instead.
+- `-finstrument-functions` adds overhead to every function call. For
+  hot inner loops, you can selectively disable it on specific functions:
+  ```c
+  __attribute__((no_instrument_function))
+  void hot_inner_loop(void) { ... }
+  ```
+- Third-party libraries linked into your application will **not** have
+  instrumentation unless they were also compiled with
+  `-finstrument-functions`. Long-running computations inside
+  uninstrumented library code will not be preempted. If this is a
+  concern, use `APTH_PREEMPT_SIGNAL` mode instead.
+
 ### Reactor / I/O Flags
 
 | Flag | Default | Description |

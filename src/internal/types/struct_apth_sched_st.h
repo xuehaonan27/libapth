@@ -39,6 +39,10 @@ struct apth_sched_st
     int epoll_fd;
     int wake_eventfd;                // eventfd used to wake the scheduler
 
+#ifdef APTH_NUMA
+    int numa_node;                   // NUMA node this scheduler is bound to
+#endif
+
     // Stack memory pool: reuse mmap'd stacks from dead threads to avoid
     // expensive mmap/munmap syscalls (TLB shootdowns) on thread lifecycle.
 #define APTH_STACK_POOL_MAX 32

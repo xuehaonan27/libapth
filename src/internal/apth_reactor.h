@@ -69,14 +69,17 @@ struct apth_reactor
 };
 
 #ifdef APTH_NUMA
-// One reactor per NUMA node
+// One reactor per NUMA node (stub: currently only 1 node)
 extern struct apth_reactor *APTH_REACTORS;
 extern int APTH_REACTOR_COUNT;
 #define REACTOR_FOR(sched) (&APTH_REACTORS[(sched)->numa_node])
+// Default reactor (node 0) for contexts without a scheduler
+#define APTH_DEFAULT_REACTOR (&APTH_REACTORS[0])
 #else
 // Single global reactor
 extern struct apth_reactor APTH_GLOBAL_REACTOR;
 #define REACTOR_FOR(sched) (&APTH_GLOBAL_REACTOR)
+#define APTH_DEFAULT_REACTOR (&APTH_GLOBAL_REACTOR)
 #endif
 
 APTH_INTERNAL int apth_reactor_init(void);

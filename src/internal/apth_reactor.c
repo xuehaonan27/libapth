@@ -13,7 +13,10 @@
 #include <unistd.h>
 #include <errno.h>
 
-#ifndef APTH_NUMA
+#ifdef APTH_NUMA
+struct apth_reactor *APTH_REACTORS = NULL;
+int APTH_REACTOR_COUNT = 0;
+#else
 struct apth_reactor APTH_GLOBAL_REACTOR;
 #endif
 
@@ -655,9 +658,9 @@ static void reactor_wake(struct apth_reactor *r)
 
 // ==================== Public API ====================
 
-APTH_INTERNAL int apth_reactor_init(void)
+// Initialize a single reactor instance. Used by both NUMA and non-NUMA paths.
+static int apth_reactor_init_one(struct apth_reactor *r, const char *name)
 {
-    struct apth_reactor *r = &APTH_GLOBAL_REACTOR;
     memset(r, 0, sizeof(*r));
 
     r->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
@@ -743,16 +746,28 @@ APTH_INTERNAL int apth_reactor_init(void)
         return -1;
     }
 
-    // Detach name for debugging
-    pthread_setname_np(r->thread, "apth-reactor");
+    // Set name for debugging
+    pthread_setname_np(r->thread, name);
 
     return 0;
 }
 
-APTH_INTERNAL void apth_reactor_destroy(void)
+APTH_INTERNAL int apth_reactor_init(void)
 {
-    struct apth_reactor *r = &APTH_GLOBAL_REACTOR;
+#ifdef APTH_NUMA
+    // Stub: single NUMA node for now
+    APTH_REACTOR_COUNT = 1;
+    APTH_REACTORS = (struct apth_reactor *)calloc(APTH_REACTOR_COUNT, sizeof(struct apth_reactor));
+    if (APTH_REACTORS == NULL)
+        return -1;
+    return apth_reactor_init_one(&APTH_REACTORS[0], "apth-reactor-0");
+#else
+    return apth_reactor_init_one(&APTH_GLOBAL_REACTOR, "apth-reactor");
+#endif
+}
 
+static void apth_reactor_destroy_one(struct apth_reactor *r)
+{
     // Signal thread to stop
     atomic_store_release(&r->running, false);
     reactor_wake(r);
@@ -787,6 +802,19 @@ APTH_INTERNAL void apth_reactor_destroy(void)
     apth_func_raw(close)(r->epoll_fd);
     r->wake_eventfd = -1;
     r->epoll_fd = -1;
+}
+
+APTH_INTERNAL void apth_reactor_destroy(void)
+{
+#ifdef APTH_NUMA
+    for (int i = 0; i < APTH_REACTOR_COUNT; i++)
+        apth_reactor_destroy_one(&APTH_REACTORS[i]);
+    free(APTH_REACTORS);
+    APTH_REACTORS = NULL;
+    APTH_REACTOR_COUNT = 0;
+#else
+    apth_reactor_destroy_one(&APTH_GLOBAL_REACTOR);
+#endif
 }
 
 APTH_INTERNAL int apth_reactor_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_event_t ev)
@@ -832,10 +860,8 @@ APTH_INTERNAL void apth_reactor_remove_waiter(apth_sched_t sched, int fd, apth_t
     reactor_wake(r);
 }
 
-APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd)
+static void apth_reactor_notify_fd_closed_one(struct apth_reactor *r, int fd)
 {
-    struct apth_reactor *r = &APTH_GLOBAL_REACTOR;
-
     lll_internal_lock(&r->pending_fd_close_lock);
     int idx = atomic_load_acquire(&r->pending_fd_close_count);
     if (idx < APTH_REACTOR_PENDING_FD_CLOSE_MAX)
@@ -846,4 +872,14 @@ APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd)
     lll_internal_unlock(&r->pending_fd_close_lock);
 
     reactor_wake(r);
+}
+
+APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd)
+{
+#ifdef APTH_NUMA
+    for (int i = 0; i < APTH_REACTOR_COUNT; i++)
+        apth_reactor_notify_fd_closed_one(&APTH_REACTORS[i], fd);
+#else
+    apth_reactor_notify_fd_closed_one(&APTH_GLOBAL_REACTOR, fd);
+#endif
 }

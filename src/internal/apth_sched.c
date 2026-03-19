@@ -99,6 +99,11 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     // Initialize load support
     apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
     sched->loadval = 1.0;
+
+#ifdef APTH_NUMA
+    sched->numa_node = 0; // Stub: all schedulers on node 0 for now
+#endif
+
     sched->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (sched->epoll_fd < 0)
         return apth_error(false, errno);
