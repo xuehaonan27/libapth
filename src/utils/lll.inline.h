@@ -107,7 +107,8 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock, const char *from)
 INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
 {
 #endif
-    apth_t self = CUR_APTH;
+    apth_sched_t cur_sched = CUR_SCHED;
+    apth_t self = (cur_sched != NULL) ? cur_sched->cur : NULL;
     bool is_scheduler = (self == NULL);
 
     // Fast path: try to acquire

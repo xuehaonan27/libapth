@@ -22,8 +22,8 @@ int apth_detach(apth_t th)
             return apth_error(EINVAL, EINVAL);
         else
         {
-            // TODO: Check whether the thread terminated meanwhile.
-            TODO("Check");
+            // Another thread is already joining; cannot detach.
+            return apth_error(EINVAL, EINVAL);
         }
     }
 

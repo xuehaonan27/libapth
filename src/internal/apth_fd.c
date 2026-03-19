@@ -1,26 +1,92 @@
 #include "apth_fd.h"
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_sched.h"
+#include "internal/apth_reactor.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
 #include "utils/lll.inline.h"
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 
-struct apth_fd_entry APTH_FD_TABLE[APTH_FD_TABLE_SIZE];
+// Dynamic FD table
+struct apth_fd_entry *APTH_FD_TABLE = NULL;
+int APTH_FD_TABLE_CAPACITY = 0;
+
+// Lock protecting table growth (rare operation)
+static lll_internal_t fd_table_grow_lock;
 
 APTH_INTERNAL void apth_fd_table_init(void)
 {
-    memset(APTH_FD_TABLE, 0, sizeof(APTH_FD_TABLE));
+    APTH_FD_TABLE_CAPACITY = APTH_FD_TABLE_INIT_CAPACITY;
+    APTH_FD_TABLE = (struct apth_fd_entry *)calloc(APTH_FD_TABLE_CAPACITY, sizeof(struct apth_fd_entry));
+    if (APTH_FD_TABLE == NULL)
+        PANIC("Failed to allocate FD table");
+    lll_internal_init(&fd_table_grow_lock);
     apth_fd_register(0);
     apth_fd_register(1);
     apth_fd_register(2);
 }
 
+APTH_INTERNAL void apth_fd_table_destroy(void)
+{
+    free(APTH_FD_TABLE);
+    APTH_FD_TABLE = NULL;
+    APTH_FD_TABLE_CAPACITY = 0;
+}
+
+// Grow the table to accommodate fd. Must be called under grow lock.
+static void fd_table_grow_to(int min_capacity)
+{
+    int new_cap = APTH_FD_TABLE_CAPACITY;
+    while (new_cap <= min_capacity)
+        new_cap *= 2;
+
+    struct apth_fd_entry *new_table = (struct apth_fd_entry *)calloc(new_cap, sizeof(struct apth_fd_entry));
+    if (new_table == NULL)
+        PANIC("Failed to grow FD table to %d", new_cap);
+
+    // Copy existing entries
+    memcpy(new_table, APTH_FD_TABLE, APTH_FD_TABLE_CAPACITY * sizeof(struct apth_fd_entry));
+
+    // Swap: old readers see stale pointer briefly but won't access beyond old capacity
+    // because all access paths check capacity first. The lock serializes writers.
+    struct apth_fd_entry *old_table = APTH_FD_TABLE;
+    APTH_FD_TABLE = new_table;
+    // Memory fence to ensure new pointer is visible before new capacity
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    APTH_FD_TABLE_CAPACITY = new_cap;
+
+    free(old_table);
+    apth_debug("FD table grown to capacity %d", new_cap);
+}
+
+APTH_INTERNAL void apth_fd_ensure_capacity(int fd)
+{
+    if (fd < APTH_FD_TABLE_CAPACITY)
+        return;
+
+    lll_internal_lock(&fd_table_grow_lock);
+    // Re-check under lock (another thread may have grown it)
+    if (fd >= APTH_FD_TABLE_CAPACITY)
+        fd_table_grow_to(fd);
+    lll_internal_unlock(&fd_table_grow_lock);
+}
+
+APTH_INTERNAL bool apth_fd_is_managed(int fd)
+{
+    if (fd < 0 || fd >= APTH_FD_TABLE_CAPACITY)
+        return false;
+    return atomic_load_acquire(&APTH_FD_TABLE[fd].managed) != 0;
+}
+
 APTH_INTERNAL void apth_fd_register(int fd)
 {
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+    if (fd < 0)
         return;
+
+    // Grow table if needed
+    apth_fd_ensure_capacity(fd);
 
     // Get current flags
     int flags = apth_func_raw(fcntl)(fd, F_GETFL, 0);
@@ -47,7 +113,7 @@ APTH_INTERNAL void apth_fd_register(int fd)
 
 APTH_INTERNAL void apth_fd_unregister(int fd)
 {
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+    if (fd < 0 || fd >= APTH_FD_TABLE_CAPACITY)
         return;
 
     // Just mark as unmanaged - don't restore flags
@@ -58,108 +124,29 @@ APTH_INTERNAL void apth_fd_unregister(int fd)
 
 APTH_INTERNAL void apth_fd_register_optional(int fd)
 {
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+    if (fd < 0)
         return;
-    if (atomic_load_acquire(&APTH_FD_TABLE[fd].managed) == 0)
+    if (!apth_fd_is_managed(fd))
     {
         // Not managed but we are going to use it
         apth_fd_register(fd);
     }
 }
 
-// // Before performing I/O operation. Set to NONBLOCK if the fd is used first time
-// APTH_INTERNAL int apth_fd_acquire(int fd)
-// {
-//     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
-//         return -1;
-
-//     struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
-
-//     // Check if this is the first time we're seeing this fd (refcount == 0)
-//     int old_ref = atomic_fetch_add_acq_rel(&e->refcount, 1);
-
-//     if (old_ref == 0)
-//     {
-//         // First user of this fd - need to set it to NONBLOCK
-//         // This happens either on first use, or after fd was closed and reopened
-//         e->orig_flags = fcntl(fd, F_GETFL, 0);
-//         if (e->orig_flags == -1)
-//         {
-//             // Invalid fd - decrement refcount and return error
-//             atomic_fetch_sub_acq_rel(&e->refcount, 1);
-//             return -1;
-//         }
-
-//         // Set to NONBLOCK if not already
-//         if (!(e->orig_flags & O_NONBLOCK))
-//         {
-//             if (fcntl(fd, F_SETFL, e->orig_flags | O_NONBLOCK) == -1)
-//             {
-//                 // fcntl failed - decrement refcount and return error
-//                 atomic_fetch_sub_acq_rel(&e->refcount, 1);
-//                 return -1;
-//             }
-//         }
-
-//         atomic_store_release(&e->managed, 1);
-//     }
-
-//     return (e->orig_flags & O_NONBLOCK) ? APTH_FDMODE_NONBLOCK : APTH_FDMODE_BLOCK;
-// }
-
-// // Perform after I/O operation: just decrement refcount
-// // No need to restore flags here - fd stays NONBLOCK while managed
-// // Flags are only restored in apth_fd_unregister() when fd is closed
-// APTH_INTERNAL void apth_fd_release(int fd)
-// {
-//     if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
-//         return;
-
-//     struct apth_fd_entry *e = &APTH_FD_TABLE[fd];
-
-//     // Just decrement refcount, no fcntl() needed
-//     // This eliminates syscalls in the hot path
-//     atomic_fetch_sub_acq_rel(&e->refcount, 1);
-// }
-
-// Notify ALL schedulers (including the caller's own) that `fd` has been closed.
-// Each scheduler will process the notification at the start of its next event
-// manager iteration, failing all local waiters for this fd.
+// Notify the global reactor that `fd` has been closed.
+// The reactor will fail all waiters for this fd and wake affected schedulers.
 APTH_INTERNAL void apth_notify_fd_closed(int fd)
 {
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+    if (fd < 0)
         return;
 
-    apth_debug("notifying all schedulers: fd=%d closed", fd);
-
-    lll_internal_lock(&GLOBAL_POOL.pool_lock);
-    FOR_ELEMENT_IN_LIST(GLOBAL_POOL.wrkpthrs_list, e)
-    {
-        apth_worker_t worker = apth_worker_t_list_entry(e);
-        apth_sched_t sched = worker->sched;
-        if (sched == NULL)
-            continue;
-
-        lll_internal_lock(&sched->pending_fd_close_lock);
-        int idx = atomic_load_acquire(&sched->pending_fd_close_count);
-        if (idx < APTH_PENDING_FD_CLOSE_MAX)
-        {
-            sched->pending_fd_close_fds[idx] = fd;
-            atomic_store_release(&sched->pending_fd_close_count, idx + 1);
-        }
-        else
-        {
-            apth_debug("WARNING: pending_fd_close overflow for sched %d, fd=%d dropped",
-                       sched->id, fd);
-        }
-        lll_internal_unlock(&sched->pending_fd_close_lock);
-    }
-    lll_internal_unlock(&GLOBAL_POOL.pool_lock);
+    apth_debug("notifying reactor: fd=%d closed", fd);
+    apth_reactor_notify_fd_closed(fd);
 }
 
 APTH_INTERNAL bool apth_util_fd_valid(int fd)
 {
-    if (fd < 0 || fd >= APTH_FD_TABLE_SIZE)
+    if (fd < 0)
         return false;
     int flags = apth_func_raw(fcntl)(fd, F_GETFL);
     if (flags == -1 && errno == EBADF)

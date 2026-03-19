@@ -10,6 +10,7 @@ struct apth_cond_st
 {
     lll_apth_t guard;    // protects internal fields)
     struct list waiters; // FIFO queue of struct apth_sync_waiter
+    clockid_t clock_id;  // clock for timed waits (CLOCK_REALTIME or CLOCK_MONOTONIC)
 };
 
 #define APTH_COND_CAST(cond_ptr) ((struct apth_cond_st *)(cond_ptr))

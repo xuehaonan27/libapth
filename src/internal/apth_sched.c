@@ -8,7 +8,6 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
-#include "internal/apth_fd_slot.h"
 #include "internal/apth_time.h"
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_thqueue.h"
@@ -130,39 +129,8 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
         }
     }
 
-    // sched->epoll_fd_count = 0;
-    // Initialize fd slot table
-    for (int i = 0; i < APTH_EPOLL_FD_SLOT_TABLE_SIZE; i++)
-    {
-        sched->fd_slot_table[i].fd = i;
-        sched->fd_slot_table[i].aggregate_events = 0;
-        list_init(&sched->fd_slot_table[i].waiters);
-        sched->fd_slot_table[i].waiter_count = 0;
-        sched->fd_slot_table[i].registered = false;
-        sched->fd_slot_table[i].readable_count = 0;
-        sched->fd_slot_table[i].writeable_count = 0;
-        sched->fd_slot_table[i].exception_count = 0;
-        sched->fd_slot_table[i].epoll_dirty = false;
-        sched->fd_slot_table[i].on_dirty_list = false;
-    }
-    list_init(&sched->active_fd_slots);
-    sched->active_fd_count = 0;
-    list_init(&sched->dirty_fd_slots);
-
-    // Initialize waiter memory pool
-    list_init(&sched->free_waiters);
-    for (int i = 0; i < APTH_WAITER_POOL_SIZE; i++)
-    {
-        list_push_back(&sched->free_waiters, &sched->waiter_pool[i].elem);
-    }
-    sched->waiter_pool_allocated = 0;
-
     // Initialize stack pool
     sched->stack_pool_count = 0;
-
-    // Initialize pending fd close notification queue
-    atomic_store_release(&sched->pending_fd_close_count, 0);
-    lll_internal_init(&sched->pending_fd_close_lock);
 
     // Store the sched into the worker
     worker->sched = sched;
@@ -197,7 +165,15 @@ APTH_INTERNAL void inc_alive_thrcnt(void)
 
 APTH_INTERNAL void dec_alive_thrcnt(void)
 {
-    atomic_decrement_if_positive(&apth_alive_nthreads);
+    unsigned int old = atomic_fetch_sub_release(&apth_alive_nthreads, 1);
+    // If we just decremented to 0 and main has exited, wake worker0
+    // so it can promptly detect the end-of-process condition.
+    if (old == 1 && atomic_load_acquire(&MAIN_APTH_EXITED) != 0)
+    {
+        apth_worker_t w0 = GLOBAL_POOL.worker_ptr_mem_start[0];
+        if (w0 != NULL && w0->sched != NULL)
+            apth_sched_wake(w0->sched);
+    }
 }
 
 APTH_INTERNAL unsigned int get_apth_alive_nthreads(void)
@@ -292,9 +268,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
         apth_func_raw(close)(sched->epoll_fd);
         sched->epoll_fd = -1;
     }
-
-    // Waiters in active_fd_slots and fd_slot_table should have been cleared
-    // in drain_thqueue process and memory freed. No more clean to do.
 
     // Signal mask restore, allow all signals
     sigset_t sigs;
@@ -630,12 +603,21 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             else
             {
                 // For joinable threads, transfer to terminated queue
-                // and set state WHILE HOLDING the terminated queue lock
+                // and set state WHILE HOLDING the terminated queue lock.
+                // Lock in address order to prevent deadlock.
                 apth_thqueue_t running_q = THQUEUE(sched, running);
                 apth_thqueue_t term_q = THQUEUE(sched, terminated);
 
-                lll_internal_lock(&running_q->th_list_lock);
-                lll_internal_lock(&term_q->th_list_lock);
+                if (running_q < term_q)
+                {
+                    lll_internal_lock(&running_q->th_list_lock);
+                    lll_internal_lock(&term_q->th_list_lock);
+                }
+                else
+                {
+                    lll_internal_lock(&term_q->th_list_lock);
+                    lll_internal_lock(&running_q->th_list_lock);
+                }
 
                 // Remove from running queue
                 list_remove(&th->elem);
@@ -653,8 +635,17 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // This ensures atomicity of "state change + queue insertion"
                 atomic_store_release(&th->state, APTH_STATE_TERMINATED);
 
-                lll_internal_unlock(&term_q->th_list_lock);
-                lll_internal_unlock(&running_q->th_list_lock);
+                // Unlock in reverse order
+                if (running_q < term_q)
+                {
+                    lll_internal_unlock(&term_q->th_list_lock);
+                    lll_internal_unlock(&running_q->th_list_lock);
+                }
+                else
+                {
+                    lll_internal_unlock(&running_q->th_list_lock);
+                    lll_internal_unlock(&term_q->th_list_lock);
+                }
             }
         }
         else

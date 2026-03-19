@@ -21,8 +21,7 @@ APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ...)
         int flags = va_arg(args, int);
 
         // If this FD is managed by LIBAPTH, force O_NONBLOCK
-        if (fd >= 0 && fd < APTH_FD_TABLE_SIZE &&
-            atomic_load_acquire(&APTH_FD_TABLE[fd].managed))
+        if (apth_fd_is_managed(fd))
         {
             // Silently add O_NONBLOCK to whatever flags user requested
             flags |= O_NONBLOCK;
@@ -40,8 +39,7 @@ APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ...)
         int new_fd = apth_func_raw(fcntl)(fd, cmd, arg);
         va_end(args);
 
-        if (new_fd >= 0 && fd >= 0 && fd < APTH_FD_TABLE_SIZE &&
-            atomic_load_acquire(&APTH_FD_TABLE[fd].managed))
+        if (new_fd >= 0 && apth_fd_is_managed(fd))
         {
             // Original FD was managed, so manage the duplicate too
             apth_fd_register(new_fd);

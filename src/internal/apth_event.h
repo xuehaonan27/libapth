@@ -7,7 +7,6 @@
 #include <stdbool.h>
 
 APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool dopoll);
-APTH_INTERNAL void apth_sched_process_pending_fd_closes(apth_sched_t sched);
 APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev);
 APTH_INTERNAL void apth_event_isolate(apth_event_t ev);
 APTH_INTERNAL int apth_wait_event_list(struct list *el);

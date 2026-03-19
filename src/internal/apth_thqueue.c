@@ -116,13 +116,28 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
     struct list_elem *e = NULL;
     apth_t th = APTH_NULL;
 
-    // First we should remove `th` from `from`
-    lll_internal_lock(&from->th_list_lock);
-    lll_internal_lock(&to->th_list_lock);
+    // Lock in address order to prevent deadlock
+    if (from < to)
+    {
+        lll_internal_lock(&from->th_list_lock);
+        lll_internal_lock(&to->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_lock(&to->th_list_lock);
+        lll_internal_lock(&from->th_list_lock);
+    }
+    else
+    {
+        // Same queue, single lock
+        lll_internal_lock(&from->th_list_lock);
+    }
+
     if (list_empty(&from->th_list))
     {
         assert_msg(from->size == 0, "from->size == %d", from->size);
-        lll_internal_unlock(&to->th_list_lock);
+        if (from != to)
+            lll_internal_unlock(&to->th_list_lock);
         lll_internal_unlock(&from->th_list_lock);
         return th;
     }
@@ -143,8 +158,22 @@ APTH_INTERNAL apth_t transfer_one_th(apth_thqueue_t from, apth_thqueue_t to,
     // set_belonging_queue_of(th, to);
     th->current_queue = to;
     atomic_store_release(&th->state, to->th_state);
-    lll_internal_unlock(&to->th_list_lock);
-    lll_internal_unlock(&from->th_list_lock);
+
+    // Unlock in reverse order of locking
+    if (from < to)
+    {
+        lll_internal_unlock(&to->th_list_lock);
+        lll_internal_unlock(&from->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_unlock(&from->th_list_lock);
+        lll_internal_unlock(&to->th_list_lock);
+    }
+    else
+    {
+        lll_internal_unlock(&from->th_list_lock);
+    }
 
     return th;
 }
@@ -157,9 +186,23 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
     assert(th->current_queue != NULL);
     assert(th->current_queue == from);
 
-    // First we should remove `th` from `from`
-    lll_internal_lock(&from->th_list_lock);
-    lll_internal_lock(&to->th_list_lock);
+    // Lock in address order to prevent deadlock
+    if (from < to)
+    {
+        lll_internal_lock(&from->th_list_lock);
+        lll_internal_lock(&to->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_lock(&to->th_list_lock);
+        lll_internal_lock(&from->th_list_lock);
+    }
+    else
+    {
+        // Same queue, single lock
+        lll_internal_lock(&from->th_list_lock);
+    }
+
     list_remove(&th->elem);
     from->size--;
 
@@ -169,8 +212,22 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
     // set_belonging_queue_of(th, to);
     th->current_queue = to;
     atomic_store_release(&th->state, to->th_state);
-    lll_internal_unlock(&from->th_list_lock);
-    lll_internal_unlock(&to->th_list_lock);
+
+    // Unlock in reverse order of locking
+    if (from < to)
+    {
+        lll_internal_unlock(&to->th_list_lock);
+        lll_internal_unlock(&from->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_unlock(&from->th_list_lock);
+        lll_internal_unlock(&to->th_list_lock);
+    }
+    else
+    {
+        lll_internal_unlock(&from->th_list_lock);
+    }
 }
 
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux)

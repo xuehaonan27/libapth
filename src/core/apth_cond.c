@@ -6,6 +6,7 @@
 #include "internal/apth_sync_waiter.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
+#include <time.h>
 
 // ==================== Condition Variable Attributes ====================
 
@@ -55,7 +56,6 @@ int apth_condattr_getclock(const apth_condattr_t *attr, clockid_t *clock_id)
 
 int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr)
 {
-    (void)attr;
     if (cond == NULL)
         return EINVAL;
 
@@ -63,6 +63,18 @@ int apth_cond_init(apth_cond_t *cond, const apth_condattr_t *attr)
 
     lll_apth_init(&c->guard);
     list_init(&c->waiters);
+
+    // Store clock_id from attributes (default CLOCK_REALTIME)
+    if (attr != NULL)
+    {
+        const struct apth_condattr_st *a = APTH_CONDATTR_CONST_CAST(attr);
+        c->clock_id = a->clock_id;
+    }
+    else
+    {
+        c->clock_id = CLOCK_REALTIME;
+    }
+
     return 0;
 }
 
@@ -146,14 +158,41 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     w.ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     w.ev.epoll_registered = false;
 
-    // Prepare TIME event (stack-allocated)
+    // Prepare TIME event (stack-allocated).
+    // The internal timer uses gettimeofday (CLOCK_REALTIME).
+    // If the cond was configured with CLOCK_MONOTONIC, convert the
+    // absolute deadline to a CLOCK_REALTIME-based absolute time.
     struct apth_event_st timer_ev;
     timer_ev.ev_status = APTH_EV_STATUS_PENDING;
     timer_ev.ev_type = APTH_EVENT_TYPE_TIME;
     timer_ev.ev_goal = APTH_GOAL_UNTIL_OCCURRED;
     timer_ev.epoll_registered = false;
-    timer_ev.ev_args.TIME.tv.tv_sec = abstime->tv_sec;
-    timer_ev.ev_args.TIME.tv.tv_usec = abstime->tv_nsec / 1000;
+
+    if (c->clock_id == CLOCK_MONOTONIC)
+    {
+        // Convert CLOCK_MONOTONIC abstime to CLOCK_REALTIME:
+        // realtime_deadline = now_realtime + (abstime - now_monotonic)
+        struct timespec mono_now, real_now;
+        clock_gettime(CLOCK_MONOTONIC, &mono_now);
+        clock_gettime(CLOCK_REALTIME, &real_now);
+
+        long long diff_sec = abstime->tv_sec - mono_now.tv_sec;
+        long diff_nsec = abstime->tv_nsec - mono_now.tv_nsec;
+        if (diff_nsec < 0) { diff_sec--; diff_nsec += 1000000000L; }
+
+        long long real_sec = real_now.tv_sec + diff_sec;
+        long real_nsec = real_now.tv_nsec + diff_nsec;
+        if (real_nsec >= 1000000000L) { real_sec++; real_nsec -= 1000000000L; }
+
+        timer_ev.ev_args.TIME.tv.tv_sec = (long)real_sec;
+        timer_ev.ev_args.TIME.tv.tv_usec = real_nsec / 1000;
+    }
+    else
+    {
+        // CLOCK_REALTIME: abstime is already in the right clock domain
+        timer_ev.ev_args.TIME.tv.tv_sec = abstime->tv_sec;
+        timer_ev.ev_args.TIME.tv.tv_usec = abstime->tv_nsec / 1000;
+    }
 
     // Enqueue waiter BEFORE releasing the mutex
     lll_apth_lock(&c->guard);

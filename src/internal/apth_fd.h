@@ -19,13 +19,19 @@ struct apth_fd_entry
     _Atomic(int) managed; // Whether this filedescriptor is managed by libapth
 };
 
-#define APTH_FD_TABLE_SIZE FD_SETSIZE
+// Dynamic FD table: pointer + capacity (replaces fixed array)
+extern struct apth_fd_entry *APTH_FD_TABLE;
+extern int APTH_FD_TABLE_CAPACITY;
 
-extern struct apth_fd_entry APTH_FD_TABLE[APTH_FD_TABLE_SIZE];
+// Initial capacity matches FD_SETSIZE for backwards compatibility
+#define APTH_FD_TABLE_INIT_CAPACITY FD_SETSIZE
 
 APTH_INTERNAL void apth_fd_table_init(void);
-APTH_INTERNAL void apth_fd_register(int fd);   // Register when socket/open
-APTH_INTERNAL void apth_fd_unregister(int fd); // Unregister when close
+APTH_INTERNAL void apth_fd_table_destroy(void);
+APTH_INTERNAL void apth_fd_ensure_capacity(int fd); // Grow table if needed
+APTH_INTERNAL bool apth_fd_is_managed(int fd);      // Check if fd is in table and managed
+APTH_INTERNAL void apth_fd_register(int fd);         // Register when socket/open
+APTH_INTERNAL void apth_fd_unregister(int fd);       // Unregister when close
 // TODO: we will remove this one day, when we fully hacked GLIBC
 APTH_INTERNAL void apth_fd_register_optional(int fd);
 APTH_INTERNAL void apth_notify_fd_closed(int fd); // Notify all schedulers about fd close

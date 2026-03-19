@@ -278,7 +278,7 @@ APTH_DEFINE_HOOK(int, close_range,
     apth_hook_debug(close_range);
 
     // Unregister and notify for all fds in range before closing
-    for (unsigned int fd = lowfd; fd <= maxfd && fd < APTH_FD_TABLE_SIZE; fd++)
+    for (unsigned int fd = lowfd; fd <= maxfd && fd < (unsigned int)APTH_FD_TABLE_CAPACITY; fd++)
     {
         if (apth_util_fd_valid(fd))
         {
@@ -297,7 +297,7 @@ APTH_DEFINE_HOOK(void, closefrom, (int lowfd), (lowfd))
     apth_hook_debug(closefrom);
 
     // Unregister and notify for all fds from lowfd onwards before closing
-    for (int fd = lowfd; fd < APTH_FD_TABLE_SIZE; fd++)
+    for (int fd = lowfd; fd < APTH_FD_TABLE_CAPACITY; fd++)
     {
         if (apth_util_fd_valid(fd))
         {

@@ -6,7 +6,6 @@
 #include "internal/apth_ctx.h"
 #include "internal/apth_time.h"
 #include "internal/apth_thqueue.h"
-#include "internal/apth_fd_slot.h"
 #include "utils/lll.h"
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
@@ -34,19 +33,11 @@ struct apth_sched_st
     volatile _Atomic(bool) opening;  // scheduler is opening
     apth_time_t apth_loadticknext;   // scheduler load next tick
     float loadval;                   // scheduler load value
-    int epoll_fd;                    // epoll instance for this scheduler
-    int wake_eventfd;                // eventfd used to wake the scheduler from epoll_wait
 
-    struct apth_epoll_fd_slot fd_slot_table[APTH_EPOLL_FD_SLOT_TABLE_SIZE]; // fd -> slot fast search
-    struct list active_fd_slots;                                            // slots with waiters
-    int active_fd_count;
-    struct list dirty_fd_slots;                                             // slots needing epoll MOD
-
-// Memory pool for apth_epoll_waiter structures to avoid malloc/free
-#define APTH_WAITER_POOL_SIZE 256
-    struct apth_epoll_waiter waiter_pool[APTH_WAITER_POOL_SIZE];
-    struct list free_waiters;  // List of free waiter structures
-    int waiter_pool_allocated; // Number of waiters allocated from pool
+    // Scheduler's own epoll_fd: only monitors wake_eventfd for blocking.
+    // FD I/O events are handled by the global reactor.
+    int epoll_fd;
+    int wake_eventfd;                // eventfd used to wake the scheduler
 
     // Stack memory pool: reuse mmap'd stacks from dead threads to avoid
     // expensive mmap/munmap syscalls (TLB shootdowns) on thread lifecycle.
@@ -56,16 +47,6 @@ struct apth_sched_st
         size_t size;    // total size (stacksize + guardsize)
     } stack_pool[APTH_STACK_POOL_MAX];
     int stack_pool_count;
-
-    // Pending fd close notifications from other schedulers (or self).
-    // When an fd is closed, the closing scheduler pushes the fd number into
-    // every scheduler's pending list. Each scheduler drains its list at the
-    // beginning of its event manager loop, failing all local waiters for
-    // those fds.
-#define APTH_PENDING_FD_CLOSE_MAX 128
-    int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
-    _Atomic(int) pending_fd_close_count;
-    lll_internal_t pending_fd_close_lock; // Type 2 LLL
 };
 
 #endif // __LIBAPTH_INTERNAL_TYPES_STRUCT_APTH_SCHED_ST_H

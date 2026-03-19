@@ -505,6 +505,8 @@ APTH_DEFINE_HOOK(int, poll,
             goal |= APTH_GOAL_UNTIL_FD_READABLE;
         if (fds[i].events & POLLOUT)
             goal |= APTH_GOAL_UNTIL_FD_WRITEABLE;
+        if (fds[i].events & POLLPRI)
+            goal |= APTH_GOAL_UNTIL_FD_EXCEPTION;
         struct apth_event_st ev = EVENT_FD(fds[i].fd, goal);
         evs[i] = ev;
         apth_event_list_add(&event_list, &evs[i]);

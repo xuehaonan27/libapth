@@ -3,6 +3,8 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 APTH_DEFINE_HOOK(ssize_t, read,
                  (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
@@ -47,10 +49,12 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
                  (int fd, void *buf, size_t nbytes, size_t buflen),
                  (fd, buf, nbytes, buflen))
 {
-
-    // TODO: perform check
     apth_hook_debug(__read_chk);
-    (void)buflen;
+    if (nbytes > buflen)
+    {
+        fprintf(stderr, "*** buffer overflow detected ***: terminated\n");
+        abort();
+    }
     return apth_func(read)(fd, buf, nbytes);
 }
 
@@ -153,9 +157,12 @@ APTH_DEFINE_HOOK(ssize_t, __pread_chk,
                  (int fd, void *buf, size_t nbytes, off_t offset, size_t buflen),
                  (fd, buf, nbytes, offset, buflen))
 {
-    // TODO: perform check
     apth_hook_debug(__pread_chk);
-    (void)buflen;
+    if (nbytes > buflen)
+    {
+        fprintf(stderr, "*** buffer overflow detected ***: terminated\n");
+        abort();
+    }
     return apth_func(pread)(fd, buf, nbytes, offset);
 }
 
@@ -204,7 +211,11 @@ APTH_DEFINE_HOOK(ssize_t, __pread64_chk,
                  (fd, buf, nbytes, offset, buflen))
 {
     apth_hook_debug(__pread64_chk);
-    (void)buflen;
+    if (nbytes > buflen)
+    {
+        fprintf(stderr, "*** buffer overflow detected ***: terminated\n");
+        abort();
+    }
     return apth_func(pread64)(fd, buf, nbytes, offset);
 }
 

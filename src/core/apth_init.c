@@ -5,6 +5,7 @@
 #include "internal/apth_worker.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_reactor.h"
 #include "internal/apth_preempt.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
@@ -94,6 +95,13 @@ void apth_init(apth_init_t *initvals)
     }
 
     apth_fd_table_init();
+
+    // Initialize global reactor before workers
+    if (apth_reactor_init() != 0)
+    {
+        apth_debug("fail to initialize global reactor");
+        return;
+    }
 
     // Initialize preemption system
     apth_preempt_init();
@@ -203,6 +211,9 @@ void apth_drop(void)
         PANIC("fail to drop global scheduler pool");
     }
 
+    // Destroy global reactor after workers stopped
+    apth_reactor_destroy();
+
     if (apth_signal_system_drop() != 0)
     {
         apth_debug("fail to drop global scheduler pool");
@@ -210,6 +221,8 @@ void apth_drop(void)
     }
 
     apth_preempt_drop();
+
+    apth_fd_table_destroy();
 
     if (apth_func_system_drop() != 0)
     {
