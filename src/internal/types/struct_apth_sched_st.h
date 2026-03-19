@@ -48,6 +48,15 @@ struct apth_sched_st
     struct list free_waiters;  // List of free waiter structures
     int waiter_pool_allocated; // Number of waiters allocated from pool
 
+    // Stack memory pool: reuse mmap'd stacks from dead threads to avoid
+    // expensive mmap/munmap syscalls (TLB shootdowns) on thread lifecycle.
+#define APTH_STACK_POOL_MAX 32
+    struct {
+        char *mem;      // mmap'd region start
+        size_t size;    // total size (stacksize + guardsize)
+    } stack_pool[APTH_STACK_POOL_MAX];
+    int stack_pool_count;
+
     // Pending fd close notifications from other schedulers (or self).
     // When an fd is closed, the closing scheduler pushes the fd number into
     // every scheduler's pending list. Each scheduler drains its list at the

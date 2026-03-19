@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
@@ -155,6 +156,9 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     }
     sched->waiter_pool_allocated = 0;
 
+    // Initialize stack pool
+    sched->stack_pool_count = 0;
+
     // Initialize pending fd close notification queue
     atomic_store_release(&sched->pending_fd_close_count, 0);
     lll_internal_init(&sched->pending_fd_close_lock);
@@ -265,7 +269,13 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // free(sched->waked_queue);
     // free(sched->running_queue);
 
-    // TODO: report scheduler statistics if in debugging mode
+    // Drain stack pool
+    for (int i = 0; i < sched->stack_pool_count; i++)
+    {
+        if (sched->stack_pool[i].mem != NULL)
+            munmap(sched->stack_pool[i].mem, sched->stack_pool[i].size);
+    }
+    sched->stack_pool_count = 0;
 
     // Drop wake eventfd (before epoll_fd so it's automatically removed from epoll)
     if (sched->wake_eventfd >= 0)

@@ -1,5 +1,6 @@
 #include "apth_tcb.h"
 #include "internal/apth_sched.h"
+#include "internal/types.h"
 #include "utils/apth_errno.h"
 #include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
@@ -12,6 +13,49 @@
 
 // The most lower 2 bits should be 0, meaning TCB should be at least 4 bytes aligned.
 #define APTH_ALIGNED_ASSURE(t) (((uintptr_t)(t) & 0x3) == 0)
+
+// Try to get a cached stack from the scheduler's stack pool.
+// Returns the mmap'd region pointer on hit, or NULL on miss.
+static char *stack_pool_get(apth_sched_t sched, size_t total_size)
+{
+    if (sched == NULL)
+        return NULL;
+    for (int i = 0; i < sched->stack_pool_count; i++)
+    {
+        if (sched->stack_pool[i].size == total_size)
+        {
+            char *mem = sched->stack_pool[i].mem;
+            // Swap with last entry and shrink pool
+            sched->stack_pool_count--;
+            if (i < sched->stack_pool_count)
+                sched->stack_pool[i] = sched->stack_pool[sched->stack_pool_count];
+            apth_debug("stack pool hit: reusing %zu byte stack at %p", total_size, mem);
+            return mem;
+        }
+    }
+    return NULL;
+}
+
+// Return a stack to the pool. If pool is full, munmap it.
+static void stack_pool_put(apth_sched_t sched, char *mem, size_t total_size)
+{
+    if (sched == NULL || sched->stack_pool_count >= APTH_STACK_POOL_MAX)
+    {
+        // Pool full or no scheduler — release back to OS
+        munmap(mem, total_size);
+        return;
+    }
+    // Re-protect the guard page region as read-write before caching,
+    // so the next user of this stack can re-protect cleanly.
+    // (mprotect is idempotent for already-RW pages, cheap for guard pages)
+    mprotect(mem, total_size, PROT_READ | PROT_WRITE);
+
+    int idx = sched->stack_pool_count++;
+    sched->stack_pool[idx].mem = mem;
+    sched->stack_pool[idx].size = total_size;
+    apth_debug("stack pool put: cached %zu byte stack at %p (pool=%d)",
+               total_size, mem, sched->stack_pool_count);
+}
 
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t guardsize)
 {
@@ -50,31 +94,34 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
     {
         // Allocate our own stack with guard page support
         size_t total_size = stacksize;
-        size_t guard_pages = 0;
 
         if (guardsize > 0)
         {
             // Round guardsize up to page boundary
             size_t pagesize = page_size();
-            guard_pages = (guardsize + pagesize - 1) / pagesize;
+            size_t guard_pages = (guardsize + pagesize - 1) / pagesize;
             guardsize = guard_pages * pagesize;
             t->guardsize = guardsize;
             total_size += guardsize;
         }
 
-        // Use mmap for better control over memory protection
-        void *mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (mem == MAP_FAILED)
+        // Try the scheduler's stack pool first
+        apth_sched_t sched = CUR_SCHED;
+        char *mem = stack_pool_get(sched, total_size);
+
+        if (mem == NULL)
         {
-            apth_shield
+            // Pool miss — allocate from OS
+            mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (mem == MAP_FAILED)
             {
-                free(t);
+                apth_shield { free(t); }
+                return APTH_NULL;
             }
-            return APTH_NULL;
         }
 
-        t->stack_mem_start = (char *)mem;
+        t->stack_mem_start = mem;
 
         // Set up guard page if requested
         if (guardsize > 0)
@@ -84,7 +131,6 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
             if (mprotect(t->stack_mem_start, guardsize, PROT_NONE) != 0)
             {
                 apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
-                // Continue anyway - we'll just not have hardware protection
             }
 #else
             // Stack grows upward: guard page at the highest address
@@ -125,12 +171,9 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
 
     if (t->stack_mem_start != NULL && !t->stackloan)
     {
-        // Free stack allocated with mmap
+        // Return stack to pool instead of munmap
         size_t total_size = t->stacksize + t->guardsize;
-        if (munmap(t->stack_mem_start, total_size) != 0)
-        {
-            apth_debug("Warning: munmap failed: %s", strerror(errno));
-        }
+        stack_pool_put(sched, t->stack_mem_start, total_size);
     }
 
     assert_msg(t->cleanups == NULL, "apth %p try to TCB free without executing cleanups", t);
@@ -138,12 +181,8 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
     // Clear magic number to invalidate the TCB
     t->magic = 0;
 
-    // TODO: Clear other fields
-
     free(t);
 
     // Decrement
     dec_thrcnt(sched);
-
-    return;
 }
