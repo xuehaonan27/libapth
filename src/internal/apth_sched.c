@@ -10,6 +10,7 @@
 #include "internal/apth_fd.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
+#include "internal/apth_iouring.h"
 #include "internal/apth_time.h"
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_thqueue.h"
@@ -107,23 +108,57 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->numa_node = 0; // Stub: all schedulers on node 0 for now
 #endif
 
-    sched->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    if (sched->epoll_fd < 0)
-        return apth_error(false, errno);
-
-    // Create wake eventfd and register it with our epoll so other threads can
-    // interrupt a blocking epoll_wait when new work arrives.
+    // Create wake eventfd (always needed, both backends use it)
     sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (sched->wake_eventfd < 0)
-    {
-        apth_func_raw(close)(sched->epoll_fd);
-        sched->epoll_fd = -1;
         return apth_error(false, errno);
+    apth_fd_register(sched->wake_eventfd);
+
+    sched->epoll_fd = -1;
+
+#ifdef APTH_USE_IOURING
+    sched->use_iouring = apth_iouring_available();
+    if (sched->use_iouring)
+    {
+        if (apth_iouring_init(&sched->uring_ctx, 256) < 0)
+        {
+            apth_debug("io_uring init failed for sched %d, falling back to epoll", sched->id);
+            sched->use_iouring = false;
+        }
+        else
+        {
+            list_init(&sched->uring_pending_cancels);
+
+            // Register wake_eventfd with io_uring (one-shot POLL_ADD)
+            struct io_uring_sqe *sqe = io_uring_get_sqe(&sched->uring_ctx.ring);
+            if (sqe)
+            {
+                io_uring_prep_poll_add(sqe, sched->wake_eventfd, POLLIN);
+                io_uring_sqe_set_data64(sqe, URING_UD_WAKE);
+                io_uring_submit(&sched->uring_ctx.ring);
+            }
+            else
+            {
+                apth_debug("io_uring: failed to get SQE for wake_eventfd");
+                apth_iouring_destroy(&sched->uring_ctx);
+                sched->use_iouring = false;
+            }
+        }
     }
 
-    apth_fd_register(sched->epoll_fd);
-    apth_fd_register(sched->wake_eventfd);
+    if (!sched->use_iouring)
+#endif
     {
+        // epoll backend
+        sched->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+        if (sched->epoll_fd < 0)
+        {
+            apth_func_raw(close)(sched->wake_eventfd);
+            sched->wake_eventfd = -1;
+            return apth_error(false, errno);
+        }
+        apth_fd_register(sched->epoll_fd);
+
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLET;
         ev.data.fd = sched->wake_eventfd;
@@ -137,7 +172,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
         }
     }
 
-#ifndef APTH_USE_REACTOR
     // Initialize inline poller: per-scheduler FD slot table
     sched->fd_slot_capacity = APTH_FD_TABLE_INIT_CAPACITY;
     sched->fd_slots = (struct apth_epoll_fd_slot *)calloc(sched->fd_slot_capacity, sizeof(struct apth_epoll_fd_slot));
@@ -180,7 +214,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     // Initialize pending fd close queue
     atomic_store_release(&sched->pending_fd_close_count, 0);
     lll_internal_init(&sched->pending_fd_close_lock);
-#endif
 
     // Initialize stack pool
     sched->stack_pool_count = 0;
@@ -299,7 +332,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // free(sched->waked_queue);
     // free(sched->running_queue);
 
-#ifndef APTH_USE_REACTOR
     // Drain inline poller waiters and free fd_slots
     if (sched->fd_slots != NULL)
     {
@@ -325,7 +357,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
         free(sched->waiter_pool);
         sched->waiter_pool = NULL;
     }
-#endif
 
     // Drain stack pool
     for (int i = 0; i < sched->stack_pool_count; i++)
@@ -335,17 +366,34 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     }
     sched->stack_pool_count = 0;
 
-    // Drop wake eventfd (before epoll_fd so it's automatically removed from epoll)
+#ifdef APTH_USE_IOURING
+    if (sched->use_iouring)
+    {
+        // Free cancelled waiters still awaiting CQE
+        while (!list_empty(&sched->uring_pending_cancels))
+        {
+            struct list_elem *e = list_pop_front(&sched->uring_pending_cancels);
+            struct apth_epoll_waiter *w = apth_epoll_waiter_list_entry(e);
+            // Check if from pool or malloc'd
+            if (w >= sched->waiter_pool && w < sched->waiter_pool + sched->waiter_pool_size)
+                ; // Pool memory, freed below
+            else
+                free(w);
+        }
+        apth_iouring_destroy(&sched->uring_ctx);
+    }
+#endif
+
+    // Drop wake eventfd
     if (sched->wake_eventfd >= 0)
     {
         apth_func_raw(close)(sched->wake_eventfd);
         sched->wake_eventfd = -1;
     }
 
-    // Drop epoll
+    // Drop epoll (if used)
     if (sched->epoll_fd >= 0)
     {
-        // Use raw close to avoid recursion
         apth_func_raw(close)(sched->epoll_fd);
         sched->epoll_fd = -1;
     }

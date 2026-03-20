@@ -8,6 +8,7 @@
 #include "internal/apth_thqueue.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
+#include "internal/apth_iouring.h"
 #include "utils/lll.h"
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
@@ -36,8 +37,8 @@ struct apth_sched_st
     apth_time_t apth_loadticknext;   // scheduler load next tick
     float loadval;                   // scheduler load value
 
-    // Scheduler's own epoll_fd: only monitors wake_eventfd for blocking.
-    // FD I/O events are handled by the global reactor.
+    // Scheduler's own epoll_fd: monitors wake_eventfd + all FDs.
+    // Set to -1 when io_uring is active (epoll not used).
     int epoll_fd;
     int wake_eventfd;                // eventfd used to wake the scheduler
 
@@ -45,8 +46,13 @@ struct apth_sched_st
     int numa_node;                   // NUMA node this scheduler is bound to
 #endif
 
-#ifndef APTH_USE_REACTOR
-    // Inline poller: per-scheduler FD management
+#ifdef APTH_USE_IOURING
+    struct apth_iouring_ctx uring_ctx;  // per-scheduler io_uring ring
+    bool use_iouring;                   // runtime flag: true = io_uring, false = epoll
+    struct list uring_pending_cancels;  // cancelled waiters awaiting CQE before free
+#endif
+
+    // Per-scheduler FD management (shared by epoll and io_uring backends)
     struct apth_epoll_fd_slot *fd_slots;
     int fd_slot_capacity;
     struct list active_fd_slots;
@@ -64,7 +70,6 @@ struct apth_sched_st
     int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
     _Atomic(int) pending_fd_close_count;
     lll_internal_t pending_fd_close_lock;
-#endif
 
     // Stack memory pool: reuse mmap'd stacks from dead threads to avoid
     // expensive mmap/munmap syscalls (TLB shootdowns) on thread lifecycle.

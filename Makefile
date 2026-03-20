@@ -9,8 +9,9 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	-DAPTH_CUR_USING_KEYWORD \
 	-DAPTH_HOLD_INITIALIZER_PTHREAD \
 	-DAPTH_PREEMPT_SIGNAL \
-	-DAPTH_NUMA
-LDFLAGS := -pthread
+	-DAPTH_NUMA \
+	-DAPTH_USE_IOURING
+LDFLAGS := -pthread -luring
 ARFLAGS := rcs
 
 # Directories

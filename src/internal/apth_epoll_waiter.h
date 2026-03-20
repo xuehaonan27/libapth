@@ -11,7 +11,11 @@ struct apth_epoll_waiter
 {
     apth_t th;             // waiting apth
     apth_event_t ev;       // corresponding event, for marking the event as OCCURRED
-    struct list_elem elem; // link into epoll_fd_slot.waiters
+    struct list_elem elem; // link into epoll_fd_slot.waiters or pending_cancels
+#ifdef APTH_USE_IOURING
+    int fd;                // FD this waiter is monitoring (needed for CQE processing)
+    bool cancelled;        // true if cancel submitted; CQE will free
+#endif
 #define apth_epoll_waiter_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_epoll_waiter, elem)
 };

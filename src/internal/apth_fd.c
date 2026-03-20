@@ -1,7 +1,6 @@
 #include "apth_fd.h"
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_sched.h"
-#include "internal/apth_reactor.h"
 #include "internal/types.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
@@ -140,10 +139,6 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
     if (fd < 0)
         return;
 
-#ifdef APTH_USE_REACTOR
-    apth_debug("notifying reactor: fd=%d closed", fd);
-    apth_reactor_notify_fd_closed(fd);
-#else
     // Notify all schedulers by pushing fd to each scheduler's pending close list
     apth_debug("notifying schedulers: fd=%d closed", fd);
     int n_workers = GLOBAL_POOL.init_worker_count;
@@ -167,7 +162,6 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
 
         apth_sched_wake(sched);
     }
-#endif
 }
 
 APTH_INTERNAL bool apth_util_fd_valid(int fd)
