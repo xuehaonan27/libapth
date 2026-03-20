@@ -566,14 +566,21 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         }
 
         apth_debug("new loop");
-        // Move all new threads to ready list
+        // Move all new threads to ready list (skip if empty)
         apth_t th;
-        while ((th = transfer_one_th(THQUEUE(sched, new), THQUEUE(sched, ready), false, "transfer_one_th moving new")) != APTH_NULL)
-            ;
+        if (thqueue_size(THQUEUE(sched, new)) > 0)
+        {
+            while ((th = transfer_one_th(THQUEUE(sched, new), THQUEUE(sched, ready), false, "transfer_one_th moving new")) != APTH_NULL)
+                ;
+        }
 
-        apth_debug("moving waked apths");
-        while ((th = transfer_one_th(THQUEUE(sched, waked), THQUEUE(sched, ready), true, "transfer_one_th moving waked")) != APTH_NULL)
-            ;
+        // Move waked threads to ready list (skip if empty)
+        if (thqueue_size(THQUEUE(sched, waked)) > 0)
+        {
+            apth_debug("moving waked apths");
+            while ((th = transfer_one_th(THQUEUE(sched, waked), THQUEUE(sched, ready), true, "transfer_one_th moving waked")) != APTH_NULL)
+                ;
+        }
 
         // Update statistics
         apth_sched_calc_load(sched, &snapshot);
@@ -626,13 +633,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Set running start time for new thread and perform a context switch to it
         apth_debug("switching to thread %p (\"%s\")", th, th->name);
 
-        // Update thread times
-        apth_time_set(&th->lastran, APTH_TIME_NOW);
-
-        // Update scheduler times
-        apth_time_set(&running, &th->lastran);
-        apth_time_sub(&running, &snapshot);
-        apth_time_add(&sched->running, &running);
+        // Update thread times (reuse snapshot instead of another gettimeofday)
+        apth_time_set(&th->lastran, &snapshot);
 
         // Switch the thread
         th->dispatches += 1;

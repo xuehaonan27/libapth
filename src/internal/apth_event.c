@@ -303,6 +303,9 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 #endif
 
         // ==================== Phase 1: traverse waiting queue ====================
+        // Check non-FD events (timer, signal, TID, FUNC, SELECT, cancellation).
+        // FD events are handled directly by epoll_wait in Phase 2.
+        // Skip this phase entirely if the waiting queue is empty.
 
         apth_time_t nexttimer_value;
         apth_time_set(&nexttimer_value, APTH_TIME_ZERO);
@@ -314,6 +317,9 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 #define MAX_WAKE_BATCH 512
         apth_t wake_batch[MAX_WAKE_BATCH];
         int wake_count = 0;
+
+        if (thqueue_size(THQUEUE(sched, waiting)) == 0)
+            goto phase2;
 
         lll_internal_lock(&THQUEUE(sched, waiting)->th_list_lock);
 
@@ -487,7 +493,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 
         lll_internal_unlock(&THQUEUE(sched, waiting)->th_list_lock);
 
-        // Transfer waked threads from waiting to waked queue.
+        // Transfer waked threads directly to ready queue (skip waked queue).
         // Remove pending FD registrations for waked threads.
         do
         {
@@ -507,8 +513,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 #endif
                     }
                 }
-                atomic_store_release(&th->state, APTH_STATE_WAKED);
-                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
+                atomic_store_release(&th->state, APTH_STATE_READY);
+                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
             }
 
             if (wake_count == MAX_WAKE_BATCH)
@@ -547,6 +553,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         if (notified_ths > 0)
             dopoll = true;
 
+    phase2:
         // ==================== Phase 2: epoll_wait ====================
 
         int timeout_ms;
@@ -603,7 +610,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     }
                 }
 
-                // Transfer FD-waked threads
+                // Transfer FD-waked threads directly to READY queue
+                // (skip the waked queue entirely — saves one queue transfer cycle)
                 for (int i = 0; i < fd_wake_count; i++)
                 {
                     apth_t th = fd_wake_batch[i];
@@ -618,8 +626,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             epoll_map_remove_waiter(sched, event->ev_args.FD.fd, th, event);
                     }
 
-                    atomic_store_release(&th->state, APTH_STATE_WAKED);
-                    transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
+                    atomic_store_release(&th->state, APTH_STATE_READY);
+                    transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
                 }
             }
             else if (nready == 0 && !dopoll && has_timer)
@@ -641,8 +649,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             if (event->ev_type == APTH_EVENT_TYPE_FD && event->epoll_registered)
                                 epoll_map_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
-                        atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED);
-                        transfer_th(nexttimer_th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
+                        atomic_store_release(&nexttimer_th->state, APTH_STATE_READY);
+                        transfer_th(nexttimer_th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
                     }
                 }
             }
@@ -683,8 +691,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             if (event->ev_type == APTH_EVENT_TYPE_FD && event->epoll_registered)
                                 apth_reactor_remove_waiter(sched, event->ev_args.FD.fd, nexttimer_th, event);
                         }
-                        atomic_store_release(&nexttimer_th->state, APTH_STATE_WAKED);
-                        transfer_th(nexttimer_th, THQUEUE(sched, waiting), THQUEUE(sched, waked));
+                        atomic_store_release(&nexttimer_th->state, APTH_STATE_READY);
+                        transfer_th(nexttimer_th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
                     }
                 }
             }
