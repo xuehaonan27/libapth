@@ -134,23 +134,33 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
     list_push_back(&slot->waiters, &w->elem);
     slot->waiter_count++;
 
-    // Edge-triggered permanent registration: register ONCE, never modify/delete
-    if (!slot->registered)
+    // Edge-triggered registration. We always attempt epoll_ctl(ADD):
+    //  - If the FD was never registered: ADD succeeds, slot is now registered.
+    //  - If the FD is still registered (same kernel FD): ADD returns EEXIST, no-op.
+    //  - If the old FD was closed and the number was reused by a new FD:
+    //    the kernel auto-removed the old FD on close(), so ADD succeeds for
+    //    the new FD. This handles FD number reuse correctly.
     {
         struct epoll_event ee;
         ee.events = EPOLLIN | EPOLLOUT | EPOLLPRI | EPOLLET;
         ee.data.fd = fd;
-        if (epoll_ctl(sched->epoll_fd, EPOLL_CTL_ADD, fd, &ee) < 0)
+        int rc = epoll_ctl(sched->epoll_fd, EPOLL_CTL_ADD, fd, &ee);
+        if (rc < 0 && errno != EEXIST)
         {
+            // Real error (not "already registered")
             list_remove(&w->elem);
             slot->waiter_count--;
             ev->epoll_waiter = NULL;
             free_waiter(sched, w);
             return -1;
         }
-        slot->registered = true;
-        list_push_back(&sched->active_fd_slots, &slot->elem);
-        sched->active_fd_count++;
+        if (rc == 0 && !slot->registered)
+        {
+            // Newly registered
+            slot->registered = true;
+            list_push_back(&sched->active_fd_slots, &slot->elem);
+            sched->active_fd_count++;
+        }
     }
 
     ev->epoll_registered = true;
@@ -542,8 +552,10 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         int timeout_ms;
         if (dopoll)
         {
-            // We have ready work; don't block
-            timeout_ms = -1;
+            // We have ready work, but still do a quick non-blocking poll
+            // to avoid starving I/O-waiting threads. timeout=0 is just
+            // a syscall check, no blocking.
+            timeout_ms = 0;
         }
         else if (has_timer)
         {
@@ -722,6 +734,25 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
 
     // Link event list to current thread
     self->event_list = *el;
+
+    // Eagerly register FD events before yielding.
+    // With inline poller, this is cheap (just list_push_back + conditional
+    // epoll_ctl ADD on first use). No reactor wake syscall needed.
+    {
+        apth_sched_t sched = SCHED_OF(self);
+        FOR_ELEMENT_IN_LIST(self->event_list, pre_e)
+        {
+            apth_event_t pre_ev = apth_event_t_list_entry(pre_e);
+            if (pre_ev->ev_type == APTH_EVENT_TYPE_FD)
+            {
+#ifdef APTH_USE_REACTOR
+                apth_reactor_add_waiter(sched, pre_ev->ev_args.FD.fd, self, pre_ev);
+#else
+                epoll_map_add_waiter(sched, pre_ev->ev_args.FD.fd, self, pre_ev);
+#endif
+            }
+        }
+    }
 
     // Move apth into waiting state and transfer control to scheduler
     atomic_store_release(&self->state, APTH_STATE_WAITING);
