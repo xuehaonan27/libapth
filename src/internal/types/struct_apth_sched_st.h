@@ -6,6 +6,8 @@
 #include "internal/apth_ctx.h"
 #include "internal/apth_time.h"
 #include "internal/apth_thqueue.h"
+#include "internal/apth_fd_slot.h"
+#include "internal/apth_epoll_waiter.h"
 #include "utils/lll.h"
 
 // Per-thread scheduler. Note that we do not treat scheduler as a separated
@@ -41,6 +43,27 @@ struct apth_sched_st
 
 #ifdef APTH_NUMA
     int numa_node;                   // NUMA node this scheduler is bound to
+#endif
+
+#ifndef APTH_USE_REACTOR
+    // Inline poller: per-scheduler FD management
+    struct apth_epoll_fd_slot *fd_slots;
+    int fd_slot_capacity;
+    struct list active_fd_slots;
+    int active_fd_count;
+
+    // Waiter pool
+#define APTH_WAITER_POOL_SIZE 256
+    struct apth_epoll_waiter *waiter_pool;
+    struct list free_waiters;
+    int waiter_pool_size;
+    int waiter_pool_allocated;
+
+    // Pending fd close notifications
+#define APTH_PENDING_FD_CLOSE_MAX 128
+    int pending_fd_close_fds[APTH_PENDING_FD_CLOSE_MAX];
+    _Atomic(int) pending_fd_close_count;
+    lll_internal_t pending_fd_close_lock;
 #endif
 
     // Stack memory pool: reuse mmap'd stacks from dead threads to avoid

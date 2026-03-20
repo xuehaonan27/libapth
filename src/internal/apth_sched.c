@@ -8,6 +8,8 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_fd_slot.h"
+#include "internal/apth_epoll_waiter.h"
 #include "internal/apth_time.h"
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_thqueue.h"
@@ -20,6 +22,7 @@
 #include "utils/lll.inline.h"
 #include "utils/apth_getpid.h"
 #include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
@@ -133,6 +136,51 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
             return apth_error(false, errno);
         }
     }
+
+#ifndef APTH_USE_REACTOR
+    // Initialize inline poller: per-scheduler FD slot table
+    sched->fd_slot_capacity = APTH_FD_TABLE_INIT_CAPACITY;
+    sched->fd_slots = (struct apth_epoll_fd_slot *)calloc(sched->fd_slot_capacity, sizeof(struct apth_epoll_fd_slot));
+    if (sched->fd_slots == NULL)
+    {
+        apth_func_raw(close)(sched->wake_eventfd);
+        sched->wake_eventfd = -1;
+        apth_func_raw(close)(sched->epoll_fd);
+        sched->epoll_fd = -1;
+        return apth_error(false, ENOMEM);
+    }
+    for (int i = 0; i < sched->fd_slot_capacity; i++)
+    {
+        sched->fd_slots[i].fd = i;
+        list_init(&sched->fd_slots[i].waiters);
+        sched->fd_slots[i].waiter_count = 0;
+        sched->fd_slots[i].registered = false;
+    }
+    list_init(&sched->active_fd_slots);
+    sched->active_fd_count = 0;
+
+    // Initialize waiter pool
+    sched->waiter_pool_size = APTH_WAITER_POOL_SIZE;
+    sched->waiter_pool = (struct apth_epoll_waiter *)calloc(sched->waiter_pool_size, sizeof(struct apth_epoll_waiter));
+    if (sched->waiter_pool == NULL)
+    {
+        free(sched->fd_slots);
+        sched->fd_slots = NULL;
+        apth_func_raw(close)(sched->wake_eventfd);
+        sched->wake_eventfd = -1;
+        apth_func_raw(close)(sched->epoll_fd);
+        sched->epoll_fd = -1;
+        return apth_error(false, ENOMEM);
+    }
+    list_init(&sched->free_waiters);
+    for (int i = 0; i < sched->waiter_pool_size; i++)
+        list_push_back(&sched->free_waiters, &sched->waiter_pool[i].elem);
+    sched->waiter_pool_allocated = 0;
+
+    // Initialize pending fd close queue
+    atomic_store_release(&sched->pending_fd_close_count, 0);
+    lll_internal_init(&sched->pending_fd_close_lock);
+#endif
 
     // Initialize stack pool
     sched->stack_pool_count = 0;
@@ -250,6 +298,34 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     // free(sched->terminated_queue);
     // free(sched->waked_queue);
     // free(sched->running_queue);
+
+#ifndef APTH_USE_REACTOR
+    // Drain inline poller waiters and free fd_slots
+    if (sched->fd_slots != NULL)
+    {
+        for (int i = 0; i < sched->fd_slot_capacity; i++)
+        {
+            struct apth_epoll_fd_slot *slot = &sched->fd_slots[i];
+            while (!list_empty(&slot->waiters))
+            {
+                struct list_elem *e = list_pop_front(&slot->waiters);
+                struct apth_epoll_waiter *w = apth_epoll_waiter_list_entry(e);
+                // Free waiter: check if from pool or malloc'd
+                if (w >= sched->waiter_pool && w < sched->waiter_pool + sched->waiter_pool_size)
+                    ; // Pool memory, freed below
+                else
+                    free(w);
+            }
+        }
+        free(sched->fd_slots);
+        sched->fd_slots = NULL;
+    }
+    if (sched->waiter_pool != NULL)
+    {
+        free(sched->waiter_pool);
+        sched->waiter_pool = NULL;
+    }
+#endif
 
     // Drain stack pool
     for (int i = 0; i < sched->stack_pool_count; i++)

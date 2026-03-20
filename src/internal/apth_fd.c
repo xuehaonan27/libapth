@@ -2,6 +2,7 @@
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_sched.h"
 #include "internal/apth_reactor.h"
+#include "internal/types.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/debug.h"
 #include "utils/lll.inline.h"
@@ -133,15 +134,40 @@ APTH_INTERNAL void apth_fd_register_optional(int fd)
     }
 }
 
-// Notify the global reactor that `fd` has been closed.
-// The reactor will fail all waiters for this fd and wake affected schedulers.
+// Notify that `fd` has been closed.
 APTH_INTERNAL void apth_notify_fd_closed(int fd)
 {
     if (fd < 0)
         return;
 
+#ifdef APTH_USE_REACTOR
     apth_debug("notifying reactor: fd=%d closed", fd);
     apth_reactor_notify_fd_closed(fd);
+#else
+    // Notify all schedulers by pushing fd to each scheduler's pending close list
+    apth_debug("notifying schedulers: fd=%d closed", fd);
+    int n_workers = GLOBAL_POOL.init_worker_count;
+    for (int i = 0; i < n_workers; i++)
+    {
+        apth_worker_t w = GLOBAL_POOL.worker_ptr_mem_start[i];
+        if (w == NULL)
+            continue;
+        apth_sched_t sched = w->sched;
+        if (sched == NULL)
+            continue;
+
+        lll_internal_lock(&sched->pending_fd_close_lock);
+        int idx = atomic_load_acquire(&sched->pending_fd_close_count);
+        if (idx < APTH_PENDING_FD_CLOSE_MAX)
+        {
+            sched->pending_fd_close_fds[idx] = fd;
+            atomic_store_release(&sched->pending_fd_close_count, idx + 1);
+        }
+        lll_internal_unlock(&sched->pending_fd_close_lock);
+
+        apth_sched_wake(sched);
+    }
+#endif
 }
 
 APTH_INTERNAL bool apth_util_fd_valid(int fd)

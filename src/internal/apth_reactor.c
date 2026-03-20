@@ -1,4 +1,7 @@
 #include "apth_reactor.h"
+
+#ifdef APTH_USE_REACTOR
+
 #include "internal/apth_fd.h"
 #include "internal/apth_sched.h"
 #include "internal/types.h"
@@ -96,11 +99,9 @@ static void reactor_ensure_fd_slot_capacity(struct apth_reactor *r, int fd)
     // Copy existing slots
     memcpy(new_slots, r->fd_slots, r->fd_slot_capacity * sizeof(struct apth_epoll_fd_slot));
 
-    // Fix up list pointers: active_fd_slots and dirty_fd_slots contain elem/dirty_elem
-    // from the old array. We need to re-link them from the new array.
-    // Strategy: rebuild both lists by scanning all slots.
+    // Fix up list pointers: active_fd_slots contains elem from the old array.
+    // Strategy: rebuild list by scanning all slots.
     list_init(&r->active_fd_slots);
-    list_init(&r->dirty_fd_slots);
     r->active_fd_count = 0;
 
     for (int i = 0; i < r->fd_slot_capacity; i++)
@@ -108,11 +109,8 @@ static void reactor_ensure_fd_slot_capacity(struct apth_reactor *r, int fd)
         // Preserve waiter lists by re-initializing the list head to point to new location
         if (new_slots[i].waiter_count > 0)
         {
-            // The list elements within waiters point back to the old slot's list head.
-            // We need to fixup the sentinel pointers.
             struct list *old_list = &r->fd_slots[i].waiters;
             struct list *new_list = &new_slots[i].waiters;
-            // Re-link: the first and last elements point back to the old sentinel
             if (!list_empty(old_list))
             {
                 new_list->head.next = old_list->head.next;
@@ -131,25 +129,15 @@ static void reactor_ensure_fd_slot_capacity(struct apth_reactor *r, int fd)
             list_push_back(&r->active_fd_slots, &new_slots[i].elem);
             r->active_fd_count++;
         }
-        if (new_slots[i].on_dirty_list)
-        {
-            list_push_back(&r->dirty_fd_slots, &new_slots[i].dirty_elem);
-        }
     }
 
     // Initialize new slots
     for (int i = r->fd_slot_capacity; i < new_cap; i++)
     {
         new_slots[i].fd = i;
-        new_slots[i].aggregate_events = 0;
         list_init(&new_slots[i].waiters);
         new_slots[i].waiter_count = 0;
         new_slots[i].registered = false;
-        new_slots[i].readable_count = 0;
-        new_slots[i].writeable_count = 0;
-        new_slots[i].exception_count = 0;
-        new_slots[i].epoll_dirty = false;
-        new_slots[i].on_dirty_list = false;
     }
 
     free(r->fd_slots);
@@ -177,49 +165,23 @@ static int reactor_do_add_waiter(struct apth_reactor *r, int fd, apth_t th, apth
     w->ev = ev;
     ev->epoll_waiter = w;
 
-    uint32_t needed = 0;
-    if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-    {
-        needed |= EPOLLIN;
-        slot->readable_count++;
-    }
-    if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-    {
-        needed |= EPOLLOUT;
-        slot->writeable_count++;
-    }
-    if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-    {
-        needed |= EPOLLPRI;
-        slot->exception_count++;
-    }
-
     list_push_back(&slot->waiters, &w->elem);
     slot->waiter_count++;
 
-    uint32_t old_aggregate = slot->aggregate_events;
-    slot->aggregate_events = 0;
-    if (slot->readable_count > 0)
-        slot->aggregate_events |= EPOLLIN;
-    if (slot->writeable_count > 0)
-        slot->aggregate_events |= EPOLLOUT;
-    if (slot->exception_count > 0)
-        slot->aggregate_events |= EPOLLPRI;
-
+    // Edge-triggered permanent registration: register ONCE, never modify/delete
     if (!slot->registered)
     {
         list_push_back(&r->active_fd_slots, &slot->elem);
         r->active_fd_count++;
 
         struct epoll_event ee;
-        ee.events = slot->aggregate_events;
+        ee.events = EPOLLIN | EPOLLOUT | EPOLLPRI | EPOLLET;
         ee.data.fd = fd;
         int rc = epoll_ctl(r->epoll_fd, EPOLL_CTL_ADD, fd, &ee);
         if (rc < 0)
         {
             list_remove(&w->elem);
             slot->waiter_count--;
-            slot->aggregate_events = old_aggregate;
             if (slot->waiter_count == 0)
             {
                 list_remove(&slot->elem);
@@ -230,15 +192,6 @@ static int reactor_do_add_waiter(struct apth_reactor *r, int fd, apth_t th, apth
             return -1;
         }
         slot->registered = true;
-    }
-    else if (slot->aggregate_events != old_aggregate)
-    {
-        slot->epoll_dirty = true;
-        if (!slot->on_dirty_list)
-        {
-            list_push_back(&r->dirty_fd_slots, &slot->dirty_elem);
-            slot->on_dirty_list = true;
-        }
     }
 
     ev->epoll_registered = true;
@@ -257,61 +210,13 @@ static void reactor_do_remove_waiter(struct apth_reactor *r, int fd, apth_event_
     struct apth_epoll_waiter *w = ev->epoll_waiter;
     if (w != NULL)
     {
-        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-            slot->readable_count--;
-        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-            slot->writeable_count--;
-        if (ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-            slot->exception_count--;
-
         list_remove(&w->elem);
         reactor_free_waiter(r, w);
         ev->epoll_waiter = NULL;
         slot->waiter_count--;
     }
 
-    if (slot->waiter_count == 0)
-    {
-        if (slot->registered)
-        {
-            epoll_ctl(r->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-            slot->registered = false;
-            list_remove(&slot->elem);
-            r->active_fd_count--;
-        }
-        slot->aggregate_events = 0;
-        slot->readable_count = 0;
-        slot->writeable_count = 0;
-        slot->exception_count = 0;
-        if (slot->on_dirty_list)
-        {
-            list_remove(&slot->dirty_elem);
-            slot->on_dirty_list = false;
-            slot->epoll_dirty = false;
-        }
-    }
-    else
-    {
-        uint32_t new_aggregate = 0;
-        if (slot->readable_count > 0)
-            new_aggregate |= EPOLLIN;
-        if (slot->writeable_count > 0)
-            new_aggregate |= EPOLLOUT;
-        if (slot->exception_count > 0)
-            new_aggregate |= EPOLLPRI;
-
-        if (new_aggregate != slot->aggregate_events)
-        {
-            slot->aggregate_events = new_aggregate;
-            slot->epoll_dirty = true;
-            if (!slot->on_dirty_list)
-            {
-                list_push_back(&r->dirty_fd_slots, &slot->dirty_elem);
-                slot->on_dirty_list = true;
-            }
-        }
-    }
-
+    // Do NOT call epoll_ctl(DEL) -- permanent edge-triggered registration
     ev->epoll_registered = false;
 }
 
@@ -352,10 +257,6 @@ static void reactor_do_fd_closed(struct apth_reactor *r, int fd)
     }
 
     slot->waiter_count = 0;
-    slot->aggregate_events = 0;
-    slot->readable_count = 0;
-    slot->writeable_count = 0;
-    slot->exception_count = 0;
 
     if (slot->registered)
     {
@@ -363,12 +264,6 @@ static void reactor_do_fd_closed(struct apth_reactor *r, int fd)
         slot->registered = false;
         list_remove(&slot->elem);
         r->active_fd_count--;
-    }
-    if (slot->on_dirty_list)
-    {
-        list_remove(&slot->dirty_elem);
-        slot->on_dirty_list = false;
-        slot->epoll_dirty = false;
     }
 
     // Wake affected schedulers
@@ -380,29 +275,6 @@ static void reactor_do_fd_closed(struct apth_reactor *r, int fd)
     }
 }
 
-static void reactor_flush_dirty(struct apth_reactor *r)
-{
-    struct list_elem *e = list_begin(&r->dirty_fd_slots);
-    while (e != list_end(&r->dirty_fd_slots))
-    {
-        struct apth_epoll_fd_slot *slot = list_entry(e, struct apth_epoll_fd_slot, dirty_elem);
-        struct list_elem *next = list_next(e);
-
-        if (slot->registered)
-        {
-            struct epoll_event ee;
-            ee.events = slot->aggregate_events;
-            ee.data.fd = slot->fd;
-            epoll_ctl(r->epoll_fd, EPOLL_CTL_MOD, slot->fd, &ee);
-            slot->epoll_dirty = false;
-        }
-
-        list_remove(e);
-        slot->on_dirty_list = false;
-        e = next;
-    }
-}
-
 static void reactor_wake_fd(struct apth_reactor *r, int fd, uint32_t revents,
                             apth_t *wake_batch, int *wake_count, int wake_max)
 {
@@ -410,7 +282,6 @@ static void reactor_wake_fd(struct apth_reactor *r, int fd, uint32_t revents,
         return;
 
     struct apth_epoll_fd_slot *slot = &r->fd_slots[fd];
-    int waked = 0;
 
     struct list_elem *e = list_begin(&slot->waiters);
     while (e != list_end(&slot->waiters))
@@ -420,34 +291,13 @@ static void reactor_wake_fd(struct apth_reactor *r, int fd, uint32_t revents,
 
         bool matched = false;
         if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE) && (revents & EPOLLIN))
-        {
             matched = true;
-            slot->readable_count--;
-        }
         if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE) && (revents & EPOLLOUT))
-        {
             matched = true;
-            slot->writeable_count--;
-        }
         if ((w->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION) && (revents & EPOLLPRI))
-        {
             matched = true;
-            slot->exception_count--;
-        }
-
         if (revents & (EPOLLERR | EPOLLHUP))
-        {
-            if (!matched)
-            {
-                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_READABLE)
-                    slot->readable_count--;
-                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_WRITEABLE)
-                    slot->writeable_count--;
-                if (w->ev->ev_goal & APTH_GOAL_UNTIL_FD_EXCEPTION)
-                    slot->exception_count--;
-            }
             matched = true;
-        }
 
         if (matched)
         {
@@ -464,50 +314,11 @@ static void reactor_wake_fd(struct apth_reactor *r, int fd, uint32_t revents,
             list_remove(&w->elem);
             slot->waiter_count--;
             reactor_free_waiter(r, w);
-            waked++;
         }
 
         e = next;
     }
-
-    if (slot->waiter_count == 0 && slot->registered)
-    {
-        epoll_ctl(r->epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-        slot->registered = false;
-        list_remove(&slot->elem);
-        r->active_fd_count--;
-        slot->aggregate_events = 0;
-        slot->readable_count = 0;
-        slot->writeable_count = 0;
-        slot->exception_count = 0;
-        if (slot->on_dirty_list)
-        {
-            list_remove(&slot->dirty_elem);
-            slot->on_dirty_list = false;
-            slot->epoll_dirty = false;
-        }
-    }
-    else if (waked > 0)
-    {
-        uint32_t new_aggregate = 0;
-        if (slot->readable_count > 0)
-            new_aggregate |= EPOLLIN;
-        if (slot->writeable_count > 0)
-            new_aggregate |= EPOLLOUT;
-        if (slot->exception_count > 0)
-            new_aggregate |= EPOLLPRI;
-
-        if (new_aggregate != slot->aggregate_events)
-        {
-            slot->aggregate_events = new_aggregate;
-            slot->epoll_dirty = true;
-            if (!slot->on_dirty_list)
-            {
-                list_push_back(&r->dirty_fd_slots, &slot->dirty_elem);
-                slot->on_dirty_list = true;
-            }
-        }
-    }
+    // Do NOT call epoll_ctl(DEL) -- permanent edge-triggered registration
 }
 
 // ==================== Reactor thread main loop ====================
@@ -586,10 +397,7 @@ static void *reactor_thread_main(void *arg)
                 reactor_do_fd_closed(r, local_fds[i]);
         }
 
-        // 4. Flush dirty epoll slots
-        reactor_flush_dirty(r);
-
-        // 5. epoll_wait
+        // 4. epoll_wait
         struct epoll_event ep_events[REACTOR_EPOLL_MAX_EVENTS];
         int timeout_ms = (r->active_fd_count > 0) ? 10 : 50;
         int nready = epoll_wait(r->epoll_fd, ep_events, REACTOR_EPOLL_MAX_EVENTS, timeout_ms);
@@ -618,9 +426,7 @@ static void *reactor_thread_main(void *arg)
 
             // For each woken thread: remove remaining FD events from reactor,
             // then wake the scheduler so it can transfer the thread from
-            // waiting→waked in Phase 1 of the event manager.
-            // We do NOT directly push to waked_queue because the thread
-            // is still in the scheduler's waiting_queue list.
+            // waiting->waked in Phase 1 of the event manager.
             for (int i = 0; i < wake_count; i++)
             {
                 apth_t th = wake_batch[i];
@@ -638,8 +444,6 @@ static void *reactor_thread_main(void *arg)
                 // Wake the target scheduler so it re-scans its waiting queue
                 apth_sched_wake(SCHED_OF(th));
             }
-
-            reactor_flush_dirty(r);
         }
     }
 
@@ -702,7 +506,6 @@ static int apth_reactor_init_one(struct apth_reactor *r, const char *name)
         list_init(&r->fd_slots[i].waiters);
     }
     list_init(&r->active_fd_slots);
-    list_init(&r->dirty_fd_slots);
     r->active_fd_count = 0;
 
     // Initialize waiter pool
@@ -883,3 +686,5 @@ APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd)
     apth_reactor_notify_fd_closed_one(&APTH_GLOBAL_REACTOR, fd);
 #endif
 }
+
+#endif // APTH_USE_REACTOR

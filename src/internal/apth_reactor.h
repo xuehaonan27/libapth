@@ -11,7 +11,9 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-// Request types for scheduler → reactor communication
+#ifdef APTH_USE_REACTOR
+
+// Request types for scheduler -> reactor communication
 enum apth_reactor_req_type
 {
     REACTOR_REQ_ADD_WAITER,    // Register FD event with epoll
@@ -43,7 +45,6 @@ struct apth_reactor
     struct apth_epoll_fd_slot *fd_slots;
     int fd_slot_capacity;
     struct list active_fd_slots;
-    struct list dirty_fd_slots;
     int active_fd_count;
 
     // Waiter pool
@@ -52,7 +53,7 @@ struct apth_reactor
     int waiter_pool_size;
     int waiter_pool_allocated;
 
-    // Request queue (MPSC: schedulers → reactor)
+    // Request queue (MPSC: schedulers -> reactor)
     lll_internal_t req_lock;
     struct list req_queue;
 
@@ -89,5 +90,7 @@ APTH_INTERNAL void apth_reactor_destroy(void);
 APTH_INTERNAL int apth_reactor_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_event_t ev);
 APTH_INTERNAL void apth_reactor_remove_waiter(apth_sched_t sched, int fd, apth_t th, apth_event_t ev);
 APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd);
+
+#endif // APTH_USE_REACTOR
 
 #endif // __LIBAPTH_INTERNAL_APTH_REACTOR_H
