@@ -388,16 +388,16 @@ APTH_INTERNAL int apth_wait_event_list(struct list *el)
     // Link event list to current thread
     self->event_list = *el;
 
-    // Eagerly register FD events with the global reactor before yielding.
-    {
-        apth_sched_t sched = SCHED_OF(self);
-        FOR_ELEMENT_IN_LIST(self->event_list, pre_e)
-        {
-            apth_event_t pre_ev = apth_event_t_list_entry(pre_e);
-            if (pre_ev->ev_type == APTH_EVENT_TYPE_FD)
-                apth_reactor_add_waiter(sched, pre_ev->ev_args.FD.fd, self, pre_ev);
-        }
-    }
+    // // Eagerly register FD events with the global reactor before yielding.
+    // {
+    //     apth_sched_t sched = SCHED_OF(self);
+    //     FOR_ELEMENT_IN_LIST(self->event_list, pre_e)
+    //     {
+    //         apth_event_t pre_ev = apth_event_t_list_entry(pre_e);
+    //         if (pre_ev->ev_type == APTH_EVENT_TYPE_FD)
+    //             apth_reactor_add_waiter(sched, pre_ev->ev_args.FD.fd, self, pre_ev);
+    //     }
+    // }
 
     // Move apth into waiting state and transfer control to scheduler
     atomic_store_release(&self->state, APTH_STATE_WAITING);
