@@ -116,7 +116,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->use_iouring = apth_iouring_available();
     if (sched->use_iouring)
     {
-        if (apth_iouring_init(&sched->uring_ctx, 256) < 0)
+        if (apth_iouring_init(&sched->uring_ctx, 1024) < 0)
         {
             apth_debug("io_uring init failed for sched %d, falling back to epoll", sched->id);
             sched->use_iouring = false;

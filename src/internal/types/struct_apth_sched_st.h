@@ -70,7 +70,7 @@ struct apth_sched_st
 
     // Stack memory pool: reuse mmap'd stacks from dead threads to avoid
     // expensive mmap/munmap syscalls (TLB shootdowns) on thread lifecycle.
-#define APTH_STACK_POOL_MAX 32
+#define APTH_STACK_POOL_MAX 64
     struct {
         char *mem;      // mmap'd region start
         size_t size;    // total size (stacksize + guardsize)
