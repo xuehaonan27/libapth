@@ -47,7 +47,8 @@ APTH_INTERNAL void apth_fd_table_init(void);
 APTH_INTERNAL void apth_fd_table_destroy(void);
 APTH_INTERNAL void apth_fd_ensure_capacity(int fd); // Grow table if needed
 APTH_INTERNAL bool apth_fd_is_managed(int fd);      // Check if fd is in table and managed
-APTH_INTERNAL void apth_fd_register(int fd);         // Register when socket/open
+APTH_INTERNAL void apth_fd_register(int fd);         // Register when socket/open (slow: 2 fcntl syscalls)
+APTH_INTERNAL void apth_fd_register_nonblock(int fd); // Fast register for FDs already O_NONBLOCK (0 syscalls)
 APTH_INTERNAL void apth_fd_unregister(int fd);       // Unregister when close
 // TODO: we will remove this one day, when we fully hacked GLIBC
 APTH_INTERNAL void apth_fd_register_optional(int fd);

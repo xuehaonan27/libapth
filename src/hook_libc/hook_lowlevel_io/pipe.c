@@ -1,18 +1,20 @@
 #include "hook_libc/hook_lowlevel_io.h"
 #include "internal/apth_fd.h"
+#include <fcntl.h>
+#include <unistd.h>
 
 APTH_DEFINE_HOOK(int, pipe, (int pipefd[2]), (pipefd))
 {
     apth_hook_debug(pipe);
 
-    // Call the real pipe
-    int result = apth_func_raw(pipe)(pipefd);
+    // Use pipe2 with O_NONBLOCK to avoid 4 fcntl syscalls (2 per fd)
+    int result = pipe2(pipefd, O_NONBLOCK);
     if (result < 0)
         return result;
 
-    // Register both file descriptors
-    apth_fd_register(pipefd[0]);
-    apth_fd_register(pipefd[1]);
+    // Fast register: already O_NONBLOCK
+    apth_fd_register_nonblock(pipefd[0]);
+    apth_fd_register_nonblock(pipefd[1]);
 
     return result;
 }

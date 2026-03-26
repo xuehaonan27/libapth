@@ -17,17 +17,19 @@ static int __variadic_open(const char *pathname, int flags, va_list vargs)
     if (need_mode_arg)
         mode = va_arg(vargs, mode_t);
 
+    // Add O_NONBLOCK to avoid a later fcntl pair in apth_fd_register
     int fd;
+    int real_flags = flags | O_NONBLOCK;
     if (need_mode_arg)
-        fd = apth_func_raw(open)(pathname, flags, mode);
+        fd = apth_func_raw(open)(pathname, real_flags, mode);
     else
-        fd = apth_func_raw(open)(pathname, flags);
+        fd = apth_func_raw(open)(pathname, real_flags);
 
     if (fd < 0)
         return fd;
 
-    // Register this fd in APTH_FD_TABLE
-    apth_fd_register(fd);
+    // Fast register: already O_NONBLOCK
+    apth_fd_register_nonblock(fd);
 
     return fd;
 }
@@ -62,16 +64,16 @@ static int __variadic_open64(const char *pathname, int flags, va_list vargs)
         mode = va_arg(vargs, mode_t);
 
     int fd;
+    int real_flags = flags | O_NONBLOCK;
     if (need_mode_arg)
-        fd = apth_func_raw(open64)(pathname, flags, mode);
+        fd = apth_func_raw(open64)(pathname, real_flags, mode);
     else
-        fd = apth_func_raw(open64)(pathname, flags);
+        fd = apth_func_raw(open64)(pathname, real_flags);
 
     if (fd < 0)
         return fd;
 
-    // Register this fd in APTH_FD_TABLE
-    apth_fd_register(fd);
+    apth_fd_register_nonblock(fd);
 
     return fd;
 }
@@ -106,16 +108,16 @@ static int __variadic_openat(int dirfd, const char *pathname, int flags, va_list
         mode = va_arg(vargs, mode_t);
 
     int fd;
+    int real_flags = flags | O_NONBLOCK;
     if (need_mode_arg)
-        fd = apth_func_raw(openat)(dirfd, pathname, flags, mode);
+        fd = apth_func_raw(openat)(dirfd, pathname, real_flags, mode);
     else
-        fd = apth_func_raw(openat)(dirfd, pathname, flags);
+        fd = apth_func_raw(openat)(dirfd, pathname, real_flags);
 
     if (fd < 0)
         return fd;
 
-    // Register this fd in APTH_FD_TABLE
-    apth_fd_register(fd);
+    apth_fd_register_nonblock(fd);
     return fd;
 }
 
@@ -149,16 +151,16 @@ static int __variadic_openat64(int dirfd, const char *pathname, int flags, va_li
         mode = va_arg(vargs, mode_t);
 
     int fd;
+    int real_flags = flags | O_NONBLOCK;
     if (need_mode_arg)
-        fd = apth_func_raw(openat64)(dirfd, pathname, flags, mode);
+        fd = apth_func_raw(openat64)(dirfd, pathname, real_flags, mode);
     else
-        fd = apth_func_raw(openat64)(dirfd, pathname, flags);
+        fd = apth_func_raw(openat64)(dirfd, pathname, real_flags);
 
     if (fd < 0)
         return fd;
 
-    // Register this fd in APTH_FD_TABLE
-    apth_fd_register(fd);
+    apth_fd_register_nonblock(fd);
     return fd;
 }
 

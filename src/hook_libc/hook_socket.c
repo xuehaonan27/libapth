@@ -10,13 +10,13 @@ APTH_DEFINE_HOOK(int, socket,
 {
     apth_hook_debug(socket);
 
-    // Invoke libc socket
-    int fd = apth_func_raw(socket)(domain, style, protocol);
+    // Create socket with SOCK_NONBLOCK to avoid a later fcntl pair
+    int fd = apth_func_raw(socket)(domain, style | SOCK_NONBLOCK, protocol);
     if (fd < 0)
         return fd;
 
-    // Register this fd in APTH_FD_TABLE
-    apth_fd_register(fd);
+    // Fast register: already O_NONBLOCK, skip fcntl
+    apth_fd_register_nonblock(fd);
 
     return fd;
 }
@@ -37,14 +37,14 @@ APTH_DEFINE_HOOK(int, socketpair,
 {
     apth_hook_debug(socketpair);
 
-    // Call the real socketpair
-    int result = apth_func_raw(socketpair)(domain, style, protocol, filedes);
+    // Create with SOCK_NONBLOCK to skip fcntl pair per fd
+    int result = apth_func_raw(socketpair)(domain, style | SOCK_NONBLOCK, protocol, filedes);
     if (result < 0)
         return result;
 
-    // Register both file descriptors
-    apth_fd_register(filedes[0]);
-    apth_fd_register(filedes[1]);
+    // Fast register: already O_NONBLOCK
+    apth_fd_register_nonblock(filedes[0]);
+    apth_fd_register_nonblock(filedes[1]);
 
     return result;
 }
@@ -103,11 +103,11 @@ APTH_DEFINE_HOOK(int, accept,
     if (!apth_util_fd_valid(fd))
         return apth_error(-1, EBADF);
 
-    // Poll socket via accept
+    // Use accept4 with SOCK_NONBLOCK to avoid 2 fcntl syscalls per accepted fd
     int rv;
     for (;;)
     {
-        while ((rv = apth_func_raw(accept)(fd, addr, length)) == -1 && errno == EINTR)
+        while ((rv = accept4(fd, addr, length, SOCK_NONBLOCK)) == -1 && errno == EINTR)
             ;
 
         // EAGAIN / EWOULDBLOCK: no pending connections
@@ -117,7 +117,7 @@ APTH_DEFINE_HOOK(int, accept,
             apth_sched_t sched = CUR_SCHED;
             if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
             {
-                rv = apth_uring_direct_accept(fd, addr, length, 0);
+                rv = apth_uring_direct_accept(fd, addr, length, SOCK_NONBLOCK);
                 if (rv == -1 && errno == EAGAIN)
                     continue; // Rare race, retry
                 break;        // Success or real error
@@ -133,9 +133,9 @@ APTH_DEFINE_HOOK(int, accept,
         break;
     }
 
-    // Register the newly accepted connection fd
+    // Fast register: accept4 already set SOCK_NONBLOCK, skip fcntl
     if (rv != -1)
-        apth_fd_register(rv);
+        apth_fd_register_nonblock(rv);
 
     apth_debug("apth_func_accept: leave to thread \"%s\"", cur->name);
     return rv;
@@ -167,6 +167,15 @@ APTH_DEFINE_HOOK(
         // EAGAIN / EWOULDBLOCK: sockfd temporarily not readable
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
+            // Optimistic spin-retry: on localhost or fast networks, data
+            // often arrives within nanoseconds — faster than yield cycle
+            for (int spin = 0; spin < 4; spin++)
+            {
+                __asm__ volatile("pause" ::: "memory");
+                rv = apth_func_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen);
+                if (rv >= 0 || (rv < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
+                    goto recvfrom_done;
+            }
 #ifdef APTH_USE_IOURING
             apth_sched_t sched = CUR_SCHED;
             if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
@@ -187,6 +196,7 @@ APTH_DEFINE_HOOK(
         // return to caller, a short recv is valid POSIX
         break;
     }
+recvfrom_done:
 
     apth_debug("apth_func_recvfrom: leave to thread \"%s\"", cur->name);
     return rv;

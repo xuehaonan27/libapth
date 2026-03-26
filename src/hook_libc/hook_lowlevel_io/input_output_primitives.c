@@ -7,6 +7,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Optimistic retry: after EAGAIN on a non-blocking operation, spin-retry
+ * a few times with pause before committing to the full yield cycle.
+ * On localhost (or fast networks), data often arrives within hundreds of
+ * nanoseconds — faster than the yield→schedule→epoll→wake round-trip.
+ * Each pause is ~40 cycles on modern x86, so 4 retries ≈ 160 cycles ≈ 50ns. */
+#define APTH_IO_SPIN_RETRIES 4
+#define APTH_IO_SPIN_PAUSE() do { \
+    __asm__ volatile("pause" ::: "memory"); \
+} while(0)
+
 APTH_DEFINE_HOOK(ssize_t, read,
                  (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
@@ -30,6 +40,14 @@ APTH_DEFINE_HOOK(ssize_t, read,
             ;
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
+            // Optimistic spin-retry: data often arrives within nanoseconds
+            for (int spin = 0; spin < APTH_IO_SPIN_RETRIES; spin++)
+            {
+                APTH_IO_SPIN_PAUSE();
+                rv = apth_func_raw(read)(fd, buf, nbytes);
+                if (rv >= 0 || (rv < 0 && errno != EAGAIN && errno != EWOULDBLOCK))
+                    goto read_done;
+            }
 #ifdef APTH_USE_IOURING
             // Direct I/O: submit IORING_OP_READ, kernel does poll+read internally
             apth_sched_t sched = CUR_SCHED;
@@ -52,6 +70,7 @@ APTH_DEFINE_HOOK(ssize_t, read,
         // Either situation we should return
         break;
     }
+read_done:
 
     apth_debug("apth_func_read: leave to thread \"%s\"", cur->name);
     return rv;

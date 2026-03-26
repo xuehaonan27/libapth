@@ -139,12 +139,11 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
     list_push_back(&slot->waiters, &w->elem);
     slot->waiter_count++;
 
-    // Edge-triggered registration. We always attempt epoll_ctl(ADD):
-    //  - If the FD was never registered: ADD succeeds, slot is now registered.
-    //  - If the FD is still registered (same kernel FD): ADD returns EEXIST, no-op.
-    //  - If the old FD was closed and the number was reused by a new FD:
-    //    the kernel auto-removed the old FD on close(), so ADD succeeds for
-    //    the new FD. This handles FD number reuse correctly.
+    // Edge-triggered registration: skip epoll_ctl if slot is already
+    // registered (same kernel FD, permanent registration).  Only call
+    // epoll_ctl(ADD) for genuinely new FDs.  FD reuse after close is
+    // handled by sched_process_pending_fd_closes which clears slot->registered.
+    if (!slot->registered)
     {
         struct epoll_event ee;
         ee.events = EPOLLIN | EPOLLOUT | EPOLLPRI | EPOLLET;
@@ -152,20 +151,16 @@ static int epoll_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_even
         int rc = epoll_ctl(sched->epoll_fd, EPOLL_CTL_ADD, fd, &ee);
         if (rc < 0 && errno != EEXIST)
         {
-            // Real error (not "already registered")
+            // Real error
             list_remove(&w->elem);
             slot->waiter_count--;
             ev->epoll_waiter = NULL;
             free_waiter(sched, w);
             return -1;
         }
-        if (rc == 0 && !slot->registered)
-        {
-            // Newly registered
-            slot->registered = true;
-            list_push_back(&sched->active_fd_slots, &slot->elem);
-            sched->active_fd_count++;
-        }
+        slot->registered = true;
+        list_push_back(&sched->active_fd_slots, &slot->elem);
+        sched->active_fd_count++;
     }
 
     ev->epoll_registered = true;

@@ -171,6 +171,19 @@ APTH_INTERNAL void apth_fd_register(int fd)
 #endif
 }
 
+/* Fast-path registration for FDs already created with O_NONBLOCK
+ * (via SOCK_NONBLOCK, accept4, pipe2, O_NONBLOCK in open flags).
+ * Skips the two fcntl syscalls that apth_fd_register does. */
+APTH_INTERNAL void apth_fd_register_nonblock(int fd)
+{
+    if (fd < 0)
+        return;
+    apth_fd_ensure_capacity(fd);
+    struct apth_fd_table_snapshot *snap = apth_fd_snapshot_load();
+    atomic_store_release(&snap->entries[fd].managed, 1);
+    apth_debug("Registered fd=%d (already nonblock)", fd);
+}
+
 APTH_INTERNAL void apth_fd_unregister(int fd)
 {
     if (fd < 0)
@@ -199,7 +212,15 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
     if (fd < 0)
         return;
 
-    /* Notify all schedulers by pushing fd to each scheduler's pending close list */
+    /* Push fd to each scheduler's pending close list.
+     * We do NOT call apth_sched_wake() here — each scheduler processes
+     * pending_fd_closes at the top of its event manager loop anyway.
+     * Skipping the wake avoids N write(eventfd) syscalls per close(),
+     * which was the single largest source of syscall overhead in the
+     * HTTP server benchmark (8 syscalls per request for 2 closes × 4
+     * schedulers). The trade-off is that cross-scheduler cleanup may
+     * be delayed by up to one event loop iteration (~10ms worst case),
+     * which is acceptable for a close notification. */
     apth_debug("notifying schedulers: fd=%d closed", fd);
     int n_workers = GLOBAL_POOL.init_worker_count;
     for (int i = 0; i < n_workers; i++)
@@ -219,8 +240,6 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
             atomic_store_release(&sched->pending_fd_close_count, idx + 1);
         }
         lll_internal_unlock(&sched->pending_fd_close_lock);
-
-        apth_sched_wake(sched);
     }
 }
 
