@@ -100,6 +100,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // Standard TCB ingredients
     t->prio = iattr->schedparam.sched_priority;
+    t->thread_class = iattr->thread_class;
     memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
     t->name[APTH_TCB_NAMELEN] = '\0';
     t->dispatches = 0;

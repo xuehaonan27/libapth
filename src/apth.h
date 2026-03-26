@@ -46,6 +46,27 @@ struct apth_st;
 // mask has not been set.
 #define APTH_ATTR_NO_SIGMASK_NP (-1)
 
+// ==================== Thread Class ====================
+// Thread scheduling class: hints to the scheduler about workload type.
+// IO_BOUND threads get priority dispatch (front of ready queue) when
+// waking from I/O or RDMA, reducing latency for data-ready threads.
+// CPU_BOUND threads are dispatched to the back and subject to preemption.
+
+enum
+{
+    APTH_CLASS_DEFAULT = 0,   // Normal FIFO scheduling
+#define APTH_CLASS_DEFAULT APTH_CLASS_DEFAULT
+    APTH_CLASS_IO_BOUND,      // Prioritize on wake (e.g., JVM mutators with RDMA)
+#define APTH_CLASS_IO_BOUND APTH_CLASS_IO_BOUND
+    APTH_CLASS_CPU_BOUND,     // Subject to preemption (e.g., GC workers, JIT compiler)
+#define APTH_CLASS_CPU_BOUND APTH_CLASS_CPU_BOUND
+    APTH_CLASS_REALTIME       // Pin to specific scheduler, minimal yield
+#define APTH_CLASS_REALTIME APTH_CLASS_REALTIME
+};
+
+int apth_attr_setclass_np(apth_attr_t *attr, int thread_class);
+int apth_attr_getclass_np(const apth_attr_t *attr, int *thread_class);
+
 // ==================== Thread Attributes ====================
 
 enum

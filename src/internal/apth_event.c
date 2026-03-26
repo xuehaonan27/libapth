@@ -836,6 +836,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             for (int i = 0; i < wake_count; i++)
             {
                 apth_t th = wake_batch[i];
+                th->wake_pending = false;
                 // Remove any remaining FD events for this thread
                 FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
                 {
@@ -846,7 +847,11 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     }
                 }
                 atomic_store_release(&th->state, APTH_STATE_READY);
-                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
+                // IO_BOUND threads get priority: front of ready queue
+                if (th->thread_class == APTH_CLASS_IO_BOUND)
+                    transfer_th_front(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
+                else
+                    transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
             }
 
             if (wake_count == MAX_WAKE_BATCH)

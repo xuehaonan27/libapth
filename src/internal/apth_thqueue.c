@@ -230,6 +230,55 @@ APTH_INTERNAL void transfer_th(apth_t th, apth_thqueue_t from, apth_thqueue_t to
     }
 }
 
+/* Same as transfer_th but inserts at FRONT of the destination queue.
+ * Used for priority dispatch of IO_BOUND threads waking from I/O. */
+APTH_INTERNAL void transfer_th_front(apth_t th, apth_thqueue_t from, apth_thqueue_t to)
+{
+    assert(APTH_IS_VALID(th));
+    assert(from != NULL);
+    assert(to != NULL);
+    assert(th->current_queue != NULL);
+    assert(th->current_queue == from);
+
+    if (from < to)
+    {
+        lll_internal_lock(&from->th_list_lock);
+        lll_internal_lock(&to->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_lock(&to->th_list_lock);
+        lll_internal_lock(&from->th_list_lock);
+    }
+    else
+    {
+        lll_internal_lock(&from->th_list_lock);
+    }
+
+    list_remove(&th->elem);
+    from->size--;
+
+    list_push_front(&to->th_list, &th->elem);
+    to->size++;
+    th->current_queue = to;
+    atomic_store_release(&th->state, to->th_state);
+
+    if (from < to)
+    {
+        lll_internal_unlock(&to->th_list_lock);
+        lll_internal_unlock(&from->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_unlock(&from->th_list_lock);
+        lll_internal_unlock(&to->th_list_lock);
+    }
+    else
+    {
+        lll_internal_unlock(&from->th_list_lock);
+    }
+}
+
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux)
 {
     assert(queue != NULL);

@@ -42,6 +42,7 @@ struct ALIGNED(64) apth_st
     bool wake_pending;                    // 1B  - set by epoll_map_wake_fd
     uint32_t magic;                       // 4B  - validation magic number
     int dispatches;                       // 4B  - total dispatches
+    int thread_class;                     // 4B  - APTH_CLASS_DEFAULT/IO_BOUND/CPU_BOUND/REALTIME
     // ~62 bytes up to here — fits in one 64-byte cache line
 
     // ==================== WARM: touched during I/O/sync ====================

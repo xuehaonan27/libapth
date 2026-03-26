@@ -27,6 +27,7 @@ struct apth_attr_st
     size_t cpusetsize; // Size of affinity map
     sigset_t sigmask;  // Spawn with this signal mask
     bool sigmask_set;  // Whether `sigmask` should be used
+    int thread_class;  // APTH_CLASS_DEFAULT/IO_BOUND/CPU_BOUND/REALTIME
 };
 
 #define APTH_ATTR_CAST(attr_ptr) ((struct apth_attr_st *)(attr_ptr))
