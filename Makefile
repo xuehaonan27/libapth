@@ -40,9 +40,12 @@ DESTDIR ?=
 # ==================== Source Files ====================
 # Find all .c files in src directory
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f)
+# Find all .S (assembly) files in src directory
+ASM_FILES := $(shell find $(SRC_DIR) -name '*.S' -type f)
 
 # Generate object file paths
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
+OBJ_FILES += $(patsubst $(SRC_DIR)/%.S,$(OBJ_DIR)/%.o,$(ASM_FILES))
 
 # All test sources
 ALL_TEST_SOURCES := $(wildcard $(TEST_DIR)/*.c)
@@ -131,6 +134,12 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	@mkdir -p $(dir $@)
 	@echo "Compiling: $<"
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Assembly files (.S)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.S | $(OBJ_DIR)
+	@mkdir -p $(dir $@)
+	@echo "Assembling: $<"
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # ==================== Test Building ====================
 # ----- Category 1: apth I/O tests -----

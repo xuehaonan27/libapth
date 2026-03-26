@@ -117,6 +117,7 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
         return;
 
     // Slow path: behavior depends on caller
+    int spin_count = 0;
     while (1)
     {
         unsigned char val = atomic_load_acquire(&lock->locked);
@@ -131,9 +132,24 @@ INLINE_ALWAYS void __lll_internal_lock(lll_internal_t *lock)
 
         if (is_scheduler)
         {
-            // Scheduler: spin (critical sections are short)
-            // Use sched_yield to avoid busy-waiting
-            sched_yield();
+            // Scheduler: spin with pause instruction (no syscall).
+            // Critical sections protected by internal locks are short,
+            // so a brief spin is cheaper than yielding the whole CPU core.
+            if (spin_count < 64)
+            {
+#if defined(__x86_64__) || defined(__i386__)
+                __builtin_ia32_pause();
+#else
+                __asm__ volatile("" ::: "memory");
+#endif
+                spin_count++;
+            }
+            else
+            {
+                // After many spins, yield to avoid live-lock
+                sched_yield();
+                spin_count = 0;
+            }
         }
         else
         {

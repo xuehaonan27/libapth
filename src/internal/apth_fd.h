@@ -19,9 +19,26 @@ struct apth_fd_entry
     _Atomic(int) managed; // Whether this filedescriptor is managed by libapth
 };
 
-// Dynamic FD table: pointer + capacity (replaces fixed array)
-extern struct apth_fd_entry *APTH_FD_TABLE;
-extern int APTH_FD_TABLE_CAPACITY;
+// Snapshot of the FD table for safe concurrent reads.
+// Readers load this atomically; writers create a new snapshot and defer
+// freeing the old one via apth_fd_table_reclaim().
+struct apth_fd_table_snapshot
+{
+    struct apth_fd_entry *entries;
+    int capacity;
+};
+
+// The current snapshot, accessed atomically by readers.
+extern _Atomic(struct apth_fd_table_snapshot *) APTH_FD_SNAPSHOT;
+
+// Convenience accessors (load snapshot once, then use it)
+INLINE struct apth_fd_table_snapshot *apth_fd_snapshot_load(void)
+{
+    return __atomic_load_n(&APTH_FD_SNAPSHOT, __ATOMIC_ACQUIRE);
+}
+
+// Maximum number of old snapshots to defer-free
+#define APTH_FD_TABLE_DEFER_MAX 8
 
 // Initial capacity matches FD_SETSIZE for backwards compatibility
 #define APTH_FD_TABLE_INIT_CAPACITY FD_SETSIZE

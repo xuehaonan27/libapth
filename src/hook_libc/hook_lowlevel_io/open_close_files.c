@@ -278,7 +278,8 @@ APTH_DEFINE_HOOK(int, close_range,
     apth_hook_debug(close_range);
 
     // Unregister and notify for all fds in range before closing
-    for (unsigned int fd = lowfd; fd <= maxfd && fd < (unsigned int)APTH_FD_TABLE_CAPACITY; fd++)
+    struct apth_fd_table_snapshot *snap = apth_fd_snapshot_load();
+    for (unsigned int fd = lowfd; fd <= maxfd && fd < (unsigned int)snap->capacity; fd++)
     {
         if (apth_util_fd_valid(fd))
         {
@@ -297,7 +298,8 @@ APTH_DEFINE_HOOK(void, closefrom, (int lowfd), (lowfd))
     apth_hook_debug(closefrom);
 
     // Unregister and notify for all fds from lowfd onwards before closing
-    for (int fd = lowfd; fd < APTH_FD_TABLE_CAPACITY; fd++)
+    struct apth_fd_table_snapshot *snap2 = apth_fd_snapshot_load();
+    for (int fd = lowfd; fd < snap2->capacity; fd++)
     {
         if (apth_util_fd_valid(fd))
         {

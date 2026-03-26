@@ -86,7 +86,9 @@ struct ALIGNED(64) apth_st
     bool sigaltstack_set;
     volatile bool in_sighandler;
 
-    /* Context — huge (ucontext_t ~936B), only touched by swapcontext */
+    /* Context — lightweight: saved stack pointer + errno (16B).
+     * Callee-saved registers are stored on the thread's own stack by
+     * the assembly context-switch routine (apth_ctx_x86_64.S). */
     struct apth_cxt_st ctx_st;
 #define CTX(T) ((apth_cxt_t) & ((T)->ctx_st))
 
