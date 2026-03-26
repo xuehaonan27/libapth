@@ -22,6 +22,7 @@
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
 #include "utils/apth_getpid.h"
+#include "utils/apth_sysutils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -102,7 +103,8 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->cur = APTH_NULL;
 
 #ifdef APTH_NUMA
-    sched->numa_node = 0; // Stub: all schedulers on node 0 for now
+    sched->numa_node = apth_numa_node_of_cpu(worker->worker_id);
+    apth_debug("scheduler %d on NUMA node %d", sched->id, sched->numa_node);
 #endif
 
     // Create wake eventfd (always needed, both backends use it)
