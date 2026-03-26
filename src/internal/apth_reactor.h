@@ -1,8 +1,9 @@
 #ifndef __LIBAPTH_INTERNAL_APTH_REACTOR_H
 #define __LIBAPTH_INTERNAL_APTH_REACTOR_H
 
-// Reactor mode has been removed. Per-scheduler inline polling is the
-// only I/O backend. This header is kept as an empty placeholder so that
-// any stale #include "internal/apth_reactor.h" still compiles.
+// Placeholder for future global reactor implementation.
+// Currently, each scheduler performs its own I/O polling inline.
+// This header is kept so that any #include "internal/apth_reactor.h"
+// still compiles without error.
 
 #endif // __LIBAPTH_INTERNAL_APTH_REACTOR_H

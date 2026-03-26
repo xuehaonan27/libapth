@@ -100,10 +100,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
 
-    // Initialize load support
-    apth_time_set(&sched->apth_loadticknext, APTH_TIME_NOW);
-    sched->loadval = 1.0;
-
 #ifdef APTH_NUMA
     sched->numa_node = 0; // Stub: all schedulers on node 0 for now
 #endif
@@ -281,25 +277,6 @@ APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
         // Ignore errors: the scheduler may already be awake, or shutting down.
         ssize_t __ignored = apth_func_raw(write)(sched->wake_eventfd, &val, sizeof(val));
         (void)__ignored;
-    }
-}
-
-static apth_time_t apth_loadtickgap = APTH_TIME(1, 0);
-
-APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now)
-{
-    if (apth_time_cmp(now, &sched->apth_loadticknext) >= 0)
-    {
-        apth_time_t ttmp;
-        int numready = thqueue_size(THQUEUE(sched, ready));
-        apth_time_set(&ttmp, now);
-        do
-        {
-            sched->loadval = (numready * 0.25) + (sched->loadval * 0.75);
-            apth_time_sub(&ttmp, &apth_loadtickgap);
-        } while (apth_time_cmp(&ttmp, &sched->apth_loadticknext) >= 0);
-        apth_time_set(&sched->apth_loadticknext, now);
-        apth_time_add(&sched->apth_loadticknext, &apth_loadtickgap);
     }
 }
 
@@ -629,9 +606,6 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             while ((th = transfer_one_th(THQUEUE(sched, waked), THQUEUE(sched, ready), true, "transfer_one_th moving waked")) != APTH_NULL)
                 ;
         }
-
-        // Update statistics
-        apth_sched_calc_load(sched, &snapshot);
 
         // If there's advised apth (which is not WAITING, but rather urgent lll waiting one!)
         // Schedule it right now

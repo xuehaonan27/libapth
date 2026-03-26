@@ -674,6 +674,17 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         apth_t wake_batch[MAX_WAKE_BATCH];
         int wake_count = 0;
 
+        // Deferred SELECT events: collected under lock, executed after unlock.
+        // This avoids calling the select() syscall while holding the waiting
+        // queue lock, which previously blocked all other waiting-queue
+        // operations for O(N_select_events) syscalls.
+#define MAX_DEFERRED_SELECT 32
+        struct {
+            apth_event_t event;
+            apth_t th;
+        } deferred_selects[MAX_DEFERRED_SELECT];
+        int deferred_select_count = 0;
+
         if (thqueue_size(THQUEUE(sched, waiting)) == 0)
             goto phase2;
 
@@ -716,45 +727,14 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                     break;
 
                 case APTH_EVENT_TYPE_SELECT:
+                    // Defer select() syscall until after we release the lock.
+                    // The thread is in WAITING state so its stack (where the
+                    // event struct lives) is frozen and safe to access later.
+                    if (deferred_select_count < MAX_DEFERRED_SELECT)
                     {
-                        struct timeval zero_tv = {0, 0};
-                        fd_set trfds, twfds, tefds;
-                        fd_set *prfds = NULL, *pwfds = NULL, *pefds = NULL;
-                        if (event->ev_args.SELECT.rfds)
-                        {
-                            memcpy(&trfds, event->ev_args.SELECT.rfds, sizeof(fd_set));
-                            prfds = &trfds;
-                        }
-                        if (event->ev_args.SELECT.wfds)
-                        {
-                            memcpy(&twfds, event->ev_args.SELECT.wfds, sizeof(fd_set));
-                            pwfds = &twfds;
-                        }
-                        if (event->ev_args.SELECT.efds)
-                        {
-                            memcpy(&tefds, event->ev_args.SELECT.efds, sizeof(fd_set));
-                            pefds = &tefds;
-                        }
-
-                        int rc;
-                        while ((rc = apth_func_raw(select)(event->ev_args.SELECT.nfd, prfds, pwfds, pefds, &zero_tv)) < 0 && errno == EINTR)
-                            ;
-                        if (rc > 0)
-                        {
-                            int n = apth_util_fds_select(event->ev_args.SELECT.nfd,
-                                                         event->ev_args.SELECT.rfds, prfds,
-                                                         event->ev_args.SELECT.wfds, pwfds,
-                                                         event->ev_args.SELECT.efds, pefds);
-                            if (event->ev_args.SELECT.n)
-                                *(event->ev_args.SELECT.n) = n;
-                            event->ev_status = APTH_EV_STATUS_OCCURRED;
-                            any_occurred = true;
-                        }
-                        else if (rc < 0)
-                        {
-                            event->ev_status = APTH_EV_STATUS_FAILED;
-                            any_occurred = true;
-                        }
+                        deferred_selects[deferred_select_count].event = event;
+                        deferred_selects[deferred_select_count].th = th;
+                        deferred_select_count++;
                     }
                     break;
 
@@ -900,6 +880,81 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         // If there are waked threads, return immediately to dispatch them
         if (notified_ths > 0)
             dopoll = true;
+
+        // ==================== Deferred SELECT processing ====================
+        // Execute select() syscalls OUTSIDE the waiting queue lock.
+        // Threads are in WAITING state so their stacks are frozen.
+        for (int si = 0; si < deferred_select_count; si++)
+        {
+            apth_event_t event = deferred_selects[si].event;
+            apth_t th = deferred_selects[si].th;
+
+            // Skip if already resolved by another event
+            if (event->ev_status != APTH_EV_STATUS_PENDING)
+                continue;
+
+            struct timeval zero_tv = {0, 0};
+            fd_set trfds, twfds, tefds;
+            fd_set *prfds = NULL, *pwfds = NULL, *pefds = NULL;
+            if (event->ev_args.SELECT.rfds)
+            {
+                memcpy(&trfds, event->ev_args.SELECT.rfds, sizeof(fd_set));
+                prfds = &trfds;
+            }
+            if (event->ev_args.SELECT.wfds)
+            {
+                memcpy(&twfds, event->ev_args.SELECT.wfds, sizeof(fd_set));
+                pwfds = &twfds;
+            }
+            if (event->ev_args.SELECT.efds)
+            {
+                memcpy(&tefds, event->ev_args.SELECT.efds, sizeof(fd_set));
+                pefds = &tefds;
+            }
+
+            int rc;
+            while ((rc = apth_func_raw(select)(event->ev_args.SELECT.nfd,
+                                                prfds, pwfds, pefds, &zero_tv)) < 0
+                   && errno == EINTR)
+                ;
+            if (rc > 0)
+            {
+                int n = apth_util_fds_select(event->ev_args.SELECT.nfd,
+                                             event->ev_args.SELECT.rfds, prfds,
+                                             event->ev_args.SELECT.wfds, pwfds,
+                                             event->ev_args.SELECT.efds, pefds);
+                if (event->ev_args.SELECT.n)
+                    *(event->ev_args.SELECT.n) = n;
+                event->ev_status = APTH_EV_STATUS_OCCURRED;
+
+                // Wake this thread
+                FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                {
+                    apth_event_t ev2 = apth_event_t_list_entry(ev_e);
+                    if (ev2->ev_type == APTH_EVENT_TYPE_FD && ev2->epoll_registered)
+                        fd_map_remove_waiter(sched, ev2->ev_args.FD.fd, th, ev2);
+                }
+                atomic_store_release(&th->state, APTH_STATE_READY);
+                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
+                notified_ths++;
+                dopoll = true;
+            }
+            else if (rc < 0)
+            {
+                event->ev_status = APTH_EV_STATUS_FAILED;
+                // Wake on error too
+                FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+                {
+                    apth_event_t ev2 = apth_event_t_list_entry(ev_e);
+                    if (ev2->ev_type == APTH_EVENT_TYPE_FD && ev2->epoll_registered)
+                        fd_map_remove_waiter(sched, ev2->ev_args.FD.fd, th, ev2);
+                }
+                atomic_store_release(&th->state, APTH_STATE_READY);
+                transfer_th(th, THQUEUE(sched, waiting), THQUEUE(sched, ready));
+                notified_ths++;
+                dopoll = true;
+            }
+        }
 
     phase2:
         // ==================== Phase 2: I/O event polling ====================

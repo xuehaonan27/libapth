@@ -20,7 +20,6 @@ APTH_INTERNAL void dec_alive_thrcnt(void);
 APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);
 
 APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched);
-APTH_INTERNAL void apth_sched_calc_load(apth_sched_t sched, apth_time_t *now);
 APTH_INTERNAL void apth_sched_wake(apth_sched_t sched);
 APTH_INTERNAL void *scheduler_routine(void *arg);
 

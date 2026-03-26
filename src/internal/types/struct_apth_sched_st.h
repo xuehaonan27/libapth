@@ -34,9 +34,6 @@ struct apth_sched_st
     apth_t cur;                      // current APTH
     _Atomic(apth_t) advised_next_th; // advised thread to run next
     volatile _Atomic(bool) opening;  // scheduler is opening
-    apth_time_t apth_loadticknext;   // scheduler load next tick
-    float loadval;                   // scheduler load value
-
     // Scheduler's own epoll_fd: monitors wake_eventfd + all FDs.
     // Set to -1 when io_uring is active (epoll not used).
     int epoll_fd;
