@@ -29,6 +29,7 @@ struct apth_sched_st
 #define THQUEUE(SCHED, NAME) ((apth_thqueue_t)(&(SCHED)->NAME##_queue))
     apth_worker_t worker;            // pthread worker carrying this scheduler
     unsigned int switches;           // context switch times
+    unsigned int switches_since_poll; // dispatches since last I/O poll
     _Atomic(unsigned int) thrcnt;    // APTH threads now running on this scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH

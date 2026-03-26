@@ -96,6 +96,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 
     sched->worker = worker;
     sched->switches = 0;
+    sched->switches_since_poll = 0;
     sched->thrcnt = 0;
     apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
@@ -670,6 +671,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         // Switch the thread
         th->dispatches += 1;
+        sched->switches_since_poll++;
 
         // Set current thread
         SET_CUR_APTH(th);
@@ -796,9 +798,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
         th = APTH_NULL;
 
-        // Manage events in the waiting queue
+        // Manage events in the waiting queue.
+        //
+        // Optimization: when the ready queue has work, skip the event
+        // manager most of the time to avoid an epoll_wait syscall on
+        // every dispatch.  Poll periodically (every APTH_POLL_INTERVAL
+        // dispatches) to avoid starving I/O-waiting threads.
+#define APTH_POLL_INTERVAL 8
         if (thqueue_size(THQUEUE(sched, ready)) == 0 && thqueue_size(THQUEUE(sched, new)) == 0)
         {
+            sched->switches_since_poll = 0;
             // Try stealing before blocking
             apth_t stolen = try_steal_work(sched);
             if (stolen == APTH_NULL)
@@ -807,11 +816,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 apth_sched_eventmanager_epoll(sched, &snapshot, false /* dopoll */);
             }
         }
-        else
+        else if (sched->switches_since_poll >= APTH_POLL_INTERVAL)
         {
-            apth_debug("already NEW or READY threads exists, so just poll for even more work");
+            sched->switches_since_poll = 0;
+            apth_debug("periodic I/O poll while busy");
             apth_sched_eventmanager_epoll(sched, &snapshot, true /* dopoll */);
         }
+        // else: ready threads waiting — dispatch immediately, skip I/O poll
     }
 
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);
