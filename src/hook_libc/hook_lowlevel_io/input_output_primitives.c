@@ -3,6 +3,7 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_iouring.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -29,7 +30,18 @@ APTH_DEFINE_HOOK(ssize_t, read,
             ;
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            // Data not ready, yield CPU to other apths
+#ifdef APTH_USE_IOURING
+            // Direct I/O: submit IORING_OP_READ, kernel does poll+read internally
+            apth_sched_t sched = CUR_SCHED;
+            if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
+            {
+                rv = apth_uring_direct_read(fd, buf, nbytes);
+                if (rv >= 0 || errno != EAGAIN)
+                    break; // Success or real error
+                continue;  // Rare EAGAIN race, retry
+            }
+#endif
+            // Fallback: poll for readability, then retry
             struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
             apth_wait_event(&ev);
             assert(ev.ev_status != APTH_EV_STATUS_PENDING);
@@ -83,10 +95,23 @@ APTH_DEFINE_HOOK(ssize_t, write,
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
-            apth_wait_event(&ev);
-            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
-            continue; // try again
+#ifdef APTH_USE_IOURING
+            apth_sched_t sched = CUR_SCHED;
+            if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
+            {
+                s = apth_uring_direct_write(fd, buf, nbytes);
+                if (s < 0 && errno == EAGAIN)
+                    continue; // Rare race, retry
+                // Fall through to partial-write handling below
+            }
+            else
+#endif
+            {
+                struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+                apth_wait_event(&ev);
+                assert(ev.ev_status != APTH_EV_STATUS_PENDING);
+                continue; // try again
+            }
         }
 
         if (s > 0)

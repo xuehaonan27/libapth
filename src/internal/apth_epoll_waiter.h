@@ -15,6 +15,7 @@ struct apth_epoll_waiter
 #ifdef APTH_USE_IOURING
     int fd;                // FD this waiter is monitoring (needed for CQE processing)
     bool cancelled;        // true if cancel submitted; CQE will free
+    bool direct_io;        // true for IORING_OP_READ/WRITE/etc. (result in ev->uring_io_result)
 #endif
 #define apth_epoll_waiter_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_epoll_waiter, elem)

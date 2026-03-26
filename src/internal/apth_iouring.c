@@ -4,20 +4,25 @@
 
 #include "utils/debug.h"
 #include <errno.h>
+#include <string.h>
 
 // One-time probe result: -1 = not probed, 0 = unavailable, 1 = available
 static int iouring_probed = -1;
+static bool iouring_fast_poll = false;
 
 APTH_INTERNAL bool apth_iouring_available(void)
 {
     if (iouring_probed < 0)
     {
+        struct io_uring_params params;
+        memset(&params, 0, sizeof(params));
         struct io_uring ring;
-        if (io_uring_queue_init(1, &ring, 0) == 0)
+        if (io_uring_queue_init_params(1, &ring, &params) == 0)
         {
+            iouring_fast_poll = (params.features & IORING_FEAT_FAST_POLL) != 0;
             io_uring_queue_exit(&ring);
             iouring_probed = 1;
-            apth_debug("io_uring: available");
+            apth_debug("io_uring: available (fast_poll=%d)", iouring_fast_poll);
         }
         else
         {
@@ -26,6 +31,11 @@ APTH_INTERNAL bool apth_iouring_available(void)
         }
     }
     return iouring_probed == 1;
+}
+
+APTH_INTERNAL bool apth_iouring_has_fast_poll(void)
+{
+    return iouring_fast_poll;
 }
 
 APTH_INTERNAL int apth_iouring_init(struct apth_iouring_ctx *ctx, int queue_depth)

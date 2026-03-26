@@ -92,6 +92,9 @@ struct apth_event_st
         struct apth_event_tid_st TID;
         struct apth_event_func_st FUNC;
     } ev_args;
+#ifdef APTH_USE_IOURING
+    ssize_t uring_io_result; // CQE result for direct io_uring I/O
+#endif
 #define apth_event_t_list_entry(LIST_ELEM) \
     list_entry(LIST_ELEM, struct apth_event_st, elem)
 };

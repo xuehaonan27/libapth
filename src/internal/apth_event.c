@@ -391,6 +391,11 @@ static void uring_map_remove_waiter(apth_sched_t sched, int fd,
         w->cancelled = true;
         list_push_back(&sched->uring_pending_cancels, &w->elem);
 
+        // Clear back-pointers before the CQE arrives (prevents use-after-free
+        // if the event is stack-allocated and the thread resumes before the CQE)
+        w->ev = NULL;
+        w->th = NULL;
+
         // Submit cancel SQE (best-effort)
         struct io_uring_sqe *sqe = io_uring_get_sqe(&sched->uring_ctx.ring);
         if (sqe)
@@ -466,6 +471,9 @@ static void uring_process_cqe(apth_sched_t sched, struct io_uring_cqe *cqe,
     }
 
     // Normal completion: mark event as occurred
+    if (w->direct_io)
+        w->ev->uring_io_result = cqe->res; // Store I/O result for caller
+
     w->ev->ev_status = APTH_EV_STATUS_OCCURRED;
     w->ev->epoll_waiter = NULL;
     w->ev->epoll_registered = false;
@@ -484,6 +492,131 @@ static void uring_process_cqe(apth_sched_t sched, struct io_uring_cqe *cqe,
         slot->waiter_count--;
     }
     free_waiter(sched, w);
+}
+
+// ==================== Direct I/O helpers ====================
+
+// Get an SQE from the ring, flushing if full.
+static struct io_uring_sqe *uring_get_sqe(apth_sched_t sched)
+{
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&sched->uring_ctx.ring);
+    if (!sqe)
+    {
+        io_uring_submit(&sched->uring_ctx.ring);
+        sqe = io_uring_get_sqe(&sched->uring_ctx.ring);
+    }
+    return sqe;
+}
+
+// Generic helper: submit a pre-prepared io_uring SQE and wait for completion.
+// The caller has already called io_uring_prep_* on the SQE.
+// Returns the CQE result (bytes transferred, new fd, etc.) or -1 with errno.
+static ssize_t uring_direct_submit_and_wait(apth_sched_t sched, int fd,
+                                             struct io_uring_sqe *sqe)
+{
+    struct apth_epoll_waiter *w = alloc_waiter(sched);
+    if (!w) { errno = ENOMEM; return -1; }
+
+    w->th = CUR_APTH;
+    w->fd = fd;
+    w->cancelled = false;
+    w->direct_io = true;
+
+    // Set up event on stack — reuse FD type so the event manager's Phase 1
+    // and post-processing handle it correctly (skip re-registration since
+    // epoll_registered is already true).
+    struct apth_event_st ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.ev_type = APTH_EVENT_TYPE_FD;
+    ev.ev_status = APTH_EV_STATUS_PENDING;
+    ev.ev_goal = APTH_GOAL_UNTIL_FD_READABLE;
+    ev.ev_args.FD.fd = fd;
+    ev.epoll_registered = true;   // Prevent eager re-registration
+    ev.epoll_waiter = w;
+    ev.uring_io_result = 0;
+
+    w->ev = &ev;
+
+    // Register with fd_slot for tracking / fd-close notification
+    sched_ensure_fd_slot_capacity(sched, fd);
+    if (fd >= sched->fd_slot_capacity)
+    {
+        free_waiter(sched, w);
+        errno = ENOMEM;
+        return -1;
+    }
+    struct apth_epoll_fd_slot *slot = &sched->fd_slots[fd];
+    list_push_back(&slot->waiters, &w->elem);
+    slot->waiter_count++;
+    if (!slot->registered)
+    {
+        list_push_back(&sched->active_fd_slots, &slot->elem);
+        sched->active_fd_count++;
+        slot->registered = true;
+    }
+
+    // Set user_data so uring_process_cqe can find this waiter
+    io_uring_sqe_set_data64(sqe, (uint64_t)(uintptr_t)w);
+
+    // Yield to scheduler. The SQE is submitted in Phase 2's io_uring_submit().
+    // Kernel FAST_POLL handles the poll+retry internally.
+    apth_wait_event(&ev);
+
+    ssize_t result = ev.uring_io_result;
+    if (result < 0)
+    {
+        errno = (int)(-result);
+        return -1;
+    }
+    return result;
+}
+
+// ---- Public direct I/O wrappers ----
+
+APTH_INTERNAL ssize_t apth_uring_direct_read(int fd, void *buf, size_t count)
+{
+    apth_sched_t sched = CUR_SCHED;
+    struct io_uring_sqe *sqe = uring_get_sqe(sched);
+    if (!sqe) { errno = ENOMEM; return -1; }
+    io_uring_prep_read(sqe, fd, buf, count, (uint64_t)-1);
+    return uring_direct_submit_and_wait(sched, fd, sqe);
+}
+
+APTH_INTERNAL ssize_t apth_uring_direct_write(int fd, const void *buf, size_t count)
+{
+    apth_sched_t sched = CUR_SCHED;
+    struct io_uring_sqe *sqe = uring_get_sqe(sched);
+    if (!sqe) { errno = ENOMEM; return -1; }
+    io_uring_prep_write(sqe, fd, buf, count, (uint64_t)-1);
+    return uring_direct_submit_and_wait(sched, fd, sqe);
+}
+
+APTH_INTERNAL ssize_t apth_uring_direct_recv(int fd, void *buf, size_t len, int flags)
+{
+    apth_sched_t sched = CUR_SCHED;
+    struct io_uring_sqe *sqe = uring_get_sqe(sched);
+    if (!sqe) { errno = ENOMEM; return -1; }
+    io_uring_prep_recv(sqe, fd, buf, len, flags);
+    return uring_direct_submit_and_wait(sched, fd, sqe);
+}
+
+APTH_INTERNAL ssize_t apth_uring_direct_send(int fd, const void *buf, size_t len, int flags)
+{
+    apth_sched_t sched = CUR_SCHED;
+    struct io_uring_sqe *sqe = uring_get_sqe(sched);
+    if (!sqe) { errno = ENOMEM; return -1; }
+    io_uring_prep_send(sqe, fd, buf, len, flags);
+    return uring_direct_submit_and_wait(sched, fd, sqe);
+}
+
+APTH_INTERNAL int apth_uring_direct_accept(int fd, struct sockaddr *addr,
+                                            socklen_t *addrlen, int flags)
+{
+    apth_sched_t sched = CUR_SCHED;
+    struct io_uring_sqe *sqe = uring_get_sqe(sched);
+    if (!sqe) { errno = ENOMEM; return -1; }
+    io_uring_prep_accept(sqe, fd, addr, addrlen, flags);
+    return (int)uring_direct_submit_and_wait(sched, fd, sqe);
 }
 
 #endif // APTH_USE_IOURING

@@ -33,6 +33,23 @@ APTH_INTERNAL int apth_iouring_init(struct apth_iouring_ctx *ctx, int queue_dept
 // Destroy a per-scheduler io_uring ring.
 APTH_INTERNAL void apth_iouring_destroy(struct apth_iouring_ctx *ctx);
 
+// Returns true if the kernel supports FAST_POLL (5.7+).
+// When FAST_POLL is available, IORING_OP_READ/WRITE on non-blocking FDs
+// will internally poll and retry, allowing direct I/O submission.
+APTH_INTERNAL bool apth_iouring_has_fast_poll(void);
+
+// ==================== Direct I/O functions ====================
+// These submit io_uring operations directly (IORING_OP_READ/WRITE/RECV/SEND/ACCEPT)
+// instead of the poll-then-retry pattern.  Requires FAST_POLL support.
+// Each function yields to the scheduler and returns the CQE result.
+// Returns bytes transferred (>=0) or -1 with errno set.
+
+APTH_INTERNAL ssize_t apth_uring_direct_read(int fd, void *buf, size_t count);
+APTH_INTERNAL ssize_t apth_uring_direct_write(int fd, const void *buf, size_t count);
+APTH_INTERNAL ssize_t apth_uring_direct_recv(int fd, void *buf, size_t len, int flags);
+APTH_INTERNAL ssize_t apth_uring_direct_send(int fd, const void *buf, size_t len, int flags);
+APTH_INTERNAL int     apth_uring_direct_accept(int fd, struct sockaddr *addr, socklen_t *addrlen, int flags);
+
 #endif // APTH_USE_IOURING
 
 #endif // __LIBAPTH_INTERNAL_APTH_IOURING_H

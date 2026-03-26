@@ -2,6 +2,7 @@
 #include "internal/types.h"
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_iouring.h"
 
 APTH_DEFINE_HOOK(int, socket,
                  (int domain, int style, int protocol),
@@ -112,6 +113,16 @@ APTH_DEFINE_HOOK(int, accept,
         // EAGAIN / EWOULDBLOCK: no pending connections
         if (rv == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
+#ifdef APTH_USE_IOURING
+            apth_sched_t sched = CUR_SCHED;
+            if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
+            {
+                rv = apth_uring_direct_accept(fd, addr, length, 0);
+                if (rv == -1 && errno == EAGAIN)
+                    continue; // Rare race, retry
+                break;        // Success or real error
+            }
+#endif
             struct apth_event_st ev = EVENT_FD(fd, APTH_GOAL_UNTIL_FD_READABLE);
             apth_wait_event(&ev);
             assert(ev.ev_status != APTH_EV_STATUS_PENDING);
@@ -153,11 +164,19 @@ APTH_DEFINE_HOOK(
         while ((rv = apth_func_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen)) < 0 && errno == EINTR)
             ;
 
-        // EAGAIN / EWOULDBLOCK: sockfd temporarily not readable (e.g. another
-        // thread consumed the data, or race left fd in NONBLOCK mode).
-        // POSIX allows either name; check both for portability.
+        // EAGAIN / EWOULDBLOCK: sockfd temporarily not readable
         if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
+#ifdef APTH_USE_IOURING
+            apth_sched_t sched = CUR_SCHED;
+            if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
+            {
+                rv = apth_uring_direct_recv(sockfd, buf, nbytes, flags);
+                if (rv >= 0 || errno != EAGAIN)
+                    break; // Success or real error
+                continue;  // Rare EAGAIN race, retry
+            }
+#endif
             struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_READABLE);
             apth_wait_event(&ev);
             assert(ev.ev_status != APTH_EV_STATUS_PENDING);
@@ -209,10 +228,23 @@ APTH_DEFINE_HOOK(
 
         if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
-            struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_WRITEABLE);
-            apth_wait_event(&ev);
-            assert(ev.ev_status != APTH_EV_STATUS_PENDING);
-            continue;
+#ifdef APTH_USE_IOURING
+            apth_sched_t sched = CUR_SCHED;
+            if (sched && sched->use_iouring && apth_iouring_has_fast_poll())
+            {
+                s = apth_uring_direct_send(sockfd, buf, nbytes, flags);
+                if (s < 0 && errno == EAGAIN)
+                    continue; // Rare race, retry
+                // Fall through to partial-write handling below
+            }
+            else
+#endif
+            {
+                struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+                apth_wait_event(&ev);
+                assert(ev.ev_status != APTH_EV_STATUS_PENDING);
+                continue;
+            }
         }
 
         if (s > 0)
