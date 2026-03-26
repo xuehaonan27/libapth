@@ -20,23 +20,26 @@ static int
 
     // Acquire current value
     val = atomic_load_acquire(once_control);
-    do
+    for (;;)
     {
-        // Check if the initializaiton has already been done.
-        if (apth_likely((val & __APTH_ONCE_DONE) != 0))
+        // Check if the initialization has already been done.
+        if ((val & __APTH_ONCE_DONE) != 0)
             return 0;
 
-        // Initialization not done. We try to set the state to in-progress and
-        // having the current fork generation. We don't need atomic accesses for
-        // the fork generation because it is immutable in a particular process,
-        // and forked child processes start with a single thread that modified
-        // the generation.
+        // If another thread is currently running the init, wait for it.
+        if ((val & __APTH_ONCE_INPROGRESS) != 0)
+        {
+            apth_yield();
+            val = atomic_load_acquire(once_control);
+            continue;
+        }
 
-        // NOTE: GNU NPTL considers fork, but we do not need it here.
-        //    newval = __fork_generation | __PTHREAD_ONCE_INPROGRESS;
+        // Try to claim the init: CAS 0 → INPROGRESS
         newval = __APTH_ONCE_INPROGRESS;
-
-    } while (apth_unlikely(!atomic_compare_exchange_weak_acquire(once_control, &val, newval)));
+        if (atomic_compare_exchange_weak_acquire(once_control, &val, newval))
+            break; // We won the race, proceed to init
+        // CAS failed, val updated by CAS — loop back to recheck
+    }
 
     // We acquired permit to perform initialization
 

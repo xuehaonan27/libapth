@@ -103,8 +103,9 @@ APP_PTHREAD_BINS := $(patsubst $(APPS_DIR)/%.c, $(BIN_DIR)/%, $(APP_PTHREAD_SOUR
 # ==================== Phony targets ====================
 .PHONY: all static shared tests apps
 .PHONY: run-tests run-io-apth-tests run-io-pthread-tests run-tcp-test run-io-tests
+.PHONY: run-all-tests
 .PHONY: test-% clean distclean help info
-.PHONY: install uninstall 
+.PHONY: install uninstall
 
 # Default target
 all: static shared
@@ -286,6 +287,12 @@ run-io-tests: run-io-apth-tests run-io-pthread-tests run-tcp-test
 	@echo "=========================================="
 	@echo "All I/O tests completed."
 	@echo "=========================================="
+
+# --- Run ALL tests via unified test runner ---
+# Builds all binaries (including RDMA if libibverbs is available),
+# then runs test/run_tests.sh which reads test/test_manifest.txt.
+run-all-tests: shared tests rdma-tests
+	@$(TEST_DIR)/run_tests.sh
 
 # --- Run a single legacy test by name (usage: make test-test_init) ---
 test-%: $(BIN_DIR)/%

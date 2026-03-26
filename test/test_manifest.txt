@@ -1,0 +1,109 @@
+# LIBAPTH Test Manifest
+#
+# Format: BINARY  ENV  TIMEOUT  [FLAGS...]
+#   ENV:     preload (run with LD_PRELOAD=libapth.so) | plain (no preload)
+#   TIMEOUT: seconds before SIGKILL
+#   FLAGS:   xfail=N       expected exit code (XFAIL if matches, FAIL otherwise)
+#            long_output   truncate output display on failure
+#            skip_unless=X skip if condition X not met (rdma)
+#
+# Lines starting with # are comments. Blank lines are ignored.
+# Tests are run in the order listed here.
+
+# ==================== Core Threading ====================
+test_init                       preload  10
+test_create                     preload  10
+test_join                       preload  15
+test_kill                       preload  10
+test_cancel                     preload  30
+test_main_exit                  preload  10
+test_main_apth_exit             preload  10
+test_new_functions              preload  10
+test_sizes                      preload  10
+test_placeholder                preload  10
+test_guard_page                 preload  30  xfail=139
+test_once                       preload  10
+test_tls                        preload  10
+test_detach                     preload  15
+test_equal                      preload  10
+test_cleanup                    preload  15
+
+# ==================== Synchronization ====================
+test_mutex                      preload  15
+test_mutex_advanced             preload  15
+test_cond                       preload  15
+test_cond_advanced              preload  15
+test_barrier                    preload  15
+test_barrier_advanced           preload  15
+test_sem                        preload  15
+test_sem_advanced               preload  15
+test_rwlock                     preload  15
+test_rwlock_advanced            preload  15
+test_timed                      preload  15
+
+# ==================== Scheduler ====================
+test_work_stealing              preload  30
+test_2_workers                  preload  15
+test_2_workers_affinity         preload  15
+test_affinity                   preload  15
+
+# ==================== I/O (LIBAPTH) ====================
+test_rw_pipe_apth               preload  30
+test_rwv_pipe_apth              preload  30
+test_send_recv_apth             preload  30
+test_sendto_recvfrom_apth       preload  30
+test_socketpair_apth            preload  30
+test_cs_unix_apth               preload  30
+test_dup_apth                   preload  30
+test_fd_open_close_apth         preload  30
+test_fd_contention_apth         preload  30
+test_fd_shared_cross_sched_apth preload  30
+test_pread_pwrite64_apth        preload  30
+test_preadv_pwritev_apth        preload  30
+test_contention_rw_apth         preload  30
+test_contention_socket_apth     preload  30
+test_pause_apth                 preload  30
+test_fork_wait_apth             preload  30  xfail=1
+test_opaque_types_apth          preload  10
+test_all_opaque_types_apth      preload  10
+
+# ==================== Signal (LIBAPTH) ====================
+test_signal_handler_apth        preload  15
+test_signal_mask_apth           preload  15
+test_signal_raise_apth          preload  15
+test_signal_wait_apth           preload  15
+test_signal_suspend_apth        preload  15
+test_signal_cross_apth          preload  15
+
+# ==================== I/O (pthread baseline) ====================
+test_rw_pipe_pthread            plain    30
+test_rwv_pipe_pthread           plain    30
+test_send_recv_pthread          plain    30
+test_sendto_recvfrom_pthread    plain    30
+test_socketpair_pthread         plain    30
+test_cs_unix_pthread            plain    30
+test_dup_pthread                plain    30
+test_fd_open_close_pthread      plain    30
+test_fd_contention_pthread      plain    30
+test_fd_shared_cross_sched_pthread plain 30
+test_pread_pwrite64_pthread     plain    30
+test_preadv_pwritev_pthread     plain    30
+test_contention_rw_pthread      plain    30
+test_contention_socket_pthread  plain    30
+test_pause_pthread              plain    30
+test_fork_wait_pthread          plain    30
+
+# ==================== Signal (pthread baseline) ====================
+test_signal_handler_pthread     plain    15
+test_signal_mask_pthread        plain    15
+test_signal_raise_pthread       plain    15
+test_signal_wait_pthread        plain    15
+test_signal_suspend_pthread     plain    15
+test_signal_cross_pthread       plain    15
+
+# ==================== Benchmarks (long output) ====================
+test_many_apth                  preload  120  long_output
+test_many_pthread               plain    120  long_output
+
+# ==================== RDMA ====================
+test_rdma_sim                   preload  30   skip_unless=rdma
