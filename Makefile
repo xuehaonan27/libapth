@@ -73,9 +73,12 @@ IO_PTHREAD_SRCS := $(filter %_pthread.c, $(ALL_TEST_SOURCES))
 TCP_SERVER_SRC  := $(TEST_DIR)/test_tcp_server.c
 TCP_CLIENT_SRC  := $(TEST_DIR)/test_tcp_client.c
 TCP_SRCS        := $(TCP_SERVER_SRC) $(TCP_CLIENT_SRC)
-# Legacy = everything that is not _apth, _pthread, or tcp
+# RDMA tests (built separately with -DAPTH_USE_RDMA)
+RDMA_TEST_SRC_FILTER := $(wildcard $(TEST_DIR)/test_rdma_*.c)
+# Legacy = everything that is not _apth, _pthread, tcp, or rdma
 LEGACY_TEST_SRCS := $(filter-out %_apth.c %_pthread.c \
-                        $(TCP_SERVER_SRC) $(TCP_CLIENT_SRC), \
+                        $(TCP_SERVER_SRC) $(TCP_CLIENT_SRC) \
+                        $(RDMA_TEST_SRC_FILTER), \
                         $(ALL_TEST_SOURCES))
 
 # Corresponding binaries
@@ -170,6 +173,29 @@ $(LEGACY_TEST_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ \
 	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS)
 	@echo "Done: $@"
+
+# ----- Category 5: RDMA tests -----
+# RDMA tests: link against libapth + libibverbs, require -DAPTH_USE_RDMA.
+RDMA_TEST_SRCS := $(wildcard $(TEST_DIR)/test_rdma_*.c)
+RDMA_TEST_BINS := $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/%, $(RDMA_TEST_SRCS))
+$(RDMA_TEST_BINS): $(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB) | $(BIN_DIR)
+	@echo "Building RDMA test: $@"
+	$(CC) $(CFLAGS) -DAPTH_USE_RDMA $(INCLUDES) $< -o $@ \
+	    -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS) -ldl -libverbs
+	@echo "Done: $@"
+
+.PHONY: rdma-tests run-rdma-tests
+rdma-tests: shared $(RDMA_TEST_BINS)
+
+run-rdma-tests: rdma-tests
+	@echo "=========================================="
+	@echo "Running RDMA tests (with LD_PRELOAD)..."
+	@echo "=========================================="
+	@for t in $(RDMA_TEST_BINS); do \
+		echo "\n>>> $$t"; \
+		LD_LIBRARY_PATH=$(LIB_DIR):$$LD_LIBRARY_PATH \
+		LD_PRELOAD=$(SHARED_LIB) $$t || echo "  FAILED: $$t"; \
+	done
 
 # ==================== Application Building ====================
 # Applications: link against libapth, run with LD_PRELOAD.
