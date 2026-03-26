@@ -556,8 +556,18 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     apth_time_t snapshot;
     apth_time_t running;
 
-    // block all signals in the scheduler thread
+    // Block asynchronous signals in the scheduler thread.
+    // Synchronous fault signals (SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT)
+    // must remain unblocked so that guard page violations and other hardware
+    // faults are delivered normally.  With the assembly context switch (which
+    // does not touch signal masks), the scheduler's signal mask is inherited
+    // by running threads, so these must be unblocked here.
     sigfillset(&sigs);
+    sigdelset(&sigs, SIGSEGV);
+    sigdelset(&sigs, SIGBUS);
+    sigdelset(&sigs, SIGFPE);
+    sigdelset(&sigs, SIGILL);
+    sigdelset(&sigs, SIGABRT);
     apth_func_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
     // initialize the snapshot time for bootstrapping the loop
