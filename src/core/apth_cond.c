@@ -4,9 +4,11 @@
 #include "internal/apth_event.h"
 #include "internal/apth_sched.h"
 #include "internal/apth_sync_waiter.h"
+#include "internal/apth_dedicated.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
 #include <time.h>
+#include <sched.h>
 
 // ==================== Condition Variable Attributes ====================
 
@@ -119,19 +121,30 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
     list_push_back(&c->waiters, &w.elem);
     lll_apth_unlock(&c->guard);
 
-    // Add event to our event list
-    apth_event_list_add(&self->event_list, &w.ev);
+    // Add event to our event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+        apth_event_list_add(&self->event_list, &w.ev);
 
     // Release the associated mutex
     apth_mutex_unlock(mutex);
 
-    // Block
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads block on their wake eventfd instead of yielding
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+            apth_dedicated_block(self);
+    }
+    else
+    {
+        // Block
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+    }
 
     // Re-acquire the mutex
     apth_mutex_lock(mutex);
@@ -199,21 +212,46 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
     list_push_back(&c->waiters, &w.elem);
     lll_apth_unlock(&c->guard);
 
-    // Add BOTH events to event list
-    apth_event_list_add(&self->event_list, &w.ev);
-    apth_event_list_add(&self->event_list, &timer_ev);
+    // Add events to event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+    {
+        apth_event_list_add(&self->event_list, &w.ev);
+        apth_event_list_add(&self->event_list, &timer_ev);
+    }
 
     // Release the associated mutex
     apth_mutex_unlock(mutex);
 
-    // Block
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads: poll with timeout via eventfd + clock check.
+        // Compute the real-time deadline for the clock check.
+        // (timer_ev already has the converted real-time deadline)
+        struct timespec now;
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+        {
+            clock_gettime(CLOCK_REALTIME, &now);
+            long deadline_sec = timer_ev.ev_args.TIME.tv.tv_sec;
+            long deadline_usec = timer_ev.ev_args.TIME.tv.tv_usec;
+            if (now.tv_sec > deadline_sec ||
+                (now.tv_sec == deadline_sec &&
+                 now.tv_nsec / 1000 >= deadline_usec))
+                break; // Timed out
+            sched_yield(); // Brief yield to OS, then re-check
+        }
+    }
+    else
+    {
+        // Block
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
-    apth_event_isolate(&timer_ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+        apth_event_isolate(&timer_ev);
+    }
 
     // Resolve race: signal/broadcast vs timeout
     int ret = 0;
@@ -250,10 +288,18 @@ int apth_cond_signal(apth_cond_t *cond)
 
         // Direct wakeup
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-        apth_sched_t ws = SCHED_OF(w->th);
 
-        lll_apth_unlock(&c->guard);
-        apth_sched_wake(ws);
+        if (w->th->is_dedicated)
+        {
+            lll_apth_unlock(&c->guard);
+            apth_dedicated_unblock(w->th);
+        }
+        else
+        {
+            apth_sched_t ws = SCHED_OF(w->th);
+            lll_apth_unlock(&c->guard);
+            apth_sched_wake(ws);
+        }
         return 0;
     }
 
@@ -271,14 +317,18 @@ int apth_cond_broadcast(apth_cond_t *cond)
     lll_apth_lock(&c->guard);
 
     // Collect all schedulers that need waking.
-    // Use a simple approach: wake each scheduler as we go.
+    // Use a simple approach: wake each scheduler/thread as we go.
     while (!list_empty(&c->waiters))
     {
         struct list_elem *e = list_pop_front(&c->waiters);
         struct apth_sync_waiter *w = apth_sync_waiter_entry(e);
 
         w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-        apth_sched_wake(SCHED_OF(w->th));
+
+        if (w->th->is_dedicated)
+            apth_dedicated_unblock(w->th);
+        else
+            apth_sched_wake(SCHED_OF(w->th));
     }
 
     lll_apth_unlock(&c->guard);

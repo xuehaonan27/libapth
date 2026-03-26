@@ -8,6 +8,11 @@ APTH_DEFINE_HOOK(int, socket,
                  (int domain, int style, int protocol),
                  (domain, style, protocol))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(socket)(domain, style, protocol);
+    }
     apth_hook_debug(socket);
 
     // Create socket with SOCK_NONBLOCK to avoid a later fcntl pair
@@ -23,6 +28,11 @@ APTH_DEFINE_HOOK(int, socket,
 
 APTH_DEFINE_HOOK(int, shutdown, (int sockfd, int how), (sockfd, how))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(shutdown)(sockfd, how);
+    }
     apth_hook_debug(shutdown);
 
     // shutdown() doesn't close the fd, it just shuts down the connection
@@ -35,6 +45,11 @@ APTH_DEFINE_HOOK(int, socketpair,
                  (int domain, int style, int protocol, int filedes[2]),
                  (domain, style, protocol, filedes))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(socketpair)(domain, style, protocol, filedes);
+    }
     apth_hook_debug(socketpair);
 
     // Create with SOCK_NONBLOCK to skip fcntl pair per fd
@@ -54,6 +69,11 @@ APTH_DEFINE_HOOK(
     (int fd, const struct sockaddr *addr, socklen_t length),
     (fd, addr, length))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(connect)(fd, (struct sockaddr *)addr, length);
+    }
     apth_hook_debug(connect);
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_connect: enter from thread \"%s\"", cur->name);
@@ -94,6 +114,11 @@ APTH_DEFINE_HOOK(int, accept,
                  (int fd, struct sockaddr *addr, socklen_t *length),
                  (fd, addr, length))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(accept)(fd, addr, length);
+    }
     apth_hook_debug(accept);
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_accept: enter from thread \"%s\"", cur->name);
@@ -147,6 +172,11 @@ APTH_DEFINE_HOOK(
      struct sockaddr *src_addr, socklen_t *addrlen),
     (sockfd, buf, nbytes, flags, src_addr, addrlen))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen);
+    }
     apth_hook_debug(recvfrom);
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_recvfrom: enter from thread \"%s\"", cur->name);
@@ -208,6 +238,11 @@ APTH_DEFINE_HOOK(
      int __flags, struct sockaddr *__addr, socklen_t *__restrict __addr_len),
     (__fd, __buf, __n, __buflen, __flags, __addr, __addr_len))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(recvfrom)(__fd, __buf, __n, __flags, __addr, __addr_len);
+    }
     (void)__buflen;
     return apth_func(recvfrom)(__fd, __buf, __n, __flags, __addr, __addr_len);
 }
@@ -218,6 +253,11 @@ APTH_DEFINE_HOOK(
      const struct sockaddr *dest_addr, socklen_t dest_len),
     (sockfd, buf, nbytes, flags, dest_addr, dest_len))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sendto)(sockfd, buf, nbytes, flags, dest_addr, dest_len);
+    }
     apth_hook_debug(sendto);
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_sendto: enter from thread \"%s\"", cur->name);
@@ -285,6 +325,11 @@ APTH_DEFINE_HOOK(ssize_t, recv,
                  (int sockfd, void *buf, size_t len, int flags),
                  (sockfd, buf, len, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(recv)(sockfd, buf, len, flags);
+    }
     apth_hook_debug(recv);
     // Here we use hooked syscall
     // According to manual of recv, recvfrom, recvmsg:
@@ -301,6 +346,11 @@ APTH_DEFINE_HOOK(ssize_t, __recv_chk,
                  (int sockfd, void *buf, size_t len, size_t buflen, int flags),
                  (sockfd, buf, len, buflen, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(recv)(sockfd, buf, len, flags);
+    }
     // TODO: Perform check here
     apth_hook_debug(__recv_chk);
     (void)buflen;
@@ -311,6 +361,11 @@ APTH_DEFINE_HOOK(ssize_t, send,
                  (int sockfd, const void *buf, size_t len, int flags),
                  (sockfd, buf, len, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(send)(sockfd, buf, len, flags);
+    }
     apth_hook_debug(send);
     // Here we use hooked syscall
     // According to manual of send, sendto, sendmsg

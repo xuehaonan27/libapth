@@ -2,14 +2,19 @@
 #define _GNU_SOURCE
 #endif
 #include <sched.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/eventfd.h>
 
 #include "common.h" // For APTH_TCB_NAMELEN
 #include "internal/apth_global_sched_pool.h"
 #include "internal/apth_tcb.h"
 #include "internal/apth_cancel.h"
+#include "internal/apth_dedicated.h"
 #include "internal/apth_sched.h"
 #include "internal/apth_thqueue.h"
 #include "attr/apth_attr.h"
+#include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/lll.inline.h"
@@ -91,6 +96,140 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     }
 
     assert(sched != NULL);
+
+    // If called from a dedicated thread context, CUR_SCHED is a dummy scheduler.
+    // Pick a real scheduler for spawning the new thread.
+    if (sched->id < 0)
+        sched = GLOBAL_POOL.worker_ptr_mem_start[0]->sched;
+
+    // ==================== Dedicated thread creation path ====================
+    if (iattr->thread_class == APTH_CLASS_DEDICATED)
+    {
+        // Allocate TCB only (no mmap stack, no context setup — the pthread has its own stack)
+        if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
+            return apth_error(ENOMEM, ENOMEM);
+        memset(t, '\0', sizeof(struct apth_st));
+
+        t->magic = APTH_MAGIC;
+        t->stack_mem_start = NULL;
+        t->stackloan = true; // Prevent stack pool return in apth_tcb_free
+        t->stacksize = 0;
+        t->guardsize = 0;
+        list_init(&t->event_list);
+
+        // Standard TCB fields
+        t->prio = iattr->schedparam.sched_priority;
+        t->thread_class = APTH_CLASS_DEDICATED;
+        memcpy(t->name, iattr->name, APTH_TCB_NAMELEN);
+        t->name[APTH_TCB_NAMELEN] = '\0';
+        t->dispatches = 0;
+        atomic_store_release(&t->state, APTH_STATE_NEW);
+
+        apth_time_t ts;
+        apth_time_set(&ts, APTH_TIME_NOW);
+        apth_time_set(&t->spawned, &ts);
+        apth_time_set(&t->lastran, &ts);
+        apth_time_set(&t->running, APTH_TIME_ZERO);
+
+        t->wake_pending = false;
+        sigemptyset(&t->sigpending);
+        t->sigpendcnt = 0;
+        lll_internal_init(&t->siglock);
+        t->in_sighandler = false;
+        t->sigaltstack_set = false;
+
+        // Signal mask
+        if (iattr->sigmask_set)
+            t->sigmask = iattr->sigmask;
+        else
+        {
+            apth_t creator = CUR_APTH;
+            if (creator != NULL)
+                t->sigmask = creator->sigmask;
+            else
+                sigemptyset(&t->sigmask);
+        }
+
+        // Ownership
+        t->home_sched = sched;
+        t->current_queue = NULL;
+        lll_internal_init(&t->ownership_lock);
+
+        // Start routine
+        t->start_func = start_routine;
+        t->start_arg = arg;
+
+        // Join
+        t->join_arg = NULL;
+        t->joinid = iattr->flags & ATTR_FLAG_DETACHSTATE ? t : NULL;
+
+        // Cancellation
+        atomic_store_release(&t->cancelreq, false);
+        t->cancelhandling = 0;
+        t->cleanups = NULL;
+
+        // TLS
+        t->specific[0] = t->specific_1stblock;
+        t->specific_used = false;
+
+        // Yield
+        t->last_yield_tick = cpu_tick();
+        t->yield_timeslice = 10;
+        t->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
+
+        // Dedicated thread fields
+        t->is_dedicated = true;
+        t->dedicated_wake_fd = eventfd(0, EFD_CLOEXEC); // blocking mode (no O_NONBLOCK)
+        if (t->dedicated_wake_fd < 0)
+        {
+            free(t);
+            return apth_error(errno, errno);
+        }
+        // Do NOT register wake_fd with LIBAPTH FD table
+
+        // Allocate dummy scheduler for TLS compatibility
+        t->dedicated_dummy_sched = (apth_sched_t)calloc(1, sizeof(struct apth_sched_st));
+        if (t->dedicated_dummy_sched == NULL)
+        {
+            apth_func_raw(close)(t->dedicated_wake_fd);
+            free(t);
+            return apth_error(ENOMEM, ENOMEM);
+        }
+        t->dedicated_dummy_sched->id = -1; // Mark as dummy
+        t->dedicated_dummy_sched->wake_eventfd = -1;
+        t->dedicated_dummy_sched->epoll_fd = -1;
+        t->current_sched = t->dedicated_dummy_sched;
+
+        // Spawn the dedicated pthread
+        pthread_attr_t pattr;
+        apth_func_raw(pthread_attr_init)(&pattr);
+
+        // Set CPU affinity if specified
+        if (iattr->cpuset != NULL)
+            apth_func_raw(pthread_attr_setaffinity_np)(&pattr, iattr->cpusetsize, iattr->cpuset);
+
+        int ret = apth_func_raw(pthread_create)(&t->dedicated_tid, &pattr,
+                                                 apth_dedicated_thread_wrapper, t);
+        pthread_attr_destroy(&pattr);
+
+        if (ret != 0)
+        {
+            apth_func_raw(close)(t->dedicated_wake_fd);
+            free(t->dedicated_dummy_sched);
+            free(t);
+            return apth_error(ret, ret);
+        }
+
+        // Increment global counters (not per-scheduler — dedicated has no scheduler)
+        atomic_fetch_add_release(&apth_nthreads, 1);
+        inc_alive_thrcnt();
+
+        apth_debug("created dedicated thread %p (\"%s\")", t, t->name);
+        *newthr = t;
+        return 0;
+    }
+
+    // ==================== Regular apth creation path ====================
 
     // Allocate a new thread control block, do all the allocations
 

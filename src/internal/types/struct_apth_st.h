@@ -77,6 +77,12 @@ struct ALIGNED(64) apth_st
     apth_sched_t home_sched;              // immutable: set at creation
     lll_internal_t ownership_lock;        // cross-scheduler operations lock
 
+    /* Dedicated thread (hybrid scheduling): 1:1 pthread mode */
+    bool is_dedicated;                    // true if this is a 1:1 dedicated pthread
+    pthread_t dedicated_tid;              // backing pthread (only if is_dedicated)
+    int dedicated_wake_fd;                // eventfd for blocking (only if is_dedicated)
+    apth_sched_t dedicated_dummy_sched;   // dummy scheduler for TLS (only if is_dedicated)
+
     // ==================== COLD: rarely accessed / large ====================
 
     /* Per APTH Signal Handling */

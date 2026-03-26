@@ -9,6 +9,11 @@ APTH_DEFINE_HOOK(ssize_t, readv,
                  (int fd, const struct iovec *iov, int iovcnt),
                  (fd, iov, iovcnt))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(readv)(fd, iov, iovcnt);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_readv: enter from thread \"%s\"", cur->name);
 
@@ -111,6 +116,11 @@ APTH_DEFINE_HOOK(ssize_t, writev,
                  (int fd, const struct iovec *iov, int iovcnt),
                  (fd, iov, iovcnt))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(writev)(fd, iov, iovcnt);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_writev: enter from thread \"%s\"", cur->name);
 
@@ -195,6 +205,11 @@ APTH_DEFINE_HOOK(ssize_t, preadv,
                  (int fd, const struct iovec *iov, int iovcnt, off_t offset),
                  (fd, iov, iovcnt, offset))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(preadv)(fd, iov, iovcnt, offset);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_preadv: enter from thread \"%s\"", cur->name);
 
@@ -235,6 +250,11 @@ APTH_DEFINE_HOOK(ssize_t, preadv64,
                  (int fd, const struct iovec *iov, int iovcnt, off64_t offset),
                  (fd, iov, iovcnt, offset))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(preadv64)(fd, iov, iovcnt, offset);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_preadv64: enter from thread \"%s\"", cur->name);
 
@@ -275,6 +295,11 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
                  (int fd, const struct iovec *iov, int iovcnt, off_t offset),
                  (fd, iov, iovcnt, offset))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(pwritev)(fd, iov, iovcnt, offset);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwritev: enter from thread \"%s\"", cur->name);
 
@@ -364,6 +389,11 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
                  (int fd, const struct iovec *iov, int iovcnt, off64_t offset),
                  (fd, iov, iovcnt, offset))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(pwritev64)(fd, iov, iovcnt, offset);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwritev64: enter from thread \"%s\"", cur->name);
 
@@ -451,6 +481,11 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
 
 APTH_DEFINE_HOOK(ssize_t, preadv2, (int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags), (fd, iov, iovcnt, offset, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(preadv2)(fd, iov, iovcnt, offset, flags);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_preadv2: enter from thread \"%s\"", cur->name);
 
@@ -491,6 +526,11 @@ APTH_DEFINE_HOOK(ssize_t, preadv64v2,
                  (int fd, const struct iovec *iov, int iovcnt, off64_t offset, int flags),
                  (fd, iov, iovcnt, offset, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(preadv64v2)(fd, iov, iovcnt, offset, flags);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_preadv64v2: enter from thread \"%s\"", cur->name);
 
@@ -531,6 +571,11 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
                  (int fd, const struct iovec *iov, int iovcnt, off_t offset, int flags),
                  (fd, iov, iovcnt, offset, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(pwritev2)(fd, iov, iovcnt, offset, flags);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwritev2: enter from thread \"%s\"", cur->name);
 
@@ -620,6 +665,11 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
                  (int fd, const struct iovec *iov, int iovcnt, off64_t offset, int flags),
                  (fd, iov, iovcnt, offset, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(pwritev64v2)(fd, iov, iovcnt, offset, flags);
+    }
     apth_t cur = CUR_APTH;
     apth_debug("apth_func_pwritev64v2: enter from thread \"%s\"", cur->name);
 

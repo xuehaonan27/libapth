@@ -204,9 +204,11 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
 
     if (t->stack_mem_start != NULL && !t->stackloan)
     {
-        // Return stack to pool instead of munmap
+        // Return stack to pool instead of munmap.
+        // Use NULL for dummy schedulers (dedicated threads) to force munmap.
+        apth_sched_t pool_sched = (sched != NULL && sched->id >= 0) ? sched : NULL;
         size_t total_size = t->stacksize + t->guardsize;
-        stack_pool_put(sched, t->stack_mem_start, total_size);
+        stack_pool_put(pool_sched, t->stack_mem_start, total_size);
     }
 
     assert_msg(t->cleanups == NULL, "apth %p try to TCB free without executing cleanups", t);

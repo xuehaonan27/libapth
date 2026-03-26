@@ -4,6 +4,7 @@
 #include "internal/apth_sync_waiter.h"
 #include "internal/apth_event.h"
 #include "internal/apth_sched.h"
+#include "internal/apth_dedicated.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
 
@@ -70,7 +71,11 @@ int apth_barrier_wait(apth_barrier_t *barrier)
             struct apth_sync_waiter *w = apth_sync_waiter_entry(e);
 
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_wake(SCHED_OF(w->th));
+
+            if (w->th->is_dedicated)
+                apth_dedicated_unblock(w->th);
+            else
+                apth_sched_wake(SCHED_OF(w->th));
         }
 
         lll_apth_unlock(&b->guard);
@@ -88,17 +93,28 @@ int apth_barrier_wait(apth_barrier_t *barrier)
     // Enqueue waiter
     list_push_back(&b->waiters, &w.elem);
 
-    // Add event to thread's event list
-    apth_event_list_add(&self->event_list, &w.ev);
+    // Add event to thread's event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+        apth_event_list_add(&self->event_list, &w.ev);
 
     lll_apth_unlock(&b->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads block on their wake eventfd instead of yielding
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+            apth_dedicated_block(self);
+    }
+    else
+    {
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+    }
 
     return 0;
 }

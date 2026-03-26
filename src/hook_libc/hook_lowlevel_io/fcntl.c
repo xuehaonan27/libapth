@@ -1,5 +1,6 @@
 #include "hook_libc/hook_lowlevel_io.h"
 #include "internal/apth_fd.h"
+#include "internal/types.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
 #include <stdarg.h>
@@ -10,6 +11,62 @@ APTH_FETCH_LIBCFUNC(fcntl)
 
 APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ...)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            va_list args;
+            va_start(args, cmd);
+            int result;
+            switch (cmd)
+            {
+            case F_SETFL:
+            case F_DUPFD:
+            case F_DUPFD_CLOEXEC:
+            case F_SETFD:
+            case F_SETOWN:
+            case F_SETSIG:
+            case F_SETLEASE:
+            case F_NOTIFY:
+            case F_SETPIPE_SZ:
+#ifdef F_ADD_SEALS
+            case F_ADD_SEALS:
+#endif
+            {
+                int arg = va_arg(args, int);
+                result = apth_func_raw(fcntl)(fd, cmd, arg);
+                break;
+            }
+            case F_SETLK:
+            case F_SETLKW:
+            case F_GETLK:
+#ifdef F_OFD_SETLK
+            case F_OFD_SETLK:
+            case F_OFD_SETLKW:
+            case F_OFD_GETLK:
+#endif
+            {
+                struct flock *lock = va_arg(args, struct flock *);
+                result = apth_func_raw(fcntl)(fd, cmd, lock);
+                break;
+            }
+#ifdef F_GETOWN_EX
+            case F_GETOWN_EX:
+            case F_SETOWN_EX:
+            {
+                struct f_owner_ex *owner = va_arg(args, struct f_owner_ex *);
+                result = apth_func_raw(fcntl)(fd, cmd, owner);
+                break;
+            }
+#endif
+            default:
+                result = apth_func_raw(fcntl)(fd, cmd);
+                break;
+            }
+            va_end(args);
+            return result;
+        }
+    }
     apth_hook_debug(fcntl);
 
     va_list args;
@@ -106,6 +163,62 @@ APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ...)
 // Export the symbol
 APTH_API int fcntl(int fd, int cmd, ...)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            va_list args;
+            va_start(args, cmd);
+            int result;
+            switch (cmd)
+            {
+            case F_SETFL:
+            case F_DUPFD:
+            case F_DUPFD_CLOEXEC:
+            case F_SETFD:
+            case F_SETOWN:
+            case F_SETSIG:
+            case F_SETLEASE:
+            case F_NOTIFY:
+            case F_SETPIPE_SZ:
+#ifdef F_ADD_SEALS
+            case F_ADD_SEALS:
+#endif
+            {
+                int arg = va_arg(args, int);
+                result = apth_func_raw(fcntl)(fd, cmd, arg);
+                break;
+            }
+            case F_SETLK:
+            case F_SETLKW:
+            case F_GETLK:
+#ifdef F_OFD_SETLK
+            case F_OFD_SETLK:
+            case F_OFD_SETLKW:
+            case F_OFD_GETLK:
+#endif
+            {
+                struct flock *lock = va_arg(args, struct flock *);
+                result = apth_func_raw(fcntl)(fd, cmd, lock);
+                break;
+            }
+#ifdef F_GETOWN_EX
+            case F_GETOWN_EX:
+            case F_SETOWN_EX:
+            {
+                struct f_owner_ex *owner = va_arg(args, struct f_owner_ex *);
+                result = apth_func_raw(fcntl)(fd, cmd, owner);
+                break;
+            }
+#endif
+            default:
+                result = apth_func_raw(fcntl)(fd, cmd);
+                break;
+            }
+            va_end(args);
+            return result;
+        }
+    }
     va_list args;
     va_start(args, cmd);
 

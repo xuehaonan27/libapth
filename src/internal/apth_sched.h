@@ -15,6 +15,9 @@ APTH_INTERNAL void apth_scheduler_kill(void);
 APTH_INTERNAL void inc_thrcnt(apth_sched_t sched);
 APTH_INTERNAL void dec_thrcnt(apth_sched_t sched);
 APTH_INTERNAL unsigned int get_apth_nthreads(void);
+
+// Global thread counters (needed by dedicated thread creation/destruction)
+extern _Atomic(unsigned int) apth_nthreads;
 APTH_INTERNAL void inc_alive_thrcnt(void);
 APTH_INTERNAL void dec_alive_thrcnt(void);
 APTH_INTERNAL unsigned int get_apth_alive_nthreads(void);

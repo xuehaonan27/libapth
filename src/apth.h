@@ -60,8 +60,10 @@ enum
 #define APTH_CLASS_IO_BOUND APTH_CLASS_IO_BOUND
     APTH_CLASS_CPU_BOUND,     // Subject to preemption (e.g., GC workers, JIT compiler)
 #define APTH_CLASS_CPU_BOUND APTH_CLASS_CPU_BOUND
-    APTH_CLASS_REALTIME       // Pin to specific scheduler, minimal yield
+    APTH_CLASS_REALTIME,      // Pin to specific scheduler, minimal yield
 #define APTH_CLASS_REALTIME APTH_CLASS_REALTIME
+    APTH_CLASS_DEDICATED      // 1:1 dedicated pthread, bypasses scheduler
+#define APTH_CLASS_DEDICATED APTH_CLASS_DEDICATED
 };
 
 int apth_attr_setclass_np(apth_attr_t *attr, int thread_class);

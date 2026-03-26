@@ -6,6 +6,11 @@
 
 APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(signal)(sig, handler);
+    }
     apth_hook_debug(signal);
 
     // Reject invalid signal number
@@ -30,6 +35,11 @@ APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, ha
 
 APTH_DEFINE_HOOK(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (sig, handler))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(__sysv_signal)(sig, handler);
+    }
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(SIG_ERR, EINVAL);
     sighandler_t prev;
@@ -44,6 +54,11 @@ APTH_DEFINE_HOOK(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (
 
 APTH_DEFINE_HOOK(sighandler_t, sysv_signal, (int sig, sighandler_t handler), (sig, handler))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sysv_signal)(sig, handler);
+    }
     return apth_func(__sysv_signal)(sig, handler);
 }
 
@@ -60,6 +75,11 @@ APTH_DEFINE_HOOK(int, sigaction,
                   struct sigaction *restrict oldact),
                  (sig, act, oldact))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigaction)(sig, act, oldact);
+    }
     apth_hook_debug(sigaction);
 
     // Reject invalid signal number
@@ -83,6 +103,11 @@ APTH_DEFINE_HOOK(int, sigaction,
 // APTH variant of POSIX sigwait(3)
 APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigwait)(set, sigp);
+    }
     apth_hook_debug(sigwait);
 
     apth_t self = CUR_APTH;
@@ -113,6 +138,11 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 
 APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(raise)(sig);
+    }
     apth_t self = CUR_APTH;
     if (self == NULL)
         return apth_func_raw(raise)(sig);
@@ -121,6 +151,11 @@ APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 
 APTH_DEFINE_HOOK(int, gsignal, (int sig), (sig))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(gsignal)(sig);
+    }
     return apth_func(raise)(sig);
 }
 
@@ -128,6 +163,11 @@ APTH_DEFINE_HOOK(int, sigprocmask,
                  (int how, const sigset_t *restrict set, sigset_t *restrict oldset),
                  (how, set, oldset))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigprocmask)(how, set, oldset);
+    }
     // Manual of sigprocmask(2) says:
     //   sigprocmask()  is used to fetch and/or change the signal mask of the calling thread.
     // The signal mask is the set of signals whose delivery is currently blocked for the
@@ -143,6 +183,11 @@ APTH_DEFINE_HOOK(int, sigprocmask,
 
 APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigpending)(set);
+    }
     if (set == NULL)
         return apth_error(-1, EFAULT);
     apth_t cur = CUR_APTH;
@@ -175,6 +220,11 @@ static bool __apth_sigsuspend_check(void *arg)
 
 APTH_DEFINE_HOOK(int, pause, (void), ())
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(pause)();
+    }
     apth_hook_debug(pause);
 
     // pause() suspends execution until any signal is caught
@@ -210,6 +260,11 @@ APTH_DEFINE_HOOK(int, pause, (void), ())
 
 APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigsuspend)(mask);
+    }
     apth_t self = CUR_APTH;
 
     // Replace signal mask temporarily
@@ -232,6 +287,11 @@ APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 
 APTH_DEFINE_HOOK(int, sigaltstack, (const stack_t *restrict ss, stack_t *restrict oss), (ss, oss))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigaltstack)(ss, oss);
+    }
     apth_t cur = CUR_APTH;
     if (oss != NULL)
     {
@@ -261,6 +321,11 @@ APTH_DEFINE_HOOK(int, sigstack,
                  (struct sigstack * stack, struct sigstack *oldstack),
                  (stack, oldstack))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sigstack)(stack, oldstack);
+    }
     apth_hook_debug(sigstack);
 
     // sigstack() is obsolete and replaced by sigaltstack()

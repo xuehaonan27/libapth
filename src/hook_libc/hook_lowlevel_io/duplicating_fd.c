@@ -5,6 +5,11 @@
 
 APTH_DEFINE_HOOK(int, dup, (int old), (old))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(dup)(old);
+    }
     apth_hook_debug(dup);
 
     // Call the real dup
@@ -20,6 +25,11 @@ APTH_DEFINE_HOOK(int, dup, (int old), (old))
 
 APTH_DEFINE_HOOK(int, dup2, (int old, int new), (old, new))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(dup2)(old, new);
+    }
     apth_hook_debug(dup2);
 
     // If new fd is already open, dup2 will close it first
@@ -43,6 +53,11 @@ APTH_DEFINE_HOOK(int, dup2, (int old, int new), (old, new))
 
 APTH_DEFINE_HOOK(int, dup3, (int old, int new, int flags), (old, new, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(dup3)(old, new, flags);
+    }
     apth_hook_debug(dup3);
 
     // If new fd is already open, dup3 will close it first

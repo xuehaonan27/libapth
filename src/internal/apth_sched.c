@@ -7,6 +7,7 @@
 #include "apth_sched.h"
 #include "internal/types.h"
 #include "internal/apth_event.h"
+#include "internal/apth_dedicated.h"
 #include "internal/apth_fd.h"
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
@@ -753,6 +754,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 // Change state WHILE HOLDING terminated queue lock
                 // This ensures atomicity of "state change + queue insertion"
                 atomic_store_release(&th->state, APTH_STATE_TERMINATED);
+
+                // Wake dedicated joiner if any
+                {
+                    apth_t joiner = atomic_load_acquire(&th->joinid);
+                    if (joiner != APTH_NULL && joiner != th &&
+                        APTH_IS_VALID(joiner) && joiner->is_dedicated)
+                    {
+                        apth_dedicated_unblock(joiner);
+                    }
+                }
 
                 // Unlock in reverse order
                 if (running_q < term_q)

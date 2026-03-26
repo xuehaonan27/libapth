@@ -55,6 +55,20 @@ epoll overhead.
 **Work Stealing** allows idle schedulers to steal threads from other
 schedulers' ready queues to balance load.
 
+**Hybrid Scheduling** (`APTH_CLASS_DEDICATED`) allows specific threads to
+run as 1:1 dedicated pthreads that bypass the userspace scheduler entirely.
+These threads use blocking kernel I/O instead of hooked nonblocking I/O,
+and block on an eventfd instead of yielding when contending on sync
+primitives. They can share mutexes, condition variables, barriers,
+semaphores, and rwlocks with regular M:N apths. See
+`docs/hybrid_scheduling.md` for full details. Key files:
+- `src/core/apth_dedicated.c` / `src/internal/apth_dedicated.h` — dedicated
+  thread wrapper, exit path, block/unblock helpers
+- `src/core/apth_create.c` — dedicated creation path (pthread_create instead
+  of scheduler queue)
+- All sync primitives in `src/core/apth_*.c` have dedicated-aware wait/wake
+- All I/O hooks in `src/hook_libc/` bypass to raw syscalls for dedicated threads
+
 ## Compile and Install
 ```shell
 make all
@@ -299,8 +313,8 @@ that previously capped the number of managed file descriptors.
   fortify behavior.
 
 ## TODO List
-1. Hybrid scheduling (with I/O bounded workloads spawned as `apth`s and
-computation bounded ones as `pthread`s, occupying a whole worker)
+1. ~~Hybrid scheduling~~ **DONE** — `APTH_CLASS_DEDICATED` implemented. Dedicated
+threads run as 1:1 pthreads bypassing the scheduler. See `docs/hybrid_scheduling.md`.
 2. Check return values.
 3. Cancellation points (see pthread(7))
 4. Can write tests according to manual pages of pthread

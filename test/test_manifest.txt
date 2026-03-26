@@ -105,5 +105,17 @@ test_signal_cross_pthread       plain    15
 test_many_apth                  preload  120  long_output
 test_many_pthread               plain    120  long_output
 
+# ==================== Hybrid Scheduling (Dedicated Threads) ====================
+test_dedicated_basic            preload  15
+test_dedicated_yield            preload  10
+test_dedicated_mutex            preload  30
+test_dedicated_cond             preload  30
+test_dedicated_barrier          preload  15
+test_dedicated_sem              preload  15
+test_dedicated_io               preload  30
+test_dedicated_mixed            preload  60
+test_dedicated_exit             preload  15
+test_dedicated_detach           preload  15
+
 # ==================== RDMA ====================
 test_rdma_sim                   preload  30   skip_unless=rdma

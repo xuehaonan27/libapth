@@ -9,6 +9,11 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
                   size_t length, unsigned int flags /* must be zero */),
                  (inputfd, inputpos, outputfd, outputpos, length, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(copy_file_range)(inputfd, inputpos, outputfd, outputpos, length, flags);
+    }
     apth_hook_debug(copy_file_range);
 
     apth_t cur = CUR_APTH;

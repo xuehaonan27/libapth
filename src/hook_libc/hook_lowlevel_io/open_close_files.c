@@ -10,6 +10,16 @@ APTH_FETCH_LIBCFUNC(open)
 
 static int __variadic_open(const char *pathname, int flags, va_list vargs)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            mode_t mode = 0;
+            if ((flags & O_CREAT) || (flags & O_TMPFILE))
+                mode = va_arg(vargs, mode_t);
+            return apth_func_raw(open)(pathname, flags, mode);
+        }
+    }
     apth_hook_debug(open);
 
     mode_t mode = 0;
@@ -56,6 +66,16 @@ APTH_FETCH_LIBCFUNC(open64)
 
 static int __variadic_open64(const char *pathname, int flags, va_list vargs)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            mode_t mode = 0;
+            if ((flags & O_CREAT) || (flags & O_TMPFILE))
+                mode = va_arg(vargs, mode_t);
+            return apth_func_raw(open64)(pathname, flags, mode);
+        }
+    }
     apth_hook_debug(open64);
 
     mode_t mode = 0;
@@ -100,6 +120,16 @@ APTH_FETCH_LIBCFUNC(openat)
 
 static int __variadic_openat(int dirfd, const char *pathname, int flags, va_list vargs)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            mode_t mode = 0;
+            if ((flags & O_CREAT) || (flags & O_TMPFILE))
+                mode = va_arg(vargs, mode_t);
+            return apth_func_raw(openat)(dirfd, pathname, flags, mode);
+        }
+    }
     apth_hook_debug(openat);
 
     mode_t mode = 0;
@@ -143,6 +173,16 @@ APTH_FETCH_LIBCFUNC(openat64)
 
 static int __variadic_openat64(int dirfd, const char *pathname, int flags, va_list vargs)
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            mode_t mode = 0;
+            if ((flags & O_CREAT) || (flags & O_TMPFILE))
+                mode = va_arg(vargs, mode_t);
+            return apth_func_raw(openat64)(dirfd, pathname, flags, mode);
+        }
+    }
     apth_hook_debug(openat64);
 
     mode_t mode = 0;
@@ -227,6 +267,11 @@ APTH_INTERNAL int apth_func(openat2)(int dirfd, const char *pathname, const stru
 
 APTH_DEFINE_HOOK(int, creat, (const char *pathname, mode_t mode), (pathname, mode))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(creat)(pathname, mode);
+    }
     apth_hook_debug(creat);
 
     // Invoke libc creat
@@ -242,6 +287,11 @@ APTH_DEFINE_HOOK(int, creat, (const char *pathname, mode_t mode), (pathname, mod
 
 APTH_DEFINE_HOOK(int, creat64, (const char *pathname, mode_t mode), (pathname, mode))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(creat64)(pathname, mode);
+    }
     apth_hook_debug(creat64);
 
     // Invoke libc creat
@@ -257,6 +307,11 @@ APTH_DEFINE_HOOK(int, creat64, (const char *pathname, mode_t mode), (pathname, m
 
 APTH_DEFINE_HOOK(int, close, (int fd), (fd))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(close)(fd);
+    }
     apth_hook_debug(close);
 
     // Clear entry in `APTH_FD_TABLE`
@@ -277,6 +332,11 @@ APTH_DEFINE_HOOK(int, close_range,
                  (unsigned int lowfd, unsigned int maxfd, int flags),
                  (lowfd, maxfd, flags))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(close_range)(lowfd, maxfd, flags);
+    }
     apth_hook_debug(close_range);
 
     // Unregister and notify for all fds in range before closing
@@ -297,6 +357,14 @@ APTH_DEFINE_HOOK(int, close_range,
 // TODO: implementation
 APTH_DEFINE_HOOK(void, closefrom, (int lowfd), (lowfd))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        {
+            apth_func_raw(closefrom)(lowfd);
+            return;
+        }
+    }
     apth_hook_debug(closefrom);
 
     // Unregister and notify for all fds from lowfd onwards before closing

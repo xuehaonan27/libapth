@@ -11,6 +11,14 @@ int apth_yield(void)
 {
     apth_sched_t sched = CUR_SCHED;
     apth_t cur = sched->cur;
+
+    // Dedicated threads do kernel sched_yield (no scheduler to switch to)
+    if (cur != NULL && cur->is_dedicated)
+    {
+        sched_yield();
+        return 0;
+    }
+
     apth_debug("apth_yield: enter from thread \"%s\"", cur->name);
 
     // TODO: decide a `to` apth and give it a priority

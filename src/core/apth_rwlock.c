@@ -4,8 +4,11 @@
 #include "internal/apth_sync_waiter.h"
 #include "internal/apth_event.h"
 #include "internal/apth_sched.h"
+#include "internal/apth_dedicated.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
+#include <time.h>
+#include <sched.h>
 
 int apth_rwlock_init(apth_rwlock_t *rwlock, const void *attr)
 {
@@ -75,17 +78,28 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     // Enqueue as reader waiter
     list_push_back(&rw->rd_waiters, &w.elem);
 
-    // Add event to thread's event list
-    apth_event_list_add(&self->event_list, &w.ev);
+    // Add event to thread's event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+        apth_event_list_add(&self->event_list, &w.ev);
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads block on their wake eventfd instead of yielding
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+            apth_dedicated_block(self);
+    }
+    else
+    {
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+    }
 
     return 0;
 }
@@ -130,19 +144,39 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     // Enqueue as reader waiter
     list_push_back(&rw->rd_waiters, &w.elem);
 
-    // Add BOTH events to event list
-    apth_event_list_add(&self->event_list, &w.ev);
-    apth_event_list_add(&self->event_list, &timer_ev);
+    // Add events to event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+    {
+        apth_event_list_add(&self->event_list, &w.ev);
+        apth_event_list_add(&self->event_list, &timer_ev);
+    }
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads: poll with timeout via eventfd + clock check
+        struct timespec now;
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+        {
+            clock_gettime(CLOCK_REALTIME, &now);
+            if (now.tv_sec > abstime->tv_sec ||
+                (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+                break; // Timed out
+            sched_yield(); // Brief yield to OS, then re-check
+        }
+    }
+    else
+    {
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
-    apth_event_isolate(&timer_ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+        apth_event_isolate(&timer_ev);
+    }
 
     // Resolve race: unlock vs timeout
     int ret = 0;
@@ -214,17 +248,28 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     // Enqueue as writer waiter
     list_push_back(&rw->wr_waiters, &w.elem);
 
-    // Add event to thread's event list
-    apth_event_list_add(&self->event_list, &w.ev);
+    // Add event to thread's event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+        apth_event_list_add(&self->event_list, &w.ev);
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads block on their wake eventfd instead of yielding
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+            apth_dedicated_block(self);
+    }
+    else
+    {
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+    }
 
     return 0;
 }
@@ -271,19 +316,39 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     // Enqueue as writer waiter
     list_push_back(&rw->wr_waiters, &w.elem);
 
-    // Add BOTH events to event list
-    apth_event_list_add(&self->event_list, &w.ev);
-    apth_event_list_add(&self->event_list, &timer_ev);
+    // Add events to event list.
+    // Dedicated threads have no scheduler event manager, so skip this.
+    if (!self->is_dedicated)
+    {
+        apth_event_list_add(&self->event_list, &w.ev);
+        apth_event_list_add(&self->event_list, &timer_ev);
+    }
 
     lll_apth_unlock(&rw->guard);
 
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        // Dedicated threads: poll with timeout via eventfd + clock check
+        struct timespec now;
+        while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+        {
+            clock_gettime(CLOCK_REALTIME, &now);
+            if (now.tv_sec > abstime->tv_sec ||
+                (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+                break; // Timed out
+            sched_yield(); // Brief yield to OS, then re-check
+        }
+    }
+    else
+    {
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
 
-    // --- woken up ---
-    apth_event_isolate(&w.ev);
-    apth_event_isolate(&timer_ev);
+        // --- woken up ---
+        apth_event_isolate(&w.ev);
+        apth_event_isolate(&timer_ev);
+    }
 
     // Resolve race: unlock vs timeout
     int ret = 0;
@@ -348,10 +413,18 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             rw->waiting_writers--;
             rw->writers = 1;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_t ws = SCHED_OF(w->th);
 
-            lll_apth_unlock(&rw->guard);
-            apth_sched_wake(ws);
+            if (w->th->is_dedicated)
+            {
+                lll_apth_unlock(&rw->guard);
+                apth_dedicated_unblock(w->th);
+            }
+            else
+            {
+                apth_sched_t ws = SCHED_OF(w->th);
+                lll_apth_unlock(&rw->guard);
+                apth_sched_wake(ws);
+            }
             return 0;
         }
 
@@ -363,7 +436,11 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
 
             rw->readers++;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_wake(SCHED_OF(w->th));
+
+            if (w->th->is_dedicated)
+                apth_dedicated_unblock(w->th);
+            else
+                apth_sched_wake(SCHED_OF(w->th));
         }
 
         lll_apth_unlock(&rw->guard);
@@ -383,10 +460,18 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             rw->waiting_writers--;
             rw->writers = 1;
             w->ev.ev_status = APTH_EV_STATUS_OCCURRED;
-            apth_sched_t ws = SCHED_OF(w->th);
 
-            lll_apth_unlock(&rw->guard);
-            apth_sched_wake(ws);
+            if (w->th->is_dedicated)
+            {
+                lll_apth_unlock(&rw->guard);
+                apth_dedicated_unblock(w->th);
+            }
+            else
+            {
+                apth_sched_t ws = SCHED_OF(w->th);
+                lll_apth_unlock(&rw->guard);
+                apth_sched_wake(ws);
+            }
             return 0;
         }
 

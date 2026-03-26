@@ -1,6 +1,7 @@
 #include "hook_time.h"
 #include "internal/apth_event.h"
 #include "internal/apth_time.h"
+#include "internal/types.h"
 
 // APTH variant of nanosleep(2)
 APTH_DEFINE_HOOK(
@@ -8,6 +9,11 @@ APTH_DEFINE_HOOK(
     (const struct timespec *rqtp, struct timespec *rmtp),
     (rqtp, rmtp))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(nanosleep)(rqtp, rmtp);
+    }
     apth_time_t until;
     apth_time_t offset;
     apth_time_t now;
@@ -46,6 +52,11 @@ APTH_DEFINE_HOOK(
 // APTH variant of usleep(3)
 APTH_DEFINE_HOOK(int, usleep, (unsigned int usec), (usec))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(usleep)(usec);
+    }
     apth_time_t until;
     apth_time_t offset;
 
@@ -67,6 +78,11 @@ APTH_DEFINE_HOOK(int, usleep, (unsigned int usec), (usec))
 
 APTH_DEFINE_HOOK(unsigned int, sleep, (unsigned int sec), (sec))
 {
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+            return apth_func_raw(sleep)(sec);
+    }
     apth_time_t until;
     apth_time_t offset;
 

@@ -1,6 +1,12 @@
+#include <stdlib.h>
+
 #include "apth.h"
 #include "internal/types.h"
+#include "internal/apth_dedicated.h"
 #include "internal/apth_event.h"
+#include "internal/apth_sched.h"
+#include "internal/apth_tcb.h"
+#include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -49,6 +55,65 @@ int apth_join(apth_t tid, void **value)
             return apth_error(EINVAL, EINVAL);
     }
 
+    // ==================== Joining a dedicated thread ====================
+    if (tid->is_dedicated)
+    {
+        // Wait for the dedicated thread to reach TERMINATED state.
+        // The approach depends on whether the CALLER is dedicated or regular:
+        if (self != NULL && self->is_dedicated)
+        {
+            // Dedicated caller: block on our own wake_fd
+            while (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
+                apth_dedicated_block(self);
+        }
+        else
+        {
+            // Regular apth caller: use event system (yields to scheduler)
+            // MUST NOT call pthread_join directly — that blocks the worker.
+            if (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
+            {
+                struct apth_event_st ev = EVENT_TID(tid, APTH_GOAL_UNTIL_TID_TERMINATED);
+                apth_wait_event(&ev);
+            }
+        }
+
+        // Now the dedicated thread has set TERMINATED.
+        // Reap the pthread (should return immediately since thread has exited).
+        apth_func_raw(pthread_join)(tid->dedicated_tid, NULL);
+
+        if (value != NULL)
+            *value = tid->join_arg;
+
+        // Free dedicated resources and TCB
+        if (tid->dedicated_wake_fd >= 0)
+        {
+            apth_func_raw(close)(tid->dedicated_wake_fd);
+            tid->dedicated_wake_fd = -1;
+        }
+        if (tid->dedicated_dummy_sched != NULL)
+        {
+            free(tid->dedicated_dummy_sched);
+            tid->dedicated_dummy_sched = NULL;
+        }
+        tid->magic = 0;
+        atomic_decrement_if_positive(&apth_nthreads);
+        free(tid);
+
+        return 0;
+    }
+
+    // ==================== Caller is a dedicated thread joining regular apth ====================
+    if (self != NULL && self->is_dedicated)
+    {
+        // Dedicated caller blocks on its wake_fd until target terminates
+        while (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
+            apth_dedicated_block(self);
+
+        goto join_cleanup;
+    }
+
+    // ==================== Regular apth joining regular apth ====================
+
     // If the `tid` is not terminated, then wait it until so
     if (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
     {
@@ -56,6 +121,7 @@ int apth_join(apth_t tid, void **value)
         apth_wait_event(&ev);
     }
 
+join_cleanup:
     // TODO: if `tid` was switched to DETACHED when we are waiting ...
 
     apth_debug("tid = %p should have terminated", tid);
