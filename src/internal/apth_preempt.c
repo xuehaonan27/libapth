@@ -41,6 +41,25 @@ static APTH_THREAD_LOCAL int __preempt_timer_armed = 0;
 // - It's rarely used by applications
 #define APTH_PREEMPT_SIGNO SIGPROF
 
+/*
+ * Signal handler for preemption.
+ *
+ * With the assembly context switch (no sigprocmask in the switch path),
+ * this signal can fire at any point during user thread execution.  The
+ * handler only sets a flag; the actual yield happens at the next
+ * preemption check point (see apth_preempt_check).
+ *
+ * Preemption check points:
+ *   1. Every hooked I/O function (read, write, connect, accept, etc.)
+ *   2. Every synchronization operation (mutex lock/unlock, cond wait, etc.)
+ *   3. The scheduler loop before dispatching a new thread
+ *   4. apth_yield() and apth_yield_optional()
+ *
+ * Limitation: a pure CPU-bound loop that calls no hooked functions
+ * will not be preempted until it makes a function call that includes
+ * a preemption check.  For such workloads, use APTH_PREEMPT_INSTRUMENT
+ * mode which checks at every function entry.
+ */
 static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
 {
     (void)sig;
