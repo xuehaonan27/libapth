@@ -25,7 +25,10 @@ enum apth_event_type
     APTH_EVENT_TYPE_TIME,
     APTH_EVENT_TYPE_SYNC,
     APTH_EVENT_TYPE_TID,
-    APTH_EVENT_TYPE_FUNC
+    APTH_EVENT_TYPE_FUNC,
+#ifdef APTH_USE_RDMA
+    APTH_EVENT_TYPE_RDMA,
+#endif
 };
 
 // Waiting on FD
@@ -72,6 +75,18 @@ struct apth_event_func_st
     apth_time_t tv;
 };
 
+// Waiting on RDMA completion (ibverbs CQ poll)
+// Uses void* to avoid requiring libibverbs headers in core LIBAPTH.
+// The actual types are struct ibv_cq* and struct ibv_wc*.
+#ifdef APTH_USE_RDMA
+struct apth_event_rdma_st
+{
+    void *cq;            // struct ibv_cq *: completion queue to poll
+    uint64_t wr_id;      // work request ID to match
+    void *wc_out;        // struct ibv_wc *: where to store the completion
+};
+#endif
+
 typedef int apth_goal_t;
 
 // APTH Events
@@ -91,6 +106,9 @@ struct apth_event_st
         struct apth_event_time_st TIME;
         struct apth_event_tid_st TID;
         struct apth_event_func_st FUNC;
+#ifdef APTH_USE_RDMA
+        struct apth_event_rdma_st RDMA;
+#endif
     } ev_args;
 #ifdef APTH_USE_IOURING
     ssize_t uring_io_result; // CQE result for direct io_uring I/O

@@ -395,6 +395,19 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
 int apth_rwlock_trywrlock(apth_rwlock_t *rwlock);
 int apth_rwlock_unlock(apth_rwlock_t *rwlock);
 
+// ==================== RDMA Completion Waiting ====================
+// Available when compiled with -DAPTH_USE_RDMA and linked with -libverbs.
+// See docs/JVM_RDMA_INTEGRATION.md for usage guide.
+#ifdef APTH_USE_RDMA
+#include <stdint.h>
+struct ibv_cq;
+struct ibv_wc;
+int apth_rdma_register_cq(struct ibv_cq *cq);
+void apth_rdma_unregister_cq(struct ibv_cq *cq);
+int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id, struct ibv_wc *wc);
+int apth_rdma_wait_batch(struct ibv_cq *cq, uint64_t *wr_ids, int count, struct ibv_wc *wcs);
+#endif
+
 // ==================== Application Entry Point ====================
 
 /*
