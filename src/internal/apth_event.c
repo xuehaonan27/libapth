@@ -5,6 +5,7 @@
 #include "internal/apth_fd_slot.h"
 #include "internal/apth_epoll_waiter.h"
 #include "internal/apth_iouring.h"
+#include "internal/apth_reactor.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_state.h"
 #include "internal/apth_time.h"
@@ -625,6 +626,9 @@ static inline int fd_map_add_waiter(apth_sched_t sched, int fd, apth_t th, apth_
     if (sched->use_iouring)
         return uring_map_add_waiter(sched, fd, th, ev);
 #endif
+    /* Use the global reactor for epoll-based I/O. */
+    if (apth_reactor_is_active())
+        return apth_reactor_submit_watch(fd, ev->ev_goal, ev, th, sched);
     return epoll_map_add_waiter(sched, fd, th, ev);
 }
 
@@ -637,6 +641,11 @@ static inline void fd_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, a
         return;
     }
 #endif
+    if (apth_reactor_is_active())
+    {
+        apth_reactor_submit_unwatch(fd, ev);
+        return;
+    }
     epoll_map_remove_waiter(sched, fd, th, ev);
 }
 
@@ -1042,8 +1051,31 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             }
             else
 #endif // APTH_USE_IOURING
+            if (apth_reactor_is_active())
             {
-                // ---- epoll path ----
+                // ---- Reactor-based path ----
+                // The global reactor handles epoll_wait for all FDs.
+                // The scheduler just waits on its wake_eventfd (which the
+                // reactor writes to when FD events complete) using a minimal
+                // epoll_wait on the scheduler's own epoll_fd (wake_eventfd only).
+                if (!dopoll)
+                {
+                    struct epoll_event wake_ev;
+                    int nready = epoll_wait(sched->epoll_fd, &wake_ev, 1, timeout_ms);
+                    if (nready > 0 && wake_ev.data.fd == sched->wake_eventfd)
+                    {
+                        uint64_t val;
+                        ssize_t __ignored = apth_func_raw(read)(sched->wake_eventfd, &val, sizeof(val));
+                        (void)__ignored;
+                    }
+                    else if (nready == 0 && has_timer)
+                        timed_out = true;
+                }
+                /* else dopoll: skip epoll_wait entirely, return to dispatch */
+            }
+            else
+            {
+                // ---- Legacy per-scheduler epoll path (fallback) ----
                 struct epoll_event ep_events[64];
                 int nready = epoll_wait(sched->epoll_fd, ep_events, 64, timeout_ms);
 

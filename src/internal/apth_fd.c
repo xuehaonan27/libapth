@@ -1,5 +1,6 @@
 #include "apth_fd.h"
 #include "internal/apth_global_sched_pool.h"
+#include "internal/apth_reactor.h"
 #include "internal/apth_sched.h"
 #include "internal/types.h"
 #include "utils/atomic_wrapper.h"
@@ -212,15 +213,16 @@ APTH_INTERNAL void apth_notify_fd_closed(int fd)
     if (fd < 0)
         return;
 
-    /* Push fd to each scheduler's pending close list.
-     * We do NOT call apth_sched_wake() here — each scheduler processes
-     * pending_fd_closes at the top of its event manager loop anyway.
-     * Skipping the wake avoids N write(eventfd) syscalls per close(),
-     * which was the single largest source of syscall overhead in the
-     * HTTP server benchmark (8 syscalls per request for 2 closes × 4
-     * schedulers). The trade-off is that cross-scheduler cleanup may
-     * be delayed by up to one event loop iteration (~10ms worst case),
-     * which is acceptable for a close notification. */
+    /* When the reactor is active, route fd-close through it.
+     * The reactor owns all epoll registrations and waiter lists,
+     * so it can clean them up directly. */
+    if (apth_reactor_is_active())
+    {
+        apth_reactor_notify_fd_closed(fd);
+        return;
+    }
+
+    /* Legacy per-scheduler path (fallback when reactor not active). */
     apth_debug("notifying schedulers: fd=%d closed", fd);
     int n_workers = GLOBAL_POOL.init_worker_count;
     for (int i = 0; i < n_workers; i++)

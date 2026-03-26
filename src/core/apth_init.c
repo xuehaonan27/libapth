@@ -5,6 +5,7 @@
 #include "internal/apth_worker.h"
 #include "internal/apth_signal.h"
 #include "internal/apth_fd.h"
+#include "internal/apth_reactor.h"
 #include "internal/apth_preempt.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
@@ -94,6 +95,15 @@ void apth_init(apth_init_t *initvals)
     }
 
     apth_fd_table_init();
+
+    // Start the global I/O reactor (dedicated pthread for epoll_wait).
+    // Must happen before scheduler pool init so schedulers can submit
+    // FD watch requests to the reactor from the start.
+    if (apth_reactor_start() != 0)
+    {
+        apth_debug("WARNING: failed to start reactor, falling back to per-scheduler epoll");
+        // Not fatal — per-scheduler epoll is the fallback
+    }
 
     // Initialize preemption system
     apth_preempt_init();
@@ -196,6 +206,11 @@ void apth_drop(void)
         errno = EPERM;
         return;
     }
+
+    // Stop the reactor FIRST — it holds references to scheduler pointers
+    // (via waiter->th->current_sched) and wakes schedulers via eventfd.
+    // Must stop before schedulers are freed.
+    apth_reactor_stop();
 
     if (apth_global_scheduler_pool_drop() != 0)
     {
