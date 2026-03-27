@@ -8,7 +8,8 @@ int apth_attr_setclass_np(apth_attr_t *attr, int thread_class)
         thread_class != APTH_CLASS_IO_BOUND &&
         thread_class != APTH_CLASS_CPU_BOUND &&
         thread_class != APTH_CLASS_REALTIME &&
-        thread_class != APTH_CLASS_DEDICATED)
+        thread_class != APTH_CLASS_DEDICATED &&
+        thread_class != APTH_CLASS_DISTRIBUTED)
         return EINVAL;
 
     struct apth_attr_st *iattr = APTH_ATTR_CAST(attr);

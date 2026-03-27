@@ -89,9 +89,48 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         }
         else
         {
+#ifdef APTH_NUMA
+            // NUMA-aware round-robin: distribute new threads across
+            // schedulers on the same NUMA node as the creating scheduler.
+            // This avoids piling all threads onto the creating scheduler
+            // while keeping them NUMA-local.
+            apth_sched_t cur = CUR_SCHED;
+            assert(cur != NULL);
+            if (cur->id >= 0)
+            {
+                static _Atomic(unsigned int) numa_rr_counter = 0;
+                unsigned int rr = atomic_fetch_add_relaxed(
+                    &numa_rr_counter, 1);
+                int n_workers = GLOBAL_POOL.init_worker_count;
+                int my_node = cur->numa_node;
+                apth_sched_t best = cur; // fallback: current scheduler
+
+                for (int i = 0; i < n_workers; i++)
+                {
+                    int cand_id = (int)((rr + (unsigned int)i) % (unsigned int)n_workers);
+                    apth_worker_t cand_w = GLOBAL_POOL.worker_ptr_mem_start[cand_id];
+                    if (cand_w == NULL || cand_w->sched == NULL)
+                        continue;
+                    if (!apth_sched_is_opening(cand_w->sched))
+                        continue;
+                    if (cand_w->sched->numa_node == my_node)
+                    {
+                        best = cand_w->sched;
+                        break;
+                    }
+                }
+                sched = best;
+            }
+            else
+            {
+                // Dummy scheduler (dedicated thread context), pick any
+                sched = cur;
+            }
+#else
             // Spawn in current scheduler
             sched = CUR_SCHED;
             assert(sched != NULL);
+#endif /* APTH_NUMA */
         }
     }
 
@@ -101,6 +140,18 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // Pick a real scheduler for spawning the new thread.
     if (sched->id < 0)
         sched = GLOBAL_POOL.worker_ptr_mem_start[0]->sched;
+
+    // APTH_CLASS_DISTRIBUTED: round-robin across all schedulers to spread
+    // threads evenly (e.g., GC workers in JVM). Overrides affinity/NUMA choice.
+    if (iattr->thread_class == APTH_CLASS_DISTRIBUTED)
+    {
+        static _Atomic(unsigned int) __rr_counter = 0;
+        unsigned int idx = atomic_fetch_add_relaxed(&__rr_counter, 1);
+        int sched_id = (int)(idx % (unsigned int)GLOBAL_POOL.init_worker_count);
+        apth_worker_t rr_worker = GLOBAL_POOL.worker_ptr_mem_start[sched_id];
+        if (rr_worker != NULL && rr_worker->sched != NULL)
+            sched = rr_worker->sched;
+    }
 
     // ==================== Dedicated thread creation path ====================
     if (iattr->thread_class == APTH_CLASS_DEDICATED)

@@ -82,6 +82,7 @@ struct ALIGNED(64) apth_st
     pthread_t dedicated_tid;              // backing pthread (only if is_dedicated)
     int dedicated_wake_fd;                // eventfd for blocking (only if is_dedicated)
     apth_sched_t dedicated_dummy_sched;   // dummy scheduler for TLS (only if is_dedicated)
+    struct list_elem dedicated_elem;      // linkage for dedicated thread registry
 
     // ==================== COLD: rarely accessed / large ====================
 

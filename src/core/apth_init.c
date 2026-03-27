@@ -7,9 +7,12 @@
 #include "internal/apth_fd.h"
 #include "internal/apth_reactor.h"
 #include "internal/apth_preempt.h"
+#include "internal/apth_dedicated.h"
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll.inline.h"
+#include "utils/list.inline.h"
 
 static bool LIBAPTH_INITIALIZED = false;
 
@@ -100,6 +103,9 @@ static int apth_init_common(int workers)
     }
 
     apth_fd_table_init();
+
+    // Initialize dedicated thread registry
+    apth_dedicated_registry_init();
 
     // Start the global I/O reactor (dedicated pthread for epoll_wait).
     // Must happen before scheduler pool init so schedulers can submit
@@ -287,6 +293,22 @@ void apth_drop(void)
     // apth_global_scheduler_pool_drop() setting opening=false.
     if (__apth_library_mode)
         __apth_library_mode = false;
+
+    // Unblock dedicated threads that may be blocked on read(dedicated_wake_fd).
+    // Close their wake fds so they get EBADF and can exit gracefully.
+    {
+        lll_internal_lock(&__dedicated_registry_lock);
+        FOR_ELEMENT_IN_LIST(__dedicated_registry, e)
+        {
+            apth_t th = list_entry(e, struct apth_st, dedicated_elem);
+            if (th->dedicated_wake_fd >= 0)
+            {
+                apth_func_raw(close)(th->dedicated_wake_fd);
+                th->dedicated_wake_fd = -1;
+            }
+        }
+        lll_internal_unlock(&__dedicated_registry_lock);
+    }
 
     // Stop the reactor FIRST — it holds references to scheduler pointers
     // (via waiter->th->current_sched) and wakes schedulers via eventfd.

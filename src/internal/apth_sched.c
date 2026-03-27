@@ -30,6 +30,9 @@
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 
+// State callback (defined in apth_safepoint.c)
+extern void __apth_fire_state_callback(apth_t th, int old_state, int new_state);
+
 // Total APTH threads we have. Note this counter is shared across the process,
 // So it should be _Atomic.
 _Atomic(unsigned int) apth_nthreads = 0;
@@ -420,7 +423,7 @@ static inline bool worker0_check_end_process(apth_worker_t worker)
     return end_the_process;
 }
 
-// Try to steal one thread from another scheduler's ready queue.
+// Try to steal one thread from a specific victim scheduler's ready queue.
 // Returns the stolen apth_t on success, or APTH_NULL if nothing was stolen.
 //
 // Protocol (follows the same lock-unlock-relock-commit pattern as transfer_one_th):
@@ -429,6 +432,83 @@ static inline bool worker0_check_end_process(apth_worker_t worker)
 //   3. Lock thief's ready_queue -> push_front -> inc size ->
 //      set_belonging_queue -> commit_state -> unlock
 //   4. Adjust thrcnt for both schedulers
+static apth_t try_steal_from(apth_sched_t thief_sched, apth_sched_t victim_sched)
+{
+    // Speculative lock-free check: skip if victim has 0 or 1 ready threads
+    if (thqueue_size(THQUEUE(victim_sched, ready)) <= 1)
+        return APTH_NULL;
+
+    // Attempt to steal from the BACK of victim's ready queue
+    apth_thqueue_t victim_rq = THQUEUE(victim_sched, ready);
+
+    lll_internal_lock(&victim_rq->th_list_lock);
+
+    // Re-check under lock
+    if (list_empty(&victim_rq->th_list) || victim_rq->size <= 1)
+    {
+        lll_internal_unlock(&victim_rq->th_list_lock);
+        return APTH_NULL;
+    }
+
+    // Inspect the back apth
+    struct list_elem *e = list_back(&victim_rq->th_list);
+    apth_t th = apth_t_list_entry(e);
+
+    // If the `th` happens to be the advised thread, then we just cancel this stealing
+    // and inspect next scheduler. If all stealings fails we natually fails.
+    if (th == atomic_load_acquire(&victim_sched->advised_next_th))
+    {
+        lll_internal_unlock(&victim_rq->th_list_lock);
+        return APTH_NULL;
+    }
+
+    // Steal from back (owner dispatches from front, thief steals from back)
+    e = list_pop_back(&victim_rq->th_list);
+    victim_rq->size--;
+
+    // Acquire ownership lock before releasing victim queue lock
+    // This ensures atomic ownership transfer
+    lll_internal_lock(&th->ownership_lock);
+
+    lll_internal_unlock(&victim_rq->th_list_lock);
+
+    th = apth_t_list_entry(e);
+    assert(APTH_IS_VALID(th));
+    assert(th->current_queue == victim_rq);
+
+    // Update ownership: this APTH now belongs to thief scheduler
+    th->current_sched = thief_sched;
+
+    // Update state to READY
+    atomic_store_release(&th->state, APTH_STATE_READY);
+
+    // Insert into thief's ready queue at front for immediate dispatch
+    apth_thqueue_t thief_rq = THQUEUE(thief_sched, ready);
+
+    lll_internal_lock(&thief_rq->th_list_lock);
+    list_push_front(&thief_rq->th_list, &th->elem);
+    thief_rq->size++;
+    th->current_queue = thief_rq; // Update current_queue
+    lll_internal_unlock(&thief_rq->th_list_lock);
+
+    // Release ownership lock
+    lll_internal_unlock(&th->ownership_lock);
+
+    // Adjust per-scheduler thread counts
+    dec_thrcnt(victim_sched);
+    inc_thrcnt(thief_sched);
+
+    apth_debug("stole thread %p (\"%s\") from sched %d", th, th->name, victim_sched->id);
+    return th;
+}
+
+// Try to steal one thread from another scheduler's ready queue.
+// Returns the stolen apth_t on success, or APTH_NULL if nothing was stolen.
+//
+// With APTH_NUMA enabled, performs a two-pass scan:
+//   Pass 1: try to steal only from schedulers on the SAME NUMA node (lower latency)
+//   Pass 2: try any scheduler (cross-node steal, falls through to existing behavior)
+// Without APTH_NUMA, performs a single scan over all schedulers.
 static apth_t try_steal_work(apth_sched_t thief_sched)
 {
     int n_workers = GLOBAL_POOL.init_worker_count;
@@ -437,6 +517,35 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
 
     // Vary start offset to distribute steal attempts and avoid thundering herd
     unsigned int offset = thief_sched->switches;
+
+#ifdef APTH_NUMA
+    // Pass 1: same NUMA node only — prefer local memory access
+    for (int i = 0; i < n_workers; i++)
+    {
+        int victim_id = (int)((offset + (unsigned int)i) % (unsigned int)n_workers);
+
+        // Don't steal from ourselves
+        if (victim_id == thief_sched->id)
+            continue;
+
+        apth_worker_t victim_worker = GLOBAL_POOL.worker_ptr_mem_start[victim_id];
+        if (victim_worker == NULL)
+            continue;
+
+        apth_sched_t victim_sched = victim_worker->sched;
+        if (victim_sched == NULL || !apth_sched_is_opening(victim_sched))
+            continue;
+
+        // Skip cross-node schedulers in first pass
+        if (victim_sched->numa_node != thief_sched->numa_node)
+            continue;
+
+        apth_t stolen = try_steal_from(thief_sched, victim_sched);
+        if (stolen != APTH_NULL)
+            return stolen;
+    }
+    // Pass 2: fall through to cross-node stealing below
+#endif /* APTH_NUMA */
 
     for (int i = 0; i < n_workers; i++)
     {
@@ -454,76 +563,15 @@ static apth_t try_steal_work(apth_sched_t thief_sched)
         if (victim_sched == NULL || !apth_sched_is_opening(victim_sched))
             continue;
 
-        // Speculative lock-free check: skip if victim has 0 or 1 ready threads
-        if (thqueue_size(THQUEUE(victim_sched, ready)) <= 1)
+#ifdef APTH_NUMA
+        // In pass 2, skip same-node schedulers (already tried in pass 1)
+        if (victim_sched->numa_node == thief_sched->numa_node)
             continue;
+#endif /* APTH_NUMA */
 
-        // Attempt to steal from the BACK of victim's ready queue
-        apth_thqueue_t victim_rq = THQUEUE(victim_sched, ready);
-
-        lll_internal_lock(&victim_rq->th_list_lock);
-
-        // Re-check under lock
-        // if (list_empty(&victim_rq->th_list) || atomic_load_acquire(&victim_rq->size) <= 1)
-        if (list_empty(&victim_rq->th_list) || victim_rq->size <= 1)
-        {
-            lll_internal_unlock(&victim_rq->th_list_lock);
-            continue;
-        }
-
-        // Inspect the back apth
-        struct list_elem *e = list_back(&victim_rq->th_list);
-        apth_t th = apth_t_list_entry(e);
-
-        // If the `th` happens to be the advised thread, then we just cancel this stealing
-        // and inspect next scheduler. If all stealings fails we natually fails.
-        if (th == atomic_load_acquire(&victim_sched->advised_next_th))
-        {
-            lll_internal_unlock(&victim_rq->th_list_lock);
-            continue;
-        }
-
-        // Steal from back (owner dispatches from front, thief steals from back)
-        e = list_pop_back(&victim_rq->th_list);
-        // atomic_fetch_sub_release(&victim_rq->size, 1);
-        victim_rq->size--;
-
-        // Acquire ownership lock before releasing victim queue lock
-        // This ensures atomic ownership transfer
-        lll_internal_lock(&th->ownership_lock);
-
-        lll_internal_unlock(&victim_rq->th_list_lock);
-
-        th = apth_t_list_entry(e);
-        assert(APTH_IS_VALID(th));
-        assert(th->current_queue == victim_rq);
-
-        // Update ownership: this APTH now belongs to thief scheduler
-        th->current_sched = thief_sched;
-
-        // Update state to READY
-        atomic_store_release(&th->state, APTH_STATE_READY);
-
-        // Insert into thief's ready queue at front for immediate dispatch
-        apth_thqueue_t thief_rq = THQUEUE(thief_sched, ready);
-
-        lll_internal_lock(&thief_rq->th_list_lock);
-        list_push_front(&thief_rq->th_list, &th->elem);
-        // atomic_fetch_add_release(&thief_rq->size, 1);
-        thief_rq->size++;
-        // set_belonging_queue_of(th, thief_rq);
-        th->current_queue = thief_rq; // Update current_queue
-        lll_internal_unlock(&thief_rq->th_list_lock);
-
-        // Release ownership lock
-        lll_internal_unlock(&th->ownership_lock);
-
-        // Adjust per-scheduler thread counts
-        dec_thrcnt(victim_sched);
-        inc_thrcnt(thief_sched);
-
-        apth_debug("stole thread %p (\"%s\") from sched %d", th, th->name, victim_id);
-        return th;
+        apth_t stolen = try_steal_from(thief_sched, victim_sched);
+        if (stolen != APTH_NULL)
+            return stolen;
     }
 
     return APTH_NULL;
@@ -669,6 +717,25 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         assert(APTH_IS_VALID(th));
         apth_debug("decided next thread to run: %p (\"%s\")", th, th->name);
 
+        // Safepoint pause check: if global pause is requested, do not dispatch.
+        // Move the thread back to ready queue and loop until resumed.
+        {
+            extern _Atomic(bool) __apth_global_pause;
+            if (atomic_load_acquire(&__apth_global_pause))
+            {
+                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+                th = APTH_NULL;
+                // Spin until resumed — call event manager to stay responsive
+                while (atomic_load_acquire(&__apth_global_pause))
+                {
+                    if (!apth_sched_is_opening(sched))
+                        goto sched_exit;
+                    apth_sched_eventmanager_epoll(sched, &snapshot, false);
+                }
+                continue;
+            }
+        }
+
         apth_check_process_signals(sched);
 
         // Set running start time for new thread and perform a context switch to it
@@ -799,10 +866,12 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 apth_debug("moving thread \"%s\" to ready queue", th->name);
                 atomic_store_release(&th->state, APTH_STATE_READY);
                 transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+                __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_READY);
                 break;
             case APTH_STATE_WAITING:
                 apth_debug("moving thread \"%s\" to waiting queue", th->name);
                 transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, waiting));
+                __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_WAITING);
                 break;
             case APTH_STATE_TERMINATED:
                 // This case should not happen anymore since we handle EXIT via yield reason
@@ -843,6 +912,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // else: ready threads waiting — dispatch immediately, skip I/O poll
     }
 
+sched_exit:
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);
 
     {

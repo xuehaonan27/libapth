@@ -11,6 +11,9 @@
 #include "utils/atomic_wrapper.h"
 #include "utils/archplattoold.h"
 
+// Preempt hook (defined in apth_safepoint.c)
+extern void __apth_fire_preempt_hook(apth_t th);
+
 // ===================== Cooperative (no preemption) =====================
 #if !defined(APTH_PREEMPT_SIGNAL) && !defined(APTH_PREEMPT_INSTRUMENT)
 
@@ -142,6 +145,7 @@ APTH_INTERNAL void apth_preempt_check(void)
         apth_t cur = CUR_APTH;
         if (cur != NULL)
         {
+            __apth_fire_preempt_hook(cur);
             // Only yield if this is an actual apth, not scheduler context
             cur->yield_reason = APTH_YIELD_REASON_TIMESLICE;
             apth_yield();
@@ -181,6 +185,7 @@ APTH_INTERNAL void apth_preempt_check(void)
         apth_t cur = CUR_APTH;
         if (cur != NULL)
         {
+            __apth_fire_preempt_hook(cur);
             cur->yield_reason = APTH_YIELD_REASON_TIMESLICE;
             apth_yield();
         }

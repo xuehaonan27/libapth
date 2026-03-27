@@ -126,5 +126,14 @@ test_dedicated_detach           preload  15
 test_library_init               preload  15
 test_small_stack                preload  15
 
+# ==================== NUMA ====================
+test_numa                       preload  15
+
+# ==================== Thread Enumeration & Safepoint ====================
+test_enumerate                  preload  15
+test_safepoint                  preload  30
+test_distribute                 preload  15
+test_mixed_lock_stress          preload  60
+
 # ==================== RDMA ====================
 test_rdma_sim                   preload  30   skip_unless=rdma

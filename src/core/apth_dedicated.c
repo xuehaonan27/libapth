@@ -8,12 +8,24 @@
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include "utils/lll.inline.h"
+#include "utils/list.inline.h"
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 // External reference to global thread count (defined in apth_sched.c)
 extern _Atomic(unsigned int) apth_nthreads;
+
+// Dedicated thread registry
+lll_internal_t __dedicated_registry_lock;
+struct list __dedicated_registry;
+
+APTH_INTERNAL void apth_dedicated_registry_init(void)
+{
+    lll_internal_init(&__dedicated_registry_lock);
+    list_init(&__dedicated_registry);
+}
 
 // Wrapper function for dedicated thread pthreads.
 // This is the start_routine passed to pthread_create for dedicated threads.
@@ -31,6 +43,11 @@ APTH_INTERNAL void *apth_dedicated_thread_wrapper(void *arg)
     sigemptyset(&ss_block);
     sigaddset(&ss_block, SIGPROF);
     pthread_sigmask(SIG_BLOCK, &ss_block, NULL);
+
+    // Add to dedicated registry for enumeration
+    lll_internal_lock(&__dedicated_registry_lock);
+    list_push_back(&__dedicated_registry, &self->dedicated_elem);
+    lll_internal_unlock(&__dedicated_registry_lock);
 
     // Mark thread as running
     atomic_store_release(&self->state, APTH_STATE_RUNNING);
@@ -96,6 +113,11 @@ APTH_INTERNAL void apth_dedicated_do_exit(void *result)
             apth_sched_wake(joiner->current_sched);
         }
     }
+
+    // Remove from dedicated registry
+    lll_internal_lock(&__dedicated_registry_lock);
+    list_remove(&self->dedicated_elem);
+    lll_internal_unlock(&__dedicated_registry_lock);
 
     // Clear current thread — we are done
     SET_CUR_APTH(NULL);

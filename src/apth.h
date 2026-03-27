@@ -68,8 +68,10 @@ enum
 #define APTH_CLASS_CPU_BOUND APTH_CLASS_CPU_BOUND
     APTH_CLASS_REALTIME,      // Pin to specific scheduler, minimal yield
 #define APTH_CLASS_REALTIME APTH_CLASS_REALTIME
-    APTH_CLASS_DEDICATED      // 1:1 dedicated pthread, bypasses scheduler
+    APTH_CLASS_DEDICATED,     // 1:1 dedicated pthread, bypasses scheduler
 #define APTH_CLASS_DEDICATED APTH_CLASS_DEDICATED
+    APTH_CLASS_DISTRIBUTED    // Round-robin across schedulers (e.g., GC workers)
+#define APTH_CLASS_DISTRIBUTED APTH_CLASS_DISTRIBUTED
 };
 
 int apth_attr_setclass_np(apth_attr_t *attr, int thread_class);
@@ -268,6 +270,34 @@ struct apth_thread_stats {
 
 int apth_get_thread_stats(apth_t th, struct apth_thread_stats *stats);
 
+// ==================== Thread Enumeration ====================
+// Visitor callback for apth_for_each_thread.
+// Return 0 to continue iteration, non-zero to stop early.
+typedef int (*apth_thread_visitor_t)(apth_t th, void *arg);
+
+// Iterate all live threads across all schedulers and dedicated threads.
+// Calls visitor(th, arg) for each thread. Returns count of threads visited.
+int apth_for_each_thread(apth_thread_visitor_t visitor, void *arg);
+
+// Return the number of worker pthreads (schedulers).
+int apth_get_worker_count(void);
+
+// ==================== Safepoint Cooperation ====================
+// Request all schedulers to pause (stop dispatching threads).
+// Blocks until no scheduler has a RUNNING thread.
+int apth_request_pause_all(void);
+
+// Resume all schedulers after a pause.
+int apth_resume_all(void);
+
+// State-change callback: fired when a thread transitions between states.
+typedef void (*apth_state_callback_t)(apth_t th, int old_state, int new_state, void *arg);
+int apth_set_state_callback(apth_state_callback_t cb, void *arg);
+
+// Preemption hook: fired from apth_preempt_check() before yielding.
+typedef void (*apth_preempt_hook_t)(apth_t th, void *arg);
+int apth_set_preempt_hook(apth_preempt_hook_t hook, void *arg);
+
 // ==================== Functions ====================
 
 #include <stdbool.h>
@@ -459,6 +489,23 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock);
 int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstime);
 int apth_rwlock_trywrlock(apth_rwlock_t *rwlock);
 int apth_rwlock_unlock(apth_rwlock_t *rwlock);
+
+// ==================== NUMA Topology ====================
+// Available when compiled with -DAPTH_NUMA.
+// On non-NUMA builds, stub implementations return sensible defaults.
+#ifdef APTH_NUMA
+// Return the number of NUMA nodes detected on the system.
+// Always >= 1 (1 means UMA / single-node).
+int apth_get_numa_node_count(void);
+
+// Return the NUMA node that thread th is currently scheduled on.
+// Returns -1 if th is a dedicated thread (no scheduler) or invalid.
+int apth_get_thread_numa_node(apth_t th);
+#else
+// Stubs for non-NUMA builds: always report single node.
+static inline int apth_get_numa_node_count(void) { return 1; }
+static inline int apth_get_thread_numa_node(apth_t th) { (void)th; return 0; }
+#endif
 
 // ==================== RDMA Completion Waiting ====================
 // Available when compiled with -DAPTH_USE_RDMA and linked with -libverbs.
