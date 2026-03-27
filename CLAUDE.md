@@ -69,6 +69,21 @@ semaphores, and rwlocks with regular M:N apths. See
 - All sync primitives in `src/core/apth_*.c` have dedicated-aware wait/wake
 - All I/O hooks in `src/hook_libc/` bypass to raw syscalls for dedicated threads
 
+**JVM Integration APIs** provide everything needed for HotSpot integration:
+- `apth_init_library(workers)` — library-mode init without APTH_MAIN_BEGIN
+- `apth_getstate(th)` — query thread state (for GC safepoints)
+- `apth_get_saved_sp(th, &sp)` — get frozen SP (for GC stack walking)
+- `apth_get_stack_bounds(th, &base, &size)` — stack memory range
+- `apth_for_each_thread(visitor, arg)` — iterate all live threads
+- `apth_request_pause_all()` / `apth_resume_all()` — global scheduler pause
+- `apth_set_state_callback(cb, arg)` — thread state change notifications
+- `apth_set_preempt_hook(hook, arg)` — hook into preemption check points
+- `apth_get_thread_stats(th, &stats)` — per-thread dispatch/timing stats
+- `apth_get_worker_count()` — query number of scheduler workers
+- `APTH_CLASS_DISTRIBUTED` — round-robin scheduler assignment for GC workers
+- NUMA-aware work stealing and thread placement (`APTH_NUMA`)
+- See `docs/jvm_integration_guide.md` for the complete 12-section guide
+
 ## Compile and Install
 ```shell
 make all
