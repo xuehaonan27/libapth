@@ -182,20 +182,27 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     return 0;
 
 init_fail_cleanup:
-    /* Shut down workers that were already started and free their memory.
-     * Workers that have started a pthread but whose scheduler_routine
-     * hasn't yet set worker->sched will have sched == NULL (from calloc).
-     * We must wait for them to be fully up before calling apth_worker_drop,
-     * which dereferences worker->sched. */
+    /* Shut down workers that were already started.
+     * Wait for each worker to reach READY or FAILED before cleanup.
+     * READY workers need apth_worker_drop (sets opening=false, joins).
+     * FAILED workers need only pthread_join + free (no sched exists). */
     for (int i = 0; i < worker_cnt; i++)
     {
         apth_worker_t w = worker_ptr_mem[i];
         if (w == NULL)
             continue;
-        /* Spin until scheduler_routine sets sched (or thread exits). */
-        while (w->sched == NULL)
+        /* Wait for scheduler_routine to publish its outcome. */
+        while (atomic_load_acquire(&w->state) == APTH_WORKER_STARTING)
             sched_yield();
-        apth_worker_drop(w);
+        if (atomic_load_acquire(&w->state) == APTH_WORKER_READY)
+            apth_worker_drop(w);
+        else
+        {
+            /* FAILED: scheduler_routine already returned; just join + free. */
+            void *pthr_rslt;
+            apth_func_raw(pthread_join)(w->tid, &pthr_rslt);
+            free(w);
+        }
     }
     free(worker_ptr_mem);
     return apth_error(-1, ENOMEM);

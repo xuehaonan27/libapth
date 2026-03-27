@@ -84,14 +84,23 @@ static void poller_match_completions(struct ibv_cq *source_cq,
             }
             else
             {
-                /* Stash full — CQE will be lost.  This indicates too many
-                 * concurrent RDMA operations outpacing the poller.  Log so
-                 * the problem is visible instead of silently hanging. */
+                /* Stash full — CQE will be lost.  Mark the source CQ as
+                 * faulted so subsequent apth_rdma_wait*() on it fails with
+                 * EOVERFLOW instead of hanging silently. */
                 apth_debug("WARNING: RDMA CQE stash full (%d), dropping "
-                           "completion wr_id=%lu on cq=%p",
+                           "completion wr_id=%lu on cq=%p — CQ faulted",
                            APTH_RDMA_STASH_SIZE,
                            (unsigned long)wcs[i].wr_id, source_cq);
                 __atomic_add_fetch(&p->stash_overflows, 1, __ATOMIC_RELAXED);
+                /* Find the CQ slot and mark faulted. */
+                for (int ci = 0; ci < __atomic_load_n(&p->cq_count, __ATOMIC_ACQUIRE); ci++)
+                {
+                    if (p->cqs[ci].cq == source_cq)
+                    {
+                        __atomic_store_n(&p->cq_faulted[ci], true, __ATOMIC_RELEASE);
+                        break;
+                    }
+                }
             }
         }
 
@@ -134,21 +143,27 @@ static void *rdma_poller_func(void *arg)
     {
         bool any_work = false;
 
-        /* Poll all registered CQs.
-         * cq_count is read without cq_lock — benign on x86 but use
-         * an atomic load for TSan cleanliness. */
-        int cq_snap = __atomic_load_n(&p->cq_count, __ATOMIC_ACQUIRE);
-        for (int i = 0; i < cq_snap; i++)
+        /* Snapshot the CQ list under cq_lock so unregister_cq() can
+         * safely mark entries inactive without racing the poller. */
+        struct { struct ibv_cq *cq; bool active; } cq_snap[APTH_RDMA_MAX_CQS];
+        int cq_snap_count;
+        lll_internal_lock(&p->cq_lock);
+        cq_snap_count = p->cq_count;
+        for (int i = 0; i < cq_snap_count; i++)
+            cq_snap[i] = p->cqs[i];
+        lll_internal_unlock(&p->cq_lock);
+
+        for (int i = 0; i < cq_snap_count; i++)
         {
-            if (!p->cqs[i].active)
+            if (!cq_snap[i].active)
                 continue;
 
-            int n = ibv_poll_cq(p->cqs[i].cq, 64, wc_batch);
+            int n = ibv_poll_cq(cq_snap[i].cq, 64, wc_batch);
             if (n <= 0)
                 continue;
 
             any_work = true;
-            poller_match_completions(p->cqs[i].cq, wc_batch, n);
+            poller_match_completions(cq_snap[i].cq, wc_batch, n);
         }
 
         /* Try to match stashed CQEs against newly registered waiters.
@@ -382,10 +397,29 @@ static int rdma_poller_submit(apth_event_t ev, apth_t th, apth_sched_t sched,
     return 0;
 }
 
+/* Check if a CQ is in faulted state (stash overflow caused CQE loss). */
+static bool rdma_cq_is_faulted(struct apth_rdma_poller *p, struct ibv_cq *cq)
+{
+    int count = __atomic_load_n(&p->cq_count, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < count; i++)
+    {
+        if (p->cqs[i].cq == cq)
+            return __atomic_load_n(&p->cq_faulted[i], __ATOMIC_ACQUIRE);
+    }
+    return false;
+}
+
 APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
                                   struct ibv_wc *wc)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
+
+    /* Fail-fast if this CQ lost completions due to stash overflow. */
+    if (rdma_cq_is_faulted(p, cq))
+    {
+        errno = EOVERFLOW;
+        return -1;
+    }
 
     /* ---- Check stash first: another thread's fast-path may have
      *      already polled our CQE and stashed it. ---- */
@@ -466,6 +500,13 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
 {
     if (count <= 0)
         return 0;
+
+    struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
+    if (rdma_cq_is_faulted(p, cq))
+    {
+        errno = EOVERFLOW;
+        return -1;
+    }
 
     apth_t self = CUR_APTH;
     if (self == NULL)

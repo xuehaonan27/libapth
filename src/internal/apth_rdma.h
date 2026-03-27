@@ -83,6 +83,11 @@ struct apth_rdma_poller
     struct apth_rdma_stashed_cqe stash[APTH_RDMA_STASH_SIZE];
     int stash_count;
     _Atomic(uint64_t) stash_overflows; /* Diagnostic counter for lost CQEs */
+
+    /* Per-CQ overflow fault flags.  Set when a CQE is lost due to stash
+     * overflow; subsequent apth_rdma_wait*() on that CQ fails with -1
+     * and errno = EOVERFLOW until cleared.  Indexed by cqs[] slot. */
+    _Atomic(bool) cq_faulted[APTH_RDMA_MAX_CQS];
 };
 
 extern struct apth_rdma_poller GLOBAL_RDMA_POLLER;

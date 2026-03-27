@@ -67,6 +67,17 @@ outside their protecting locks. Both are now atomic (`__atomic_load_n` /
 
 Codex confirmed the IO_BOUND wake fix and reactor queue-full retry are solid.
 
+### Third Commit — Codex Follow-up Review #2
+
+Codex reviewed the second commit and identified 1 remaining issue plus 2
+design improvements:
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 15 | **Worker cleanup hangs if `scheduler_routine` early-returns.** The `while (w->sched == NULL)` spin hangs forever if `scheduler_routine` hits an early-return error (malloc fail, scheduler_init fail) before setting `worker->sched`. | Added `_Atomic(enum apth_worker_state) state` to `struct apth_worker_st` (`STARTING → READY / FAILED`). `scheduler_routine` publishes READY or FAILED. Cleanup path waits for non-STARTING, then calls `apth_worker_drop()` for READY or `pthread_join + free` for FAILED. |
+| 16 | **Stash overflow only logged, not surfaced to callers.** Debug log + counter is invisible to callers. | Added per-CQ `cq_faulted[]` flag. Stash overflow marks the source CQ faulted. `apth_rdma_wait*()` fail-fast with `-1`/`EOVERFLOW` on faulted CQs. |
+| 17 | **Poller reads CQ list lock-free while unregister writes under lock.** | Poller now snapshots CQ list under `cq_lock` before polling. |
+
 ---
 
 ## Known Issues NOT Fixed in This Commit

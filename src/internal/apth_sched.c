@@ -591,13 +591,19 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // Allocate and initialize the scheduler
     apth_sched_t sched;
     if ((sched = (apth_sched_t)malloc(sizeof(struct apth_sched_st))) == NULL)
+    {
+        atomic_store_release(&me->state, APTH_WORKER_FAILED);
         return apth_error(NULL, ENOMEM);
+    }
     if (!apth_scheduler_init(sched, me))
     {
-        // Fail to initialize
+        atomic_store_release(&me->state, APTH_WORKER_FAILED);
+        free(sched);
         return apth_error(NULL, errno);
     }
 
+    /* Publish READY after sched is fully wired into the worker. */
+    atomic_store_release(&me->state, APTH_WORKER_READY);
     apth_debug("WORKER %d created scheduler", me->worker_id);
 
     // Set TLS
