@@ -43,9 +43,11 @@ struct apth_attr_st
 #define ATTR_FLAG_DO_RSEQ 0x0080
 
 // Returns 0 if ST is a valid stack size for a thread stack and EINVAL otherwise.
+// Uses APTH_MIN_STACK (16 KiB) so that callers such as the JVM can request
+// smaller-than-default stacks (e.g. 64 KiB or 128 KiB) without being rejected.
 INLINE int check_stacksize_attr(size_t st)
 {
-    if (st >= APTH_STACK_SIZE_DEFAULT)
+    if (st >= APTH_MIN_STACK)
         return 0;
 
     return EINVAL;

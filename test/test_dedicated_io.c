@@ -103,8 +103,11 @@ APTH_MAIN_BEGIN(argc, argv)
     static char starting[] = "test_dedicated_io: starting\n";
     write(2, starting, sizeof(starting) - 1);
 
-    /* Create pipes */
-    if (pipe(g_pipe1) != 0 || pipe(g_pipe2) != 0)
+    /* Create pipes using raw syscall to avoid LIBAPTH hooks setting
+     * O_NONBLOCK — dedicated threads use blocking raw read/write, so
+     * pipe FDs must be in blocking mode. */
+    if (syscall(SYS_pipe2, g_pipe1, 0) != 0 ||
+        syscall(SYS_pipe2, g_pipe2, 0) != 0)
     {
         static char err[] = "test_dedicated_io: FAIL (pipe creation failed)\n";
         write(2, err, sizeof(err) - 1);

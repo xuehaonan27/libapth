@@ -36,6 +36,12 @@ int apth_initvals_init(apth_init_t *initvals, int workers,
 void apth_init(apth_init_t *initvals);
 void apth_drop(void);
 
+// Library-mode initialization: start LIBAPTH schedulers in the background.
+// The caller's thread continues as a regular pthread and can create apth
+// threads via apth_create().  Call apth_drop() to shut down.
+// Returns 0 on success, -1 on error.
+int apth_init_library(int workers);
+
 // Thread identifier
 typedef struct apth_st *apth_t;
 struct apth_st;
@@ -225,6 +231,42 @@ APTH_EXPOSE_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct 
 APTH_EXPOSE_DECLARE_SYSCALL(int, usleep, unsigned int usec)
 APTH_EXPOSE_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 #undef APTH_EXPOSE_DECLARE_SYSCALL
+
+// ==================== Thread Inspection ====================
+// Public state constants (for use with apth_getstate).
+#define APTH_THREAD_STATE_NEW         0x02
+#define APTH_THREAD_STATE_READY       0x04
+#define APTH_THREAD_STATE_WAITING     0x08
+#define APTH_THREAD_STATE_TERMINATED  0x10
+#define APTH_THREAD_STATE_WAKED       0x20
+#define APTH_THREAD_STATE_RUNNING     0x40
+
+// Query the current scheduling state of a thread.
+// Returns one of the APTH_THREAD_STATE_* constants, or -1 if th is invalid.
+int apth_getstate(apth_t th);
+
+// Get the saved stack pointer of a yielded thread (for GC stack walking).
+// Only valid when apth_getstate(th) != APTH_THREAD_STATE_RUNNING.
+// Returns 0 on success, ESRCH if invalid, EBUSY if thread is RUNNING,
+// ENOTSUP for dedicated threads (they use pthread stack).
+int apth_get_saved_sp(apth_t th, void **sp_out);
+
+// Get the stack memory bounds of a thread.
+// base_out: start of usable stack memory (after guard page).
+// size_out: usable stack size in bytes.
+// Returns 0 on success, ESRCH if invalid, ENOTSUP for dedicated threads.
+int apth_get_stack_bounds(apth_t th, void **base_out, size_t *size_out);
+
+// Thread statistics.
+struct apth_thread_stats {
+    int dispatches;
+    double cpu_time_sec;
+    double wall_time_sec;
+    int thread_class;
+    int state;
+};
+
+int apth_get_thread_stats(apth_t th, struct apth_thread_stats *stats);
 
 // ==================== Functions ====================
 

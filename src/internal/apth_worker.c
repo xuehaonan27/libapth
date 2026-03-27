@@ -146,6 +146,9 @@ static int apth_worker_drop(apth_worker_t worker)
     // Tell the scheduler to clean and exit
     atomic_store_release(&worker->sched->opening, false);
 
+    // Wake the scheduler in case it's blocked in epoll_wait
+    apth_sched_wake(worker->sched);
+
     void *pthr_rslt;
     apth_func_raw(pthread_join)(worker->tid, &pthr_rslt);
     assert(pthr_rslt == NULL);

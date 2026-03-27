@@ -1,3 +1,4 @@
+#include <sched.h>
 #include <stdlib.h>
 
 #include "apth.h"
@@ -42,8 +43,10 @@ int apth_join(apth_t tid, void **value)
         return apth_error(EINVAL, EINVAL);
 
     // TODO: detected all deadlock situations
-    if (tid == self || /* joining myself */
-        (self->joinid == tid) /* `tid` is joining me! */)
+    // self is NULL when called from a pthread context (library mode)
+    if (self != NULL &&
+        (tid == self || /* joining myself */
+         self->joinid == tid) /* `tid` is joining me! */)
         return apth_error(EDEADLK, EDEADLK);
     // TODO: should the atomicity semantic be weak or strong?
     // TODO: if the caller (self) is cancelled, `tid` should remain joinable
@@ -102,8 +105,20 @@ int apth_join(apth_t tid, void **value)
         return 0;
     }
 
+    // ==================== Caller is a plain pthread (library mode) ====================
+    if (self == NULL)
+    {
+        // No apth context — spin-wait on the target's state.
+        // This is used when a pthread caller (e.g., JVM main thread via
+        // apth_init_library) joins an apth.
+        while (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)
+            sched_yield();
+
+        goto join_cleanup;
+    }
+
     // ==================== Caller is a dedicated thread joining regular apth ====================
-    if (self != NULL && self->is_dedicated)
+    if (self->is_dedicated)
     {
         // Dedicated caller blocks on its wake_fd until target terminates
         while (atomic_load_acquire(&tid->state) != APTH_STATE_TERMINATED)

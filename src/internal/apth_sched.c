@@ -597,11 +597,16 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             break;
         }
 
-        // For main worker, check whether we should end the process
-        if (worker0_check_end_process(me))
+        // For main worker, check whether we should end the process.
+        // In library mode, worker0 relies on apth_worker_drop() setting
+        // opening=false to exit — the user calls apth_drop() externally.
         {
-            apth_debug("MAIN REQUEST TO END THE PROCESS");
-            break;
+            extern bool __apth_library_mode;
+            if (!__apth_library_mode && worker0_check_end_process(me))
+            {
+                apth_debug("MAIN REQUEST TO END THE PROCESS");
+                break;
+            }
         }
 
         apth_debug("new loop");
@@ -840,15 +845,18 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
 
     apth_debug("WORKER %d(tid=%p) EXITING...", me->worker_id, me->tid);
 
-    if (is_main_worker(me))
     {
-        apth_debug("MAIN WORKER %d ENDING THE PROCESS...", me->worker_id);
+        extern bool __apth_library_mode;
+        if (is_main_worker(me) && !__apth_library_mode)
+        {
+            apth_debug("MAIN WORKER %d ENDING THE PROCESS...", me->worker_id);
 
-        // First we should isolate ourself from the pool
-        lll_internal_lock(&GLOBAL_POOL.pool_lock);
-        list_remove(&me->elem);
-        lll_internal_unlock(&GLOBAL_POOL.pool_lock);
-        apth_drop();
+            // Isolate from pool before calling apth_drop
+            lll_internal_lock(&GLOBAL_POOL.pool_lock);
+            list_remove(&me->elem);
+            lll_internal_unlock(&GLOBAL_POOL.pool_lock);
+            apth_drop();
+        }
     }
 
     // Disarm preemption before cleanup
@@ -858,10 +866,14 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     apth_debug("WORKER %d cleaning self", me->worker_id);
     apth_scheduler_kill();
 
-    // Only worker 0 needs to free itself. Other workers are freed in `apth_drop`
-    // routine by worker 0.
-    if (is_main_worker(me))
-        free(me);
+    // In normal mode, worker 0 frees itself (other workers are freed by
+    // apth_global_scheduler_pool_drop).  In library mode, ALL workers
+    // (including worker 0) are freed by apth_global_scheduler_pool_drop.
+    {
+        extern bool __apth_library_mode;
+        if (is_main_worker(me) && !__apth_library_mode)
+            free(me);
+    }
 
     // Now we should be an ordinary pthread.
     return NULL;

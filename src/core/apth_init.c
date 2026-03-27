@@ -60,22 +60,27 @@ __attribute__((weak)) void apth_configure(apth_init_t *cfg)
     apth_config_defaults(cfg);
 }
 
-// Initialize the libapth package.
-void apth_init(apth_init_t *initvals)
+/*
+ * apth_init_common - shared initialization for both apth_init() and
+ * apth_init_library().  Initializes all subsystems, creates scheduler
+ * workers, and waits for them to be ready.
+ *
+ * Returns 0 on success, -1 on error.
+ */
+static int apth_init_common(int workers)
 {
     if (LIBAPTH_INITIALIZED)
     {
         errno = EPERM;
-        return;
+        return -1;
     }
-    else
-        LIBAPTH_INITIALIZED = true;
+    LIBAPTH_INITIALIZED = true;
 
     // Initialize syscall wrapping
     if (apth_func_system_init() != 0)
     {
         apth_debug("fail to initialize syscall system");
-        return;
+        return -1;
     }
 
     apth_debug("enter");
@@ -84,14 +89,14 @@ void apth_init(apth_init_t *initvals)
     if (apth_signal_system_init() != 0)
     {
         apth_debug("fail to initialize signal system");
-        return;
+        return -1;
     }
 
     // Register process level signal catchers
     if (apth_install_kernel_signal_catchers() != 0)
     {
         apth_debug("fail to register process level signal catchers");
-        return;
+        return -1;
     }
 
     apth_fd_table_init();
@@ -114,13 +119,13 @@ void apth_init(apth_init_t *initvals)
     // TODO: check `initvals`
 
     // Initialize the scheduler
-    if (apth_global_scheduler_pool_init(initvals->workers) != 0)
+    if (apth_global_scheduler_pool_init(workers) != 0)
     {
         apth_shield
         {
             apth_func_system_drop();
             errno = EAGAIN;
-            return;
+            return -1;
         }
     }
 
@@ -134,6 +139,14 @@ void apth_init(apth_init_t *initvals)
     }
 
     apth_debug("All spawned");
+    return 0;
+}
+
+// Initialize the libapth package.
+void apth_init(apth_init_t *initvals)
+{
+    if (apth_init_common(initvals->workers) != 0)
+        return;
 
     // Spawn the main thread
 
@@ -195,6 +208,69 @@ void apth_init(apth_init_t *initvals)
 #endif
 }
 
+// In library mode, the user calls apth_drop() explicitly instead of
+// having worker0 trigger it, so worker0 must skip its own apth_drop().
+bool __apth_library_mode = false;
+
+// Static sentinel object used as MAIN_APTH in library mode.
+// No actual thread is created — this is just enough to satisfy the
+// workers' spin-wait for MAIN_APTH != NULL and the end-of-process check.
+static struct apth_st __library_sentinel;
+
+// Dummy scheduler for the host pthread in library mode.
+static struct apth_sched_st __library_host_sched;
+
+/*
+ * apth_init_library - library-mode initialization.
+ *
+ * Starts LIBAPTH schedulers in the background without taking over the
+ * calling pthread.  The caller can then create apth threads via
+ * apth_create() and later shut down with apth_drop().
+ *
+ * Design: Instead of creating a real sentinel thread (which creates race
+ * conditions during shutdown), we use a static sentinel OBJECT that
+ * satisfies the workers' MAIN_APTH check.  Workers in library mode never
+ * self-terminate — they only exit when apth_worker_drop() sets opening=false.
+ *
+ * Returns 0 on success, -1 on error.
+ */
+int apth_init_library(int workers)
+{
+    if (apth_init_common(workers) != 0)
+        return -1;
+
+    // Dummy scheduler for the calling pthread (so CUR_APTH works)
+    memset(&__library_host_sched, 0, sizeof(__library_host_sched));
+    __library_host_sched.id = -1;
+    __library_host_sched.wake_eventfd = -1;
+    __library_host_sched.epoll_fd = -1;
+    __library_host_sched.cur = NULL;
+    SET_CUR_SCHED(&__library_host_sched);
+
+    __apth_library_mode = true;
+
+    // Set up the static sentinel as MAIN_APTH.
+    // Pretend the "main apth" already exited via apth_exit — this keeps
+    // workers alive (worker0_check_end_process checks alive_thread_count
+    // when MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT is set, but in library
+    // mode that check is skipped entirely).
+    memset(&__library_sentinel, 0, sizeof(__library_sentinel));
+    __library_sentinel.magic = APTH_MAGIC;
+    atomic_store_release(&__library_sentinel.state, APTH_STATE_TERMINATED);
+
+    set_DEBUG_USING_HOOKED(1);
+    set_MAIN_APTH(&__library_sentinel);
+
+    // Mark that the "main apth" has already exited.
+    // In library mode, worker0_check_end_process is skipped, so these
+    // flags don't trigger self-termination — workers only exit when
+    // apth_worker_drop() sets opening=false during apth_drop().
+    atomic_store_release(&MAIN_APTH_EXITED, 1);
+    atomic_store_release(&MAIN_APTH_EXITED_BY_CALLING_APTH_EXIT, 1);
+
+    return 0;
+}
+
 // Drop the libapth package.
 void apth_drop(void)
 {
@@ -206,6 +282,11 @@ void apth_drop(void)
         errno = EPERM;
         return;
     }
+
+    // In library mode, just clear the flag. Workers will be stopped by
+    // apth_global_scheduler_pool_drop() setting opening=false.
+    if (__apth_library_mode)
+        __apth_library_mode = false;
 
     // Stop the reactor FIRST — it holds references to scheduler pointers
     // (via waiter->th->current_sched) and wakes schedulers via eventfd.
