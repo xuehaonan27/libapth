@@ -5,7 +5,8 @@
 - **Claude Code (Opus 4.6)**: Comprehensive codebase review — architecture,
   sync primitives, I/O hooks, scheduler, JVM integration APIs, tests.
 - **Codex (GPT 5.4)**: Static analysis review — RDMA subsystem, reactor,
-  IO_BOUND scheduling semantics.
+  IO_BOUND scheduling semantics.  Follow-up review of Claude's fixes
+  identified 3 additional issues (all addressed in second commit).
 
 ## Scope
 
@@ -47,6 +48,24 @@ disaggregated-memory integration.  96 test files, ~15K lines of core code,
 | 9 | **Guard page `mprotect` failure silently ignored.** Failed `mprotect` meant no stack overflow protection, logged as warning and continued. (Claude finding) | `mprotect` failure now frees the stack and TCB, returns `APTH_NULL`. | `apth_tcb.c` |
 | 10 | **No sanitizer support in build.** No way to build with AddressSanitizer, ThreadSanitizer, or UBSan. (Claude finding) | Added optional `SANITIZE` variable: `make SANITIZE=address`. | `Makefile` |
 | 11 | **Dead commented-out code.** ~30 lines of commented-out worker TLS code in `apth_worker.c`. | Removed. | `apth_worker.c` |
+
+---
+
+## Follow-up Fixes (Second Commit — Codex Review of Claude's Fixes)
+
+Codex reviewed the first commit and identified 3 issues in the new code:
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 12 | **`pthread_once` non-recoverable.** Auto-start via `pthread_once` swallowed `apth_rdma_poller_start()` return value; if `pthread_create` failed, the once-guard was consumed and subsequent `register_cq()` calls silently succeeded with no poller. Also, `pthread_once_t` survives `apth_drop()`, breaking re-init. | Replaced with explicit state machine (`STOPPED → STARTING → RUNNING → FAILED`). `register_cq()` uses CAS to race for STARTING state; surfaces startup errors to caller. `apth_rdma_poller_stop()` resets to STOPPED for clean re-init. |
+| 13 | **CQE stash bounded loss at 256.** Stash overflow silently dropped CQEs, turning "unbounded loss" into "bounded loss" rather than eliminating it. | Stash overflow now logs a warning and increments `stash_overflows` counter. Silent loss → visible error. Fixed ceiling kept (dynamic alloc in hot path undesirable). |
+| 14 | **Worker init cleanup NULL deref.** `apth_worker_drop()` dereferences `worker->sched->opening` before the worker pthread sets `sched`. With `malloc` (no zeroing), `sched` was garbage. | Changed `malloc` → `calloc` (zero-init). Cleanup path now spins on `sched == NULL` before calling `apth_worker_drop()`. |
+
+Codex also flagged unsynchronized reads of `cq_count` and `stash_count`
+outside their protecting locks. Both are now atomic (`__atomic_load_n` /
+`__atomic_store_n`) for TSan cleanliness.
+
+Codex confirmed the IO_BOUND wake fix and reactor queue-full retry are solid.
 
 ---
 

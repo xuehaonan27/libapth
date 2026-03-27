@@ -156,7 +156,7 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     for (worker_cnt = 0; worker_cnt < wrkthrs_to_spwan; worker_cnt += 1)
     {
         int init_result;
-        struct apth_worker_st *workers_mem = malloc(sizeof(struct apth_worker_st));
+        struct apth_worker_st *workers_mem = calloc(1, sizeof(struct apth_worker_st));
         if (workers_mem == NULL)
         {
             goto init_fail_cleanup;
@@ -182,12 +182,20 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     return 0;
 
 init_fail_cleanup:
-    /* Shut down workers that were already started and free their memory. */
+    /* Shut down workers that were already started and free their memory.
+     * Workers that have started a pthread but whose scheduler_routine
+     * hasn't yet set worker->sched will have sched == NULL (from calloc).
+     * We must wait for them to be fully up before calling apth_worker_drop,
+     * which dereferences worker->sched. */
     for (int i = 0; i < worker_cnt; i++)
     {
         apth_worker_t w = worker_ptr_mem[i];
-        if (w != NULL)
-            apth_worker_drop(w);
+        if (w == NULL)
+            continue;
+        /* Spin until scheduler_routine sets sched (or thread exits). */
+        while (w->sched == NULL)
+            sched_yield();
+        apth_worker_drop(w);
     }
     free(worker_ptr_mem);
     return apth_error(-1, ENOMEM);

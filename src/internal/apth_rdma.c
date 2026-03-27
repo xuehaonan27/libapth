@@ -16,12 +16,12 @@
 
 struct apth_rdma_poller GLOBAL_RDMA_POLLER;
 
-/* Guard for one-shot auto-start of the poller thread. */
-static pthread_once_t rdma_poller_once = PTHREAD_ONCE_INIT;
-static void rdma_poller_auto_start(void)
-{
-    apth_rdma_poller_start();
-}
+/* Poller lifecycle state machine: STOPPED → STARTING → RUNNING / FAILED.
+ * apth_rdma_poller_stop() resets to STOPPED so re-init after apth_drop()
+ * works.  Unlike pthread_once, this surfaces startup failures and allows
+ * retry. */
+enum { RDMA_POLLER_STOPPED = 0, RDMA_POLLER_STARTING, RDMA_POLLER_RUNNING, RDMA_POLLER_FAILED };
+static _Atomic(int) rdma_poller_state = RDMA_POLLER_STOPPED;
 
 /* ================================================================
  * Poller main loop
@@ -74,11 +74,25 @@ static void poller_match_completions(struct ibv_cq *source_cq,
         /* No waiter matched — stash for later retrieval by fast-path callers.
          * ibv_poll_cq destructively removes CQEs from the CQ, so we must
          * preserve unmatched completions to avoid data loss. */
-        if (!matched && p->stash_count < APTH_RDMA_STASH_SIZE)
+        if (!matched)
         {
-            struct apth_rdma_stashed_cqe *s = &p->stash[p->stash_count++];
-            s->cq = source_cq;
-            s->wc = wcs[i];
+            if (p->stash_count < APTH_RDMA_STASH_SIZE)
+            {
+                struct apth_rdma_stashed_cqe *s = &p->stash[p->stash_count++];
+                s->cq = source_cq;
+                s->wc = wcs[i];
+            }
+            else
+            {
+                /* Stash full — CQE will be lost.  This indicates too many
+                 * concurrent RDMA operations outpacing the poller.  Log so
+                 * the problem is visible instead of silently hanging. */
+                apth_debug("WARNING: RDMA CQE stash full (%d), dropping "
+                           "completion wr_id=%lu on cq=%p",
+                           APTH_RDMA_STASH_SIZE,
+                           (unsigned long)wcs[i].wr_id, source_cq);
+                __atomic_add_fetch(&p->stash_overflows, 1, __ATOMIC_RELAXED);
+            }
         }
 
         lll_internal_unlock(&p->waiter_lock);
@@ -120,8 +134,11 @@ static void *rdma_poller_func(void *arg)
     {
         bool any_work = false;
 
-        /* Poll all registered CQs. */
-        for (int i = 0; i < p->cq_count; i++)
+        /* Poll all registered CQs.
+         * cq_count is read without cq_lock — benign on x86 but use
+         * an atomic load for TSan cleanliness. */
+        int cq_snap = __atomic_load_n(&p->cq_count, __ATOMIC_ACQUIRE);
+        for (int i = 0; i < cq_snap; i++)
         {
             if (!p->cqs[i].active)
                 continue;
@@ -134,8 +151,9 @@ static void *rdma_poller_func(void *arg)
             poller_match_completions(p->cqs[i].cq, wc_batch, n);
         }
 
-        /* Try to match stashed CQEs against newly registered waiters. */
-        if (p->stash_count > 0)
+        /* Try to match stashed CQEs against newly registered waiters.
+         * Speculative check outside lock (atomic for TSan). */
+        if (__atomic_load_n(&p->stash_count, __ATOMIC_ACQUIRE) > 0)
         {
             lll_internal_lock(&p->waiter_lock);
             int wcount = atomic_load_acquire(&p->waiter_count);
@@ -225,6 +243,7 @@ APTH_INTERNAL int apth_rdma_poller_start(void)
     lll_internal_init(&p->waiter_lock);
     atomic_store_release(&p->waiter_count, 0);
     p->cq_count = 0;
+    p->stash_count = 0;
 
     __atomic_store_n(&p->running, true, __ATOMIC_RELEASE);
 
@@ -232,9 +251,12 @@ APTH_INTERNAL int apth_rdma_poller_start(void)
     if (ret != 0)
     {
         __atomic_store_n(&p->running, false, __ATOMIC_RELEASE);
+        atomic_store_release(&rdma_poller_state, RDMA_POLLER_FAILED);
+        apth_debug("RDMA poller pthread_create failed: %d", ret);
         return -1;
     }
 
+    atomic_store_release(&rdma_poller_state, RDMA_POLLER_RUNNING);
     apth_debug("RDMA poller started");
     return 0;
 }
@@ -243,11 +265,18 @@ APTH_INTERNAL void apth_rdma_poller_stop(void)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
     if (!__atomic_load_n(&p->running, __ATOMIC_ACQUIRE))
+    {
+        /* Reset state so re-init after apth_drop() can restart. */
+        atomic_store_release(&rdma_poller_state, RDMA_POLLER_STOPPED);
         return;
+    }
 
     __atomic_store_n(&p->running, false, __ATOMIC_RELEASE);
     pthread_join(p->thread, NULL);
 
+    /* Reset to STOPPED so the next apth_init_library() + register_cq()
+     * cycle can restart the poller cleanly. */
+    atomic_store_release(&rdma_poller_state, RDMA_POLLER_STOPPED);
     apth_debug("RDMA poller stopped");
 }
 
@@ -257,23 +286,50 @@ APTH_INTERNAL void apth_rdma_poller_stop(void)
 
 APTH_INTERNAL int apth_rdma_register_cq(struct ibv_cq *cq)
 {
-    /* Auto-start the poller thread on first CQ registration. */
-    pthread_once(&rdma_poller_once, rdma_poller_auto_start);
+    /* Auto-start the poller thread on first CQ registration.
+     * Uses CAS so only one thread executes start; others spin until
+     * the state reaches RUNNING or FAILED. */
+    for (;;)
+    {
+        int state = atomic_load_acquire(&rdma_poller_state);
+        if (state == RDMA_POLLER_RUNNING)
+            break;
+        if (state == RDMA_POLLER_FAILED)
+            return -1; /* Previous start failed; caller must handle. */
+        if (state == RDMA_POLLER_STOPPED)
+        {
+            int expected = RDMA_POLLER_STOPPED;
+            if (atomic_compare_exchange_acquire(&rdma_poller_state,
+                                                 &expected, RDMA_POLLER_STARTING))
+            {
+                /* We won the race — start the poller. */
+                if (apth_rdma_poller_start() != 0)
+                    return -1; /* State already set to FAILED inside start. */
+                break;
+            }
+            /* Another thread won; loop and re-check. */
+        }
+        /* STARTING: another thread is starting; spin briefly. */
+        __asm__ volatile("pause" ::: "memory");
+    }
 
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
 
     lll_internal_lock(&p->cq_lock);
-    if (p->cq_count >= APTH_RDMA_MAX_CQS)
+    int cur_count = p->cq_count;
+    if (cur_count >= APTH_RDMA_MAX_CQS)
     {
         lll_internal_unlock(&p->cq_lock);
         return -1;
     }
-    p->cqs[p->cq_count].cq = cq;
-    p->cqs[p->cq_count].active = true;
-    p->cq_count++;
+    p->cqs[cur_count].cq = cq;
+    p->cqs[cur_count].active = true;
+    /* Atomic store so the poller's lock-free read sees the new entry only
+     * after cq/active are fully written. */
+    __atomic_store_n(&p->cq_count, cur_count + 1, __ATOMIC_RELEASE);
     lll_internal_unlock(&p->cq_lock);
 
-    apth_debug("RDMA CQ registered: %p (total=%d)", cq, p->cq_count);
+    apth_debug("RDMA CQ registered: %p (total=%d)", cq, cur_count + 1);
     return 0;
 }
 
@@ -333,7 +389,7 @@ APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
 
     /* ---- Check stash first: another thread's fast-path may have
      *      already polled our CQE and stashed it. ---- */
-    if (p->stash_count > 0)
+    if (__atomic_load_n(&p->stash_count, __ATOMIC_ACQUIRE) > 0)
     {
         lll_internal_lock(&p->waiter_lock);
         for (int i = 0; i < p->stash_count; i++)

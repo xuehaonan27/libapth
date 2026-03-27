@@ -82,6 +82,7 @@ struct apth_rdma_poller
      * Protected by waiter_lock (shared with waiter table). */
     struct apth_rdma_stashed_cqe stash[APTH_RDMA_STASH_SIZE];
     int stash_count;
+    _Atomic(uint64_t) stash_overflows; /* Diagnostic counter for lost CQEs */
 };
 
 extern struct apth_rdma_poller GLOBAL_RDMA_POLLER;
