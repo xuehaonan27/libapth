@@ -101,6 +101,23 @@ static void poller_match_completions(struct ibv_cq *source_cq,
                         break;
                     }
                 }
+
+                /* Fail and wake ALL active waiters on the faulted CQ.
+                 * Without this, threads already in rdma_poller_submit()
+                 * slow-path would hang forever if their CQE was the one
+                 * that got dropped. We hold waiter_lock here. */
+                int wcount = atomic_load_acquire(&p->waiter_count);
+                for (int wi = 0; wi < wcount; wi++)
+                {
+                    struct apth_rdma_waiter *w = &p->waiters[wi];
+                    if (!w->active || w->cq != source_cq)
+                        continue;
+                    __atomic_store_n(&w->ev->ev_status,
+                                     APTH_EV_STATUS_FAILED, __ATOMIC_RELEASE);
+                    w->active = false;
+                    if (w->sched)
+                        apth_sched_wake(w->sched);
+                }
             }
         }
 

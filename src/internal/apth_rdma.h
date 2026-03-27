@@ -110,7 +110,15 @@ APTH_INTERNAL void apth_rdma_unregister_cq(struct ibv_cq *cq);
  * Slow path: registers with the poller, yields to the scheduler,
  * and resumes when the poller detects the completion.
  *
- * Returns 0 on success (wc filled), -1 on error. */
+ * Returns 0 on success (wc filled), -1 on error.
+ *
+ * CQ fault contract: if the internal CQE stash overflows (too many
+ * concurrent unmatched completions), the affected CQ is marked
+ * faulted.  All in-flight waiters on that CQ are woken with FAILED
+ * status, and subsequent calls return -1 with errno = EOVERFLOW.
+ * A faulted CQ cannot be cleared — the application must destroy and
+ * recreate the QP/CQ pair, as lost CQEs mean the completion stream
+ * is no longer consistent. */
 APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
                                   struct ibv_wc *wc);
 

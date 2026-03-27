@@ -256,6 +256,12 @@ jint os::init_2(void) {
 
 ### Key Points
 
+- **CQ fault contract**: if `apth_rdma_wait()` returns `-1` with
+  `errno == EOVERFLOW`, the CQ's completion stream has lost integrity
+  (internal stash overflow dropped a CQE).  All in-flight waiters on
+  that CQ are also failed and woken.  The CQ cannot be cleared — the
+  JVM must destroy and recreate the QP/CQ pair before issuing more
+  RDMA operations on that connection.
 - **No `APTH_MAIN_BEGIN` needed.** The JVM main thread stays a pthread.
 - **No `APTH_CONFIG` needed.** Worker count is passed directly to
   `apth_init_library()`.

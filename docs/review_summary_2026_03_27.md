@@ -78,6 +78,16 @@ design improvements:
 | 16 | **Stash overflow only logged, not surfaced to callers.** Debug log + counter is invisible to callers. | Added per-CQ `cq_faulted[]` flag. Stash overflow marks the source CQ faulted. `apth_rdma_wait*()` fail-fast with `-1`/`EOVERFLOW` on faulted CQs. |
 | 17 | **Poller reads CQ list lock-free while unregister writes under lock.** | Poller now snapshots CQ list under `cq_lock` before polling. |
 
+### Fourth Commit — Codex Follow-up Review #3
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 18 | **CQ fault only blocked future callers; in-flight waiters still hung.** Stash overflow marked `cq_faulted` but threads already submitted via `rdma_poller_submit()` remained pending. If the dropped CQE belonged to one, that thread hung forever. | Fault path now walks the waiter table under `waiter_lock`, marks all active waiters on the faulted CQ as `FAILED`, and wakes their schedulers. |
+
+CQ fault contract agreed: no `clear_cq_fault()` API. EOVERFLOW means the
+CQ/QP pair must be destroyed and recreated. Documented in `apth_rdma.h`
+API comments and `jvm_integration_guide.md`.
+
 ---
 
 ## Known Issues NOT Fixed in This Commit
