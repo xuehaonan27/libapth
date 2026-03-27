@@ -12,6 +12,15 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	-DAPTH_NUMA \
 	-DAPTH_USE_IOURING
 LDFLAGS := -pthread -luring
+
+# Optional sanitizer support.  Usage:
+#   make SANITIZE=address   # AddressSanitizer (memory errors)
+#   make SANITIZE=thread    # ThreadSanitizer (data races)
+#   make SANITIZE=undefined # UBSan (undefined behavior)
+ifdef SANITIZE
+  CFLAGS  += -fsanitize=$(SANITIZE) -fno-omit-frame-pointer
+  LDFLAGS += -fsanitize=$(SANITIZE)
+endif
 ARFLAGS := rcs
 
 # Directories

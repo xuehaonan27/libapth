@@ -8,6 +8,9 @@
 #include "internal/apth_reactor.h"
 #include "internal/apth_preempt.h"
 #include "internal/apth_dedicated.h"
+#ifdef APTH_USE_RDMA
+#include "internal/apth_rdma.h"
+#endif
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
 #include "utils/atomic_wrapper.h"
@@ -309,6 +312,11 @@ void apth_drop(void)
         }
         lll_internal_unlock(&__dedicated_registry_lock);
     }
+
+    // Stop the RDMA poller (if running) before stopping schedulers.
+#ifdef APTH_USE_RDMA
+    apth_rdma_poller_stop();
+#endif
 
     // Stop the reactor FIRST — it holds references to scheduler pointers
     // (via waiter->th->current_sched) and wakes schedulers via eventfd.

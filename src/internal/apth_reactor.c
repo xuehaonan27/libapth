@@ -506,19 +506,26 @@ APTH_INTERNAL void apth_reactor_submit_unwatch(int fd, apth_event_t ev)
 {
     struct apth_reactor *r = &GLOBAL_REACTOR;
 
-    lll_internal_lock(&r->req_lock);
-    if (r->req_count >= REACTOR_REQ_QUEUE_SIZE)
+    /* UNWATCH is a cleanup operation and must not be silently dropped.
+     * Spin-retry if the queue is full — the reactor drains it promptly. */
+    for (;;)
     {
+        lll_internal_lock(&r->req_lock);
+        if (r->req_count < REACTOR_REQ_QUEUE_SIZE)
+        {
+            struct reactor_request *req = &r->reqs[r->req_count++];
+            req->type = REACTOR_REQ_UNWATCH;
+            req->fd = fd;
+            req->ev = ev;
+            req->th = NULL;
+            req->sched = NULL;
+            lll_internal_unlock(&r->req_lock);
+            break;
+        }
         lll_internal_unlock(&r->req_lock);
-        return;
+        reactor_wake(); /* Prod reactor to drain. */
+        sched_yield();
     }
-    struct reactor_request *req = &r->reqs[r->req_count++];
-    req->type = REACTOR_REQ_UNWATCH;
-    req->fd = fd;
-    req->ev = ev;
-    req->th = NULL;
-    req->sched = NULL;
-    lll_internal_unlock(&r->req_lock);
 
     ev->epoll_registered = false;
 }
@@ -527,19 +534,26 @@ APTH_INTERNAL void apth_reactor_notify_fd_closed(int fd)
 {
     struct apth_reactor *r = &GLOBAL_REACTOR;
 
-    lll_internal_lock(&r->req_lock);
-    if (r->req_count >= REACTOR_REQ_QUEUE_SIZE)
+    /* FD_CLOSE must not be dropped — stale epoll registrations cause
+     * mis-woken threads if the FD number is reused by the kernel. */
+    for (;;)
     {
+        lll_internal_lock(&r->req_lock);
+        if (r->req_count < REACTOR_REQ_QUEUE_SIZE)
+        {
+            struct reactor_request *req = &r->reqs[r->req_count++];
+            req->type = REACTOR_REQ_FD_CLOSE;
+            req->fd = fd;
+            req->ev = NULL;
+            req->th = NULL;
+            req->sched = NULL;
+            lll_internal_unlock(&r->req_lock);
+            break;
+        }
         lll_internal_unlock(&r->req_lock);
-        return;
+        reactor_wake(); /* Prod reactor to drain. */
+        sched_yield();
     }
-    struct reactor_request *req = &r->reqs[r->req_count++];
-    req->type = REACTOR_REQ_FD_CLOSE;
-    req->fd = fd;
-    req->ev = NULL;
-    req->th = NULL;
-    req->sched = NULL;
-    lll_internal_unlock(&r->req_lock);
 
     reactor_wake();
 }

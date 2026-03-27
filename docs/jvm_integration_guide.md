@@ -245,10 +245,9 @@ jint os::init_2(void) {
         return JNI_ERR;
     }
 
-    // Start RDMA poller if disaggregated memory is configured.
-    // Note: apth_rdma_poller_start() is an internal function.
-    // The poller is started automatically when the first CQ is registered
-    // via apth_rdma_register_cq() — no manual start needed from JVM side.
+    // The RDMA poller thread is started automatically the first time
+    // apth_rdma_register_cq() is called — no manual start needed.
+    // It is stopped automatically by apth_drop() during shutdown.
 
     // ... rest of os::init_2() ...
     return JNI_OK;

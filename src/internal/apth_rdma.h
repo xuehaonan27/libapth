@@ -33,9 +33,10 @@
 struct ibv_cq;
 struct ibv_wc;
 
-/* Maximum registered CQs and concurrent RDMA waiters. */
+/* Maximum registered CQs, concurrent RDMA waiters, and stash size. */
 #define APTH_RDMA_MAX_CQS     64
 #define APTH_RDMA_MAX_WAITERS  4096
+#define APTH_RDMA_STASH_SIZE   256
 
 /* A pending RDMA wait request. */
 struct apth_rdma_waiter
@@ -47,6 +48,14 @@ struct apth_rdma_waiter
     uint64_t wr_id;          /* Work request ID to match */
     struct ibv_wc *wc_out;   /* Where to store the completion */
     bool active;             /* Slot in use */
+};
+
+/* A CQE polled by one thread's fast path that didn't match its wr_id.
+ * Stashed here so the rightful owner can retrieve it later. */
+struct apth_rdma_stashed_cqe
+{
+    struct ibv_cq *cq;
+    struct ibv_wc wc;
 };
 
 /* Global RDMA poller state. */
@@ -68,6 +77,11 @@ struct apth_rdma_poller
     struct apth_rdma_waiter waiters[APTH_RDMA_MAX_WAITERS];
     _Atomic(int) waiter_count;
     lll_internal_t waiter_lock;
+
+    /* Stash for CQEs polled by fast-path callers that didn't match.
+     * Protected by waiter_lock (shared with waiter table). */
+    struct apth_rdma_stashed_cqe stash[APTH_RDMA_STASH_SIZE];
+    int stash_count;
 };
 
 extern struct apth_rdma_poller GLOBAL_RDMA_POLLER;

@@ -584,6 +584,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // Now we are in a separated Pthread
     apth_worker_arg_t worker_arg = (apth_worker_arg_t)arg;
     apth_worker_t me = worker_arg->self;
+    free(worker_arg); /* Allocated in apth_worker_init, consumed here. */
 
     apth_debug("WORKER %d entered routine", me->worker_id);
 

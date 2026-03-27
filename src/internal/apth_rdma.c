@@ -16,6 +16,13 @@
 
 struct apth_rdma_poller GLOBAL_RDMA_POLLER;
 
+/* Guard for one-shot auto-start of the poller thread. */
+static pthread_once_t rdma_poller_once = PTHREAD_ONCE_INIT;
+static void rdma_poller_auto_start(void)
+{
+    apth_rdma_poller_start();
+}
+
 /* ================================================================
  * Poller main loop
  *
@@ -25,15 +32,17 @@ struct apth_rdma_poller GLOBAL_RDMA_POLLER;
  * burning CPU while keeping latency low.
  * ================================================================ */
 
-static void poller_match_completions(struct ibv_wc *wcs, int n)
+static void poller_match_completions(struct ibv_cq *source_cq,
+                                     struct ibv_wc *wcs, int n)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
 
     for (int i = 0; i < n; i++)
     {
         uint64_t wr_id = wcs[i].wr_id;
+        bool matched = false;
 
-        /* Find the waiter matching this wr_id.
+        /* Find the waiter matching (cq, wr_id).
          * Linear scan is acceptable because:
          * 1. The waiter table is cache-hot (poller accesses it every iteration)
          * 2. Typical active waiter count is small (tens, not thousands)
@@ -45,7 +54,7 @@ static void poller_match_completions(struct ibv_wc *wcs, int n)
             struct apth_rdma_waiter *w = &p->waiters[j];
             if (!w->active)
                 continue;
-            if (w->wr_id != wr_id)
+            if (w->cq != source_cq || w->wr_id != wr_id)
                 continue;
 
             /* Match found.  Store the completion and mark event. */
@@ -58,8 +67,20 @@ static void poller_match_completions(struct ibv_wc *wcs, int n)
             if (w->sched)
                 apth_sched_wake(w->sched);
 
+            matched = true;
             break;
         }
+
+        /* No waiter matched — stash for later retrieval by fast-path callers.
+         * ibv_poll_cq destructively removes CQEs from the CQ, so we must
+         * preserve unmatched completions to avoid data loss. */
+        if (!matched && p->stash_count < APTH_RDMA_STASH_SIZE)
+        {
+            struct apth_rdma_stashed_cqe *s = &p->stash[p->stash_count++];
+            s->cq = source_cq;
+            s->wc = wcs[i];
+        }
+
         lll_internal_unlock(&p->waiter_lock);
     }
 }
@@ -110,7 +131,46 @@ static void *rdma_poller_func(void *arg)
                 continue;
 
             any_work = true;
-            poller_match_completions(wc_batch, n);
+            poller_match_completions(p->cqs[i].cq, wc_batch, n);
+        }
+
+        /* Try to match stashed CQEs against newly registered waiters. */
+        if (p->stash_count > 0)
+        {
+            lll_internal_lock(&p->waiter_lock);
+            int wcount = atomic_load_acquire(&p->waiter_count);
+            int new_stash = 0;
+            for (int si = 0; si < p->stash_count; si++)
+            {
+                struct apth_rdma_stashed_cqe *s = &p->stash[si];
+                bool found = false;
+                for (int j = wcount - 1; j >= 0; j--)
+                {
+                    struct apth_rdma_waiter *w = &p->waiters[j];
+                    if (!w->active)
+                        continue;
+                    if (w->cq != s->cq || w->wr_id != s->wc.wr_id)
+                        continue;
+                    if (w->wc_out)
+                        *w->wc_out = s->wc;
+                    __atomic_store_n(&w->ev->ev_status, APTH_EV_STATUS_OCCURRED, __ATOMIC_RELEASE);
+                    w->active = false;
+                    if (w->sched)
+                        apth_sched_wake(w->sched);
+                    found = true;
+                    any_work = true;
+                    break;
+                }
+                if (!found)
+                {
+                    /* Keep in stash for next round. */
+                    if (new_stash != si)
+                        p->stash[new_stash] = p->stash[si];
+                    new_stash++;
+                }
+            }
+            p->stash_count = new_stash;
+            lll_internal_unlock(&p->waiter_lock);
         }
 
         if (any_work)
@@ -197,6 +257,9 @@ APTH_INTERNAL void apth_rdma_poller_stop(void)
 
 APTH_INTERNAL int apth_rdma_register_cq(struct ibv_cq *cq)
 {
+    /* Auto-start the poller thread on first CQ registration. */
+    pthread_once(&rdma_poller_once, rdma_poller_auto_start);
+
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
 
     lll_internal_lock(&p->cq_lock);
@@ -266,16 +329,44 @@ static int rdma_poller_submit(apth_event_t ev, apth_t th, apth_sched_t sched,
 APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
                                   struct ibv_wc *wc)
 {
-    /* ---- Fast path: completion already available ---- */
-    /* ibv_poll_cq is a userspace memory read (~10ns), no syscall.
-     * Very common for cached/prefetched data or short RDMA RTTs. */
+    struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
+
+    /* ---- Check stash first: another thread's fast-path may have
+     *      already polled our CQE and stashed it. ---- */
+    if (p->stash_count > 0)
+    {
+        lll_internal_lock(&p->waiter_lock);
+        for (int i = 0; i < p->stash_count; i++)
+        {
+            if (p->stash[i].cq == cq && p->stash[i].wc.wr_id == wr_id)
+            {
+                if (wc)
+                    *wc = p->stash[i].wc;
+                /* Remove from stash by swapping with last. */
+                p->stash_count--;
+                if (i < p->stash_count)
+                    p->stash[i] = p->stash[p->stash_count];
+                lll_internal_unlock(&p->waiter_lock);
+                return 0;
+            }
+        }
+        lll_internal_unlock(&p->waiter_lock);
+    }
+
+    /* ---- Fast path: poll CQ once (~10ns userspace read). ---- */
     struct ibv_wc local_wc;
     int n = ibv_poll_cq(cq, 1, &local_wc);
-    if (n > 0 && local_wc.wr_id == wr_id)
+    if (n > 0)
     {
-        if (wc)
-            *wc = local_wc;
-        return 0; /* Zero-yield fast path */
+        if (local_wc.wr_id == wr_id)
+        {
+            if (wc)
+                *wc = local_wc;
+            return 0; /* Zero-yield fast path */
+        }
+        /* CQE belongs to another wr_id — forward to poller/stash
+         * instead of dropping it (ibv_poll_cq is destructive). */
+        poller_match_completions(cq, &local_wc, 1);
     }
 
     /* ---- Slow path: register with poller, yield, wait ---- */
@@ -335,6 +426,7 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
     int n = ibv_poll_cq(cq, batch, local_wcs);
     for (int i = 0; i < n; i++)
     {
+        bool matched = false;
         for (int j = 0; j < count; j++)
         {
             if (!found[j] && local_wcs[i].wr_id == wr_ids[j])
@@ -343,9 +435,13 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
                     wcs[j] = local_wcs[i];
                 found[j] = true;
                 remaining--;
+                matched = true;
                 break;
             }
         }
+        /* Forward unmatched CQEs to poller/stash to prevent data loss. */
+        if (!matched)
+            poller_match_completions(cq, &local_wcs[i], 1);
     }
 
     if (remaining == 0)

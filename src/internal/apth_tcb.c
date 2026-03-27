@@ -162,13 +162,19 @@ APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t gu
                 // Stack grows downward: guard page at the lowest address
                 if (mprotect(t->stack_mem_start, guardsize, PROT_NONE) != 0)
                 {
-                    apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
+                    apth_debug("mprotect failed for guard page: %s", strerror(errno));
+                    munmap(mem, total_size);
+                    apth_shield { free(t); }
+                    return APTH_NULL;
                 }
 #else
                 // Stack grows upward: guard page at the highest address
                 if (mprotect(t->stack_mem_start + stacksize, guardsize, PROT_NONE) != 0)
                 {
-                    apth_debug("Warning: mprotect failed for guard page: %s", strerror(errno));
+                    apth_debug("mprotect failed for guard page: %s", strerror(errno));
+                    munmap(mem, total_size);
+                    apth_shield { free(t); }
+                    return APTH_NULL;
                 }
 #endif
             }

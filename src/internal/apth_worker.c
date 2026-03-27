@@ -17,36 +17,6 @@ struct apth_global_scheduler_pool GLOBAL_POOL;
 _Atomic(unsigned int) WORKER_SPAWNED = 0x7FFFFFFF;
 _Atomic(unsigned int) SYNC_BEFORE_MAIN_APTH_SPAWN = 0;
 
-// #ifdef APTH_CUR_USING_KEYWORD
-// APTH_THREAD_LOCAL apth_worker_t __cur_worker_tls = NULL;
-// #else
-// // Use pthread TLS API
-// pthread_key_t __CUR_WORKER_KEY;
-
-// static void worker_key_t_destr_fn(void *) { /* nop */ }
-// #endif
-
-// void worker_key_t_init(void)
-// {
-// #ifdef APTH_CUR_USING_KEYWORD
-//     // No initialization needed for thread-local storage keywords
-//     __cur_worker_tls = NULL;
-// #else
-//     int result = apth_func_raw(pthread_key_create)(&__CUR_WORKER_KEY, worker_key_t_destr_fn);
-//     assert_msg(result == 0, "fail pthread_key_create");
-// #endif
-// }
-
-// void worker_key_t_drop(void)
-// {
-// #ifdef APTH_CUR_USING_KEYWORD
-//     __cur_worker_tls = NULL;
-// #else
-//     int result = apth_func_raw(pthread_key_delete)(__CUR_WORKER_KEY);
-//     assert_msg(result == 0, "fail pthread_key_delete");
-// #endif
-// }
-
 // Get worker by `worker_id`
 APTH_INTERNAL apth_worker_t get_worker_by_id(int worker_id)
 {
@@ -127,8 +97,7 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
         return apth_error(-1, EINVAL);
     }
 
-    // Prepare worker arguments
-    // TODO: free arg when drop
+    // Prepare worker arguments (freed by scheduler_routine after extraction)
     apth_worker_arg_t arg;
     if ((arg = (apth_worker_arg_t)malloc(sizeof(struct apth_worker_pthread_arg))) == NULL)
         return apth_error(-1, ENOMEM);
@@ -190,12 +159,14 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
         struct apth_worker_st *workers_mem = malloc(sizeof(struct apth_worker_st));
         if (workers_mem == NULL)
         {
-            // TODO: free all previous malloc memory
-            return apth_error(-1, ENOMEM);
+            goto init_fail_cleanup;
         }
 
         if ((init_result = apth_worker_init(workers_mem, worker_cnt)) != 0)
-            return apth_error(init_result, errno);
+        {
+            free(workers_mem);
+            goto init_fail_cleanup;
+        }
         apth_debug("spwaned worker %d at %p", worker_cnt, workers_mem);
         list_push_back(&GLOBAL_POOL.wrkpthrs_list, &workers_mem->elem);
         worker_ptr_mem[worker_cnt] = workers_mem;
@@ -209,6 +180,17 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     WORKER_POOL_INITIALIZED = true;
 
     return 0;
+
+init_fail_cleanup:
+    /* Shut down workers that were already started and free their memory. */
+    for (int i = 0; i < worker_cnt; i++)
+    {
+        apth_worker_t w = worker_ptr_mem[i];
+        if (w != NULL)
+            apth_worker_drop(w);
+    }
+    free(worker_ptr_mem);
+    return apth_error(-1, ENOMEM);
 }
 
 APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
