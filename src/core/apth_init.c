@@ -286,6 +286,8 @@ int apth_init_library(int workers)
 // Drop the libapth package.
 void apth_drop(void)
 {
+    static volatile bool _drop_in_progress = false;
+
     set_DEBUG_USING_HOOKED(0);
 
     apth_debug("enter");
@@ -295,10 +297,16 @@ void apth_drop(void)
         return;
     }
 
-    // In library mode, just clear the flag. Workers will be stopped by
-    // apth_global_scheduler_pool_drop() setting opening=false.
-    if (__apth_library_mode)
-        __apth_library_mode = false;
+    // Reentrancy guard: worker 0 may call apth_drop() from its exit
+    // path when __apth_library_mode is false. Prevent recursive drop.
+    if (_drop_in_progress)
+        return;
+    _drop_in_progress = true;
+
+    // NOTE: Do NOT clear __apth_library_mode here.
+    // It must stay true until after workers are joined, otherwise
+    // worker 0 sees !__apth_library_mode and calls apth_drop()
+    // recursively from the scheduler exit path.
 
     // Unblock dedicated threads that may be blocked on read(dedicated_wake_fd).
     // Close their wake fds so they get EBADF and can exit gracefully.
@@ -331,6 +339,10 @@ void apth_drop(void)
         apth_debug("fail to drop global scheduler pool");
         PANIC("fail to drop global scheduler pool");
     }
+
+    // Now safe to clear library mode — all workers have exited.
+    if (__apth_library_mode)
+        __apth_library_mode = false;
 
     if (apth_signal_system_drop() != 0)
     {
