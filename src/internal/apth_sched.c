@@ -287,6 +287,28 @@ APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
     }
 }
 
+APTH_INTERNAL void apth_sched_wake_thread(apth_sched_t sched, apth_t t)
+{
+    if (sched == NULL || t == NULL)
+        return;
+
+    // Use transfer_th which handles lock ordering and queue state correctly.
+    // transfer_th(th, from, to) moves th from one queue to another.
+    apth_thqueue_t waiting_q = THQUEUE(sched, waiting);
+    apth_thqueue_t waked_q   = THQUEUE(sched, waked);
+
+    // Only move if the thread is actually in the waiting queue.
+    // apth_is_in does a speculative check (no lock needed for correctness
+    // because we re-verify inside transfer_th which locks both queues).
+    if (apth_is_in(waiting_q, t))
+    {
+        transfer_th(t, waiting_q, waked_q);
+    }
+
+    // Wake the scheduler so it processes the waked queue promptly
+    apth_sched_wake(sched);
+}
+
 static void __drain_free_th(apth_t t)
 {
     if (t->join_arg == NULL)
@@ -743,6 +765,14 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             }
         }
 
+        // Check if dispatch is prevented (JVM safepoint/suspend)
+        if (atomic_load_acquire(&th->dispatch_prevented))
+        {
+            transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+            th = APTH_NULL;
+            continue;
+        }
+
         apth_check_process_signals(sched);
 
         // Set running start time for new thread and perform a context switch to it
@@ -765,7 +795,22 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Before context switch, we should handle signals
         if (th->sigpendcnt > 0)
             apth_deliver_pending_signals(th);
+
+        // Track per-apth CPU time via CLOCK_THREAD_CPUTIME_ID
+        struct timespec __cpu_start;
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &__cpu_start);
+
         apth_ctx_switch(SCHED_CTX(sched), CTX(th));
+
+        // Accumulate per-apth CPU time (delta between dispatch and yield)
+        {
+            struct timespec __cpu_end;
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &__cpu_end);
+            uint64_t delta = (uint64_t)(__cpu_end.tv_sec - __cpu_start.tv_sec) * 1000000000ULL
+                           + (uint64_t)(__cpu_end.tv_nsec - __cpu_start.tv_nsec);
+            th->accumulated_cpu_ns += delta;
+        }
+
         // Prepare for thread insertion and event management phase
         SET_CUR_APTH(NULL);
 

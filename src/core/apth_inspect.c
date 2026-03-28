@@ -59,7 +59,10 @@ int apth_get_thread_stats(apth_t th, struct apth_thread_stats *stats)
     if (stats == NULL)
         return EINVAL;
     stats->dispatches = th->dispatches;
-    stats->cpu_time_sec = apth_time_t2d(&th->running);
+    if (th->accumulated_cpu_ns > 0)
+        stats->cpu_time_sec = (double)th->accumulated_cpu_ns / 1e9;
+    else
+        stats->cpu_time_sec = apth_time_t2d(&th->running);
     apth_time_t now, elapsed;
     apth_time_set(&now, APTH_TIME_NOW);
     apth_time_set(&elapsed, &now);

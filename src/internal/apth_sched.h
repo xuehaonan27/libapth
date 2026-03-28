@@ -45,4 +45,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg);
 // #endif
 // }
 
+// Wake a specific thread for signal delivery (used by enhanced apth_kill)
+APTH_INTERNAL void apth_sched_wake_thread(apth_sched_t sched, apth_t t);
+
 #endif // __LIBAPTH_INTERNAL_APTH_SCHED_H

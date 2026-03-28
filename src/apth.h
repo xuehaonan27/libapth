@@ -298,6 +298,12 @@ int apth_set_state_callback(apth_state_callback_t cb, void *arg);
 typedef void (*apth_preempt_hook_t)(apth_t th, void *arg);
 int apth_set_preempt_hook(apth_preempt_hook_t hook, void *arg);
 
+/* ==================== Dedicated Thread Attachment ==================== */
+int apth_attach_self_as_dedicated(apth_t *out);
+int apth_detach_self(void);
+int apth_prevent_dispatch(apth_t t);
+int apth_allow_dispatch(apth_t t);
+
 // ==================== Functions ====================
 
 #include <stdbool.h>

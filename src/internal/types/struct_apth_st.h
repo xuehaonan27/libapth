@@ -59,6 +59,7 @@ struct ALIGNED(64) apth_st
     apth_time_t spawned;
     apth_time_t lastran;
     apth_time_t running;
+    uint64_t accumulated_cpu_ns;   /* Per-apth kernel CPU time (nanoseconds) */
     uint64_t last_yield_tick;
     int yield_timeslice;
 
@@ -79,6 +80,7 @@ struct ALIGNED(64) apth_st
 
     /* Dedicated thread (hybrid scheduling): 1:1 pthread mode */
     bool is_dedicated;                    // true if this is a 1:1 dedicated pthread
+    volatile bool dispatch_prevented;  /* JVM safepoint: prevent scheduler dispatch */
     pthread_t dedicated_tid;              // backing pthread (only if is_dedicated)
     int dedicated_wake_fd;                // eventfd for blocking (only if is_dedicated)
     apth_sched_t dedicated_dummy_sched;   // dummy scheduler for TLS (only if is_dedicated)
