@@ -1,6 +1,13 @@
 #ifndef __LIBAPTH_H
 #define __LIBAPTH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <signal.h>  /* sigset_t, needed by APIs below */
+#include <sched.h>   /* cpu_set_t */
+
 // Size definitions for x86-64 Linux GNU (leave room for other platforms)
 #if defined(__x86_64__) && defined(__linux__)
 #define __SIZEOF_APTH_ATTR_T 256
@@ -107,8 +114,24 @@ enum
 
 typedef unsigned int apth_key_t;
 
-/* Once-only execution */
+/* Once-only execution.
+ * _Atomic(int) is C11; for C++ we use volatile int which is ABI-compatible.
+ * apth_once() uses __atomic builtins internally, not the type's atomicity. */
+#ifdef __cplusplus
+typedef volatile int apth_once_t;
+#else
 typedef _Atomic(int) apth_once_t;
+#endif
+#define APTH_ONCE_INIT 0
+
+/* For C++ callers: apth_func_raw(name) resolves to name directly.
+ * LIBAPTH hooks only interpose when loaded via LD_PRELOAD;
+ * when statically linked, libc functions are not hooked. */
+#ifdef __cplusplus
+#ifndef apth_func_raw
+#define apth_func_raw(name) name
+#endif
+#endif
 
 // ==================== Cleanup ====================
 enum
@@ -131,6 +154,8 @@ enum
 #include <bits/types/sigset_t.h>     // for sigset_t
 #include <sys/types.h>               // for pid_t
 #include <sys/select.h>              // for fd_set
+#ifndef __cplusplus
+/* Syscall hook declarations — C only (conflict with C++ overloads/keywords) */
 #include <sys/socket.h>              // for socklen_t
 #include <sys/poll.h>                // for nfds_t
 #include <bits/types/struct_iovec.h> // for struct iovec
@@ -173,8 +198,8 @@ APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, pwritev64v2, int fd, const struct iovec *io
 APTH_EXPOSE_DECLARE_SYSCALL(ssize_t, copy_file_range, int inputfd, off64_t *inputpos, int outputfd,
                             off64_t *outputpos, size_t length, unsigned int flags /* must be zero */)
 APTH_EXPOSE_DECLARE_SYSCALL(int, dup, int old)
-APTH_EXPOSE_DECLARE_SYSCALL(int, dup2, int old, int new)
-APTH_EXPOSE_DECLARE_SYSCALL(int, dup3, int old, int new, int flags)
+APTH_EXPOSE_DECLARE_SYSCALL(int, dup2, int old, int newfd)
+APTH_EXPOSE_DECLARE_SYSCALL(int, dup3, int old, int newfd, int flags)
 APTH_EXPOSE_DECLARE_SYSCALL(int, select, int nfd, fd_set *rfds, fd_set *wfds,
                             fd_set *efds, struct timeval *timeout)
 APTH_EXPOSE_DECLARE_SYSCALL(int, pselect, int nfds, fd_set *rfds, fd_set *wfds,
@@ -233,6 +258,7 @@ APTH_EXPOSE_DECLARE_SYSCALL(int, nanosleep, const struct timespec *rqtp, struct 
 APTH_EXPOSE_DECLARE_SYSCALL(int, usleep, unsigned int usec)
 APTH_EXPOSE_DECLARE_SYSCALL(unsigned int, sleep, unsigned int sec)
 #undef APTH_EXPOSE_DECLARE_SYSCALL
+#endif /* !__cplusplus — end of syscall hook declarations */
 
 // ==================== Thread Inspection ====================
 // Public state constants (for use with apth_getstate).
@@ -639,5 +665,9 @@ void apth_configure(apth_init_t *cfg);
 #define APTH_MAIN_END \
     return (void *)0; \
     }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __LIBAPTH_H */

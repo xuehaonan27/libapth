@@ -14,6 +14,8 @@
 #include "internal/apth_tcb.h"
 #include "internal/apth_time.h"
 #include "internal/apth_sched.h"
+#include "internal/apth_data.h"
+#include "internal/apth_cleanup.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/apth_errno.h"
 #include "utils/lll.inline.h"
@@ -170,6 +172,15 @@ int apth_detach_self(void)
     apth_t t = CUR_APTH;
     if (t == NULL || !t->is_dedicated)
         return apth_error(EINVAL, EINVAL);
+
+    // Run cleanup handlers (matches apth_dedicated_do_exit)
+    apth_thread_cleanup(t);
+
+    // Run TLS destructors (POSIX: after cleanup handlers, before thread dies)
+    apth_key_destroydata(t);
+
+    // Restore pre-attach signal mask (undo SIGPROF block from attach)
+    pthread_sigmask(SIG_SETMASK, &t->sigmask, NULL);
 
     // Remove from dedicated registry
     lll_internal_lock(&__dedicated_registry_lock);
