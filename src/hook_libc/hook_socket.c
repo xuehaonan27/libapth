@@ -10,7 +10,7 @@ APTH_DEFINE_HOOK(int, socket,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(socket)(domain, style, protocol);
     }
     apth_hook_debug(socket);
@@ -30,7 +30,7 @@ APTH_DEFINE_HOOK(int, shutdown, (int sockfd, int how), (sockfd, how))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(shutdown)(sockfd, how);
     }
     apth_hook_debug(shutdown);
@@ -47,7 +47,7 @@ APTH_DEFINE_HOOK(int, socketpair,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(socketpair)(domain, style, protocol, filedes);
     }
     apth_hook_debug(socketpair);
@@ -71,7 +71,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(connect)(fd, (struct sockaddr *)addr, length);
     }
     apth_hook_debug(connect);
@@ -116,7 +116,7 @@ APTH_DEFINE_HOOK(int, accept,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(accept)(fd, addr, length);
     }
     apth_hook_debug(accept);
@@ -174,7 +174,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(recvfrom)(sockfd, buf, nbytes, flags, src_addr, addrlen);
     }
     apth_hook_debug(recvfrom);
@@ -240,7 +240,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(recvfrom)(__fd, __buf, __n, __flags, __addr, __addr_len);
     }
     (void)__buflen;
@@ -255,7 +255,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sendto)(sockfd, buf, nbytes, flags, dest_addr, dest_len);
     }
     apth_hook_debug(sendto);
@@ -327,7 +327,7 @@ APTH_DEFINE_HOOK(ssize_t, recv,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(recv)(sockfd, buf, len, flags);
     }
     apth_hook_debug(recv);
@@ -348,7 +348,7 @@ APTH_DEFINE_HOOK(ssize_t, __recv_chk,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(recv)(sockfd, buf, len, flags);
     }
     // TODO: Perform check here
@@ -363,7 +363,7 @@ APTH_DEFINE_HOOK(ssize_t, send,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(send)(sockfd, buf, len, flags);
     }
     apth_hook_debug(send);

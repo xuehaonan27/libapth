@@ -8,7 +8,7 @@ APTH_DEFINE_HOOK(int, pipe, (int pipefd[2]), (pipefd))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pipe)(pipefd);
     }
     apth_hook_debug(pipe);

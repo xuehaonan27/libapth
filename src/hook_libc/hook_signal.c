@@ -8,7 +8,7 @@ APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, ha
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(signal)(sig, handler);
     }
     apth_hook_debug(signal);
@@ -37,7 +37,7 @@ APTH_DEFINE_HOOK(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(__sysv_signal)(sig, handler);
     }
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
@@ -56,7 +56,7 @@ APTH_DEFINE_HOOK(sighandler_t, sysv_signal, (int sig, sighandler_t handler), (si
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sysv_signal)(sig, handler);
     }
     return apth_func(__sysv_signal)(sig, handler);
@@ -77,7 +77,7 @@ APTH_DEFINE_HOOK(int, sigaction,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigaction)(sig, act, oldact);
     }
     apth_hook_debug(sigaction);
@@ -105,7 +105,7 @@ APTH_DEFINE_HOOK(int, sigwait, (const sigset_t *set, int *sigp), (set, sigp))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigwait)(set, sigp);
     }
     apth_hook_debug(sigwait);
@@ -140,7 +140,7 @@ APTH_DEFINE_HOOK(int, raise, (int sig), (sig))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(raise)(sig);
     }
     apth_t self = CUR_APTH;
@@ -153,7 +153,7 @@ APTH_DEFINE_HOOK(int, gsignal, (int sig), (sig))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(gsignal)(sig);
     }
     return apth_func(raise)(sig);
@@ -165,7 +165,7 @@ APTH_DEFINE_HOOK(int, sigprocmask,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigprocmask)(how, set, oldset);
     }
     // Manual of sigprocmask(2) says:
@@ -185,7 +185,7 @@ APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigpending)(set);
     }
     if (set == NULL)
@@ -222,7 +222,7 @@ APTH_DEFINE_HOOK(int, pause, (void), ())
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pause)();
     }
     apth_hook_debug(pause);
@@ -262,7 +262,7 @@ APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigsuspend)(mask);
     }
     apth_t self = CUR_APTH;
@@ -289,7 +289,7 @@ APTH_DEFINE_HOOK(int, sigaltstack, (const stack_t *restrict ss, stack_t *restric
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigaltstack)(ss, oss);
     }
     apth_t cur = CUR_APTH;
@@ -323,7 +323,7 @@ APTH_DEFINE_HOOK(int, sigstack,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sigstack)(stack, oldstack);
     }
     apth_hook_debug(sigstack);

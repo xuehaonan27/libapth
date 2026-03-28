@@ -19,7 +19,7 @@ APTH_DEFINE_HOOK(int, system, (const char *cmd), (cmd))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(system)(cmd);
     }
     struct sigaction sa_ign, sa_int, sa_quit;
@@ -91,7 +91,7 @@ APTH_DEFINE_HOOK(pid_t, fork, (void), ())
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(fork)();
     }
     apth_hook_debug(fork);
@@ -117,7 +117,7 @@ APTH_DEFINE_HOOK(pid_t, _Fork, (void), ())
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(_Fork)();
     }
     apth_hook_debug(_Fork);
@@ -139,7 +139,7 @@ APTH_DEFINE_HOOK(pid_t, vfork, (void), ())
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(vfork)();
     }
     apth_hook_debug(vfork);
@@ -166,7 +166,7 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(waitpid)(wpid, status, options);
     }
     pid_t pid;
@@ -196,7 +196,7 @@ APTH_DEFINE_HOOK(pid_t, wait, (int *status_ptr), (status_ptr))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(wait)(status_ptr);
     }
     apth_hook_debug(wait);
@@ -212,7 +212,7 @@ APTH_DEFINE_HOOK(pid_t, wait4,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(wait4)(pid, status_ptr, options, usage);
     }
     apth_hook_debug(wait4);

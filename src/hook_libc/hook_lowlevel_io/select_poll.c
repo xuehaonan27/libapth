@@ -77,7 +77,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(select)(nfd, rfds, wfds, efds, timeout);
     }
     apth_t cur = CUR_APTH;
@@ -275,7 +275,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pselect)(nfds, rfds, wfds, efds, ts, mask);
     }
     apth_t cur = CUR_APTH;
@@ -488,7 +488,7 @@ APTH_DEFINE_HOOK(int, poll,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(poll)(fds, nfds, timeout);
     }
     if (nfds == 0)

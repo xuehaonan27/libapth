@@ -12,7 +12,7 @@ static int __variadic_open(const char *pathname, int flags, va_list vargs)
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             mode_t mode = 0;
             if ((flags & O_CREAT) || (flags & O_TMPFILE))
@@ -68,7 +68,7 @@ static int __variadic_open64(const char *pathname, int flags, va_list vargs)
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             mode_t mode = 0;
             if ((flags & O_CREAT) || (flags & O_TMPFILE))
@@ -122,7 +122,7 @@ static int __variadic_openat(int dirfd, const char *pathname, int flags, va_list
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             mode_t mode = 0;
             if ((flags & O_CREAT) || (flags & O_TMPFILE))
@@ -175,7 +175,7 @@ static int __variadic_openat64(int dirfd, const char *pathname, int flags, va_li
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             mode_t mode = 0;
             if ((flags & O_CREAT) || (flags & O_TMPFILE))
@@ -269,7 +269,7 @@ APTH_DEFINE_HOOK(int, creat, (const char *pathname, mode_t mode), (pathname, mod
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(creat)(pathname, mode);
     }
     apth_hook_debug(creat);
@@ -289,7 +289,7 @@ APTH_DEFINE_HOOK(int, creat64, (const char *pathname, mode_t mode), (pathname, m
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(creat64)(pathname, mode);
     }
     apth_hook_debug(creat64);
@@ -309,7 +309,7 @@ APTH_DEFINE_HOOK(int, close, (int fd), (fd))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(close)(fd);
     }
     apth_hook_debug(close);
@@ -334,7 +334,7 @@ APTH_DEFINE_HOOK(int, close_range,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(close_range)(lowfd, maxfd, flags);
     }
     apth_hook_debug(close_range);
@@ -359,7 +359,7 @@ APTH_DEFINE_HOOK(void, closefrom, (int lowfd), (lowfd))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             apth_func_raw(closefrom)(lowfd);
             return;

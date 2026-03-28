@@ -7,11 +7,11 @@ AR := ar
 CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
-	-DAPTH_HOLD_INITIALIZER_PTHREAD \
-	-DAPTH_PREEMPT_SIGNAL \
-	-DAPTH_NUMA \
-	-DAPTH_USE_IOURING
-LDFLAGS := -pthread -luring
+	-DAPTH_HOLD_INITIALIZER_PTHREAD
+	# Disabled for JVM integration testing:
+	# -DAPTH_PREEMPT_SIGNAL (conflicts with HotSpot's deliberate SIGSEGV probes)
+	# -DAPTH_NUMA -DAPTH_USE_IOURING (not needed for local-only phase 1)
+LDFLAGS := -pthread
 
 # Optional sanitizer support.  Usage:
 #   make SANITIZE=address   # AddressSanitizer (memory errors)
@@ -115,6 +115,32 @@ APP_PTHREAD_BINS := $(patsubst $(APPS_DIR)/%.c, $(BIN_DIR)/%, $(APP_PTHREAD_SOUR
 .PHONY: run-all-tests
 .PHONY: test-% clean distclean help info
 .PHONY: install uninstall
+
+# ==================== Core Library (JVM-safe, no hooks) ====================
+# Excludes hook wrappers that export libc symbols (sigaction, read, etc.)
+# Includes raw function resolver and all core/internal/attr/utils code.
+CORE_CFLAGS := $(CFLAGS) -DAPTH_CORE_BUILD
+CORE_SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f | grep -v 'hook_libc/hook_' | grep -v 'hook_libc/apth_hook_init_drop')
+CORE_SRC_FILES += $(SRC_DIR)/hook_libc/raw_funcs.c
+CORE_OBJ_DIR := $(BUILD_DIR)/obj_core
+CORE_OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(CORE_OBJ_DIR)/%.o,$(CORE_SRC_FILES))
+CORE_OBJ_FILES += $(patsubst $(SRC_DIR)/%.S,$(CORE_OBJ_DIR)/%.o,$(ASM_FILES))
+CORE_STATIC_LIB := $(LIB_DIR)/libapth_core.a
+
+$(CORE_OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CORE_CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(CORE_OBJ_DIR)/%.o: $(SRC_DIR)/%.S
+	@mkdir -p $(dir $@)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(CORE_STATIC_LIB): $(CORE_OBJ_FILES) | $(LIB_DIR)
+	@echo "Creating core static library: $@"
+	$(AR) $(ARFLAGS) $@ $^
+	@echo "Core static library created successfully!"
+
+core: $(CORE_STATIC_LIB)
 
 # Default target
 all: static shared

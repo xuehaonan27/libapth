@@ -36,7 +36,16 @@ int apth_kill(apth_t t, int sig)
     if (sig == 0)
         return apth_apth_exists(t) ? 0 : apth_error(ESRCH, ESRCH);
 
-    // Check global action
+    // DEDICATED thread: forward directly to pthread_kill.
+    // Kernel signal state is authoritative for dedicated threads —
+    // skip the internal signal table which may not reflect kernel state
+    // in core builds where hooks don't intercept sigaction.
+    if (t->is_dedicated)
+    {
+        return apth_func_raw(pthread_kill)(t->dedicated_tid, sig);
+    }
+
+    // Check global action table (populated by hooked sigaction)
     lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
     struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
     lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
@@ -59,12 +68,6 @@ int apth_kill(apth_t t, int sig)
     {
         apth_deliver_pending_signals(self);
         return 0;
-    }
-
-    // DEDICATED thread: forward to pthread_kill for immediate kernel delivery
-    if (t->is_dedicated)
-    {
-        return apth_func_raw(pthread_kill)(t->dedicated_tid, sig);
     }
 
     // M:N thread: wake if not running so scheduler can deliver signal.

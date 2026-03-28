@@ -11,7 +11,7 @@ APTH_DEFINE_HOOK(ssize_t, readv,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(readv)(fd, iov, iovcnt);
     }
     apth_t cur = CUR_APTH;
@@ -118,7 +118,7 @@ APTH_DEFINE_HOOK(ssize_t, writev,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(writev)(fd, iov, iovcnt);
     }
     apth_t cur = CUR_APTH;
@@ -207,7 +207,7 @@ APTH_DEFINE_HOOK(ssize_t, preadv,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(preadv)(fd, iov, iovcnt, offset);
     }
     apth_t cur = CUR_APTH;
@@ -252,7 +252,7 @@ APTH_DEFINE_HOOK(ssize_t, preadv64,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(preadv64)(fd, iov, iovcnt, offset);
     }
     apth_t cur = CUR_APTH;
@@ -297,7 +297,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwritev)(fd, iov, iovcnt, offset);
     }
     apth_t cur = CUR_APTH;
@@ -391,7 +391,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwritev64)(fd, iov, iovcnt, offset);
     }
     apth_t cur = CUR_APTH;
@@ -483,7 +483,7 @@ APTH_DEFINE_HOOK(ssize_t, preadv2, (int fd, const struct iovec *iov, int iovcnt,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(preadv2)(fd, iov, iovcnt, offset, flags);
     }
     apth_t cur = CUR_APTH;
@@ -528,7 +528,7 @@ APTH_DEFINE_HOOK(ssize_t, preadv64v2,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(preadv64v2)(fd, iov, iovcnt, offset, flags);
     }
     apth_t cur = CUR_APTH;
@@ -573,7 +573,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev2,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwritev2)(fd, iov, iovcnt, offset, flags);
     }
     apth_t cur = CUR_APTH;
@@ -667,7 +667,7 @@ APTH_DEFINE_HOOK(ssize_t, pwritev64v2,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwritev64v2)(fd, iov, iovcnt, offset, flags);
     }
     apth_t cur = CUR_APTH;

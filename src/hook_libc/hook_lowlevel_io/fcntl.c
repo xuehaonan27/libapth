@@ -13,7 +13,7 @@ APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ...)
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             va_list args;
             va_start(args, cmd);
@@ -165,7 +165,7 @@ APTH_API int fcntl(int fd, int cmd, ...)
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
         {
             va_list args;
             va_start(args, cmd);

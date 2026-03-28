@@ -11,7 +11,7 @@ APTH_DEFINE_HOOK(ssize_t, copy_file_range,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(copy_file_range)(inputfd, inputpos, outputfd, outputpos, length, flags);
     }
     apth_hook_debug(copy_file_range);

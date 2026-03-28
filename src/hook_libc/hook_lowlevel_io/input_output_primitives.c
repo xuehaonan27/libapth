@@ -22,7 +22,7 @@ APTH_DEFINE_HOOK(ssize_t, read,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(read)(fd, buf, nbytes);
     }
     apth_hook_debug(read);
@@ -87,7 +87,7 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(read)(fd, buf, nbytes);
     }
     apth_hook_debug(__read_chk);
@@ -104,7 +104,7 @@ APTH_DEFINE_HOOK(ssize_t, write,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(write)(fd, buf, nbytes);
     }
     apth_hook_debug(write);
@@ -178,7 +178,7 @@ APTH_DEFINE_HOOK(ssize_t, pread,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pread)(fd, buf, count, offset);
     }
     apth_hook_debug(pread);
@@ -223,7 +223,7 @@ APTH_DEFINE_HOOK(ssize_t, __pread_chk,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pread)(fd, buf, nbytes, offset);
     }
     apth_hook_debug(__pread_chk);
@@ -241,7 +241,7 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pread64)(fd, buf, count, offset);
     }
     apth_hook_debug(pread64);
@@ -286,7 +286,7 @@ APTH_DEFINE_HOOK(ssize_t, __pread64_chk,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pread64)(fd, buf, nbytes, offset);
     }
     apth_hook_debug(__pread64_chk);
@@ -304,7 +304,7 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwrite)(fd, buf, count, offset);
     }
     apth_hook_debug(pwrite);
@@ -366,7 +366,7 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(pwrite64)(filedes, buffer, size, offset);
     }
     apth_hook_debug(pwrite64);

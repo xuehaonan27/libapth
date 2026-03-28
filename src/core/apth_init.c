@@ -98,12 +98,15 @@ static int apth_init_common(int workers)
         return -1;
     }
 
-    // Register process level signal catchers
+#ifndef APTH_CORE_BUILD
+    // Register process level signal catchers.
+    // Skipped in core build: HotSpot manages its own signal handlers.
     if (apth_install_kernel_signal_catchers() != 0)
     {
         apth_debug("fail to register process level signal catchers");
         return -1;
     }
+#endif
 
     apth_fd_table_init();
 

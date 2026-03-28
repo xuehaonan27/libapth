@@ -11,7 +11,7 @@ APTH_DEFINE_HOOK(
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(nanosleep)(rqtp, rmtp);
     }
     apth_time_t until;
@@ -54,7 +54,7 @@ APTH_DEFINE_HOOK(int, usleep, (unsigned int usec), (usec))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(usleep)(usec);
     }
     apth_time_t until;
@@ -80,7 +80,7 @@ APTH_DEFINE_HOOK(unsigned int, sleep, (unsigned int sec), (sec))
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur != NULL && __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
             return apth_func_raw(sleep)(sec);
     }
     apth_time_t until;

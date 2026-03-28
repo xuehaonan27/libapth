@@ -13,9 +13,19 @@ int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     apth_t cur = CUR_APTH;
 
-    // If is scheduler context, operate with pthread level mask
-    if (cur == NULL)
-        return apth_func_raw(pthread_sigmask)(how, set, oldset);
+    // If scheduler context or DEDICATED thread, operate at kernel level.
+    // DEDICATED threads need real pthread_sigmask because they are 1:1
+    // kernel threads and the kernel signal mask must be authoritative.
+    if (cur == NULL || cur->is_dedicated)
+    {
+        int ret = apth_func_raw(pthread_sigmask)(how, set, oldset);
+        // Keep TCB sigmask in sync for DEDICATED threads
+        if (ret == 0 && cur != NULL && cur->is_dedicated)
+        {
+            apth_func_raw(pthread_sigmask)(SIG_SETMASK, NULL, &cur->sigmask);
+        }
+        return ret;
+    }
 
     if (oldset != NULL)
         *oldset = cur->sigmask;
