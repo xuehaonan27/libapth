@@ -476,6 +476,16 @@ static apth_t try_steal_from(apth_sched_t thief_sched, apth_sched_t victim_sched
     struct list_elem *e = list_back(&victim_rq->th_list);
     apth_t th = apth_t_list_entry(e);
 
+    // Don't steal IO_BOUND or REALTIME threads — they should stay pinned
+    // to their home scheduler (important for JVM M:N where pthread_id
+    // and signal delivery assume fixed worker binding).
+    if (th->thread_class == APTH_CLASS_IO_BOUND ||
+        th->thread_class == APTH_CLASS_REALTIME)
+    {
+        lll_internal_unlock(&victim_rq->th_list_lock);
+        return APTH_NULL;
+    }
+
     // If the `th` happens to be the advised thread, then we just cancel this stealing
     // and inspect next scheduler. If all stealings fails we natually fails.
     if (th == atomic_load_acquire(&victim_sched->advised_next_th))
@@ -644,11 +654,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // does not touch signal masks), the scheduler's signal mask is inherited
     // by running threads, so these must be unblocked here.
     sigfillset(&sigs);
-    sigdelset(&sigs, SIGSEGV);
-    sigdelset(&sigs, SIGBUS);
-    sigdelset(&sigs, SIGFPE);
-    sigdelset(&sigs, SIGILL);
-    sigdelset(&sigs, SIGABRT);
+    sigdelset(&sigs, SIGSEGV);   // Fault: null pointer, guard page, safepoint poll
+    sigdelset(&sigs, SIGBUS);    // Fault: alignment, bad address
+    sigdelset(&sigs, SIGFPE);    // Fault: division by zero
+    sigdelset(&sigs, SIGILL);    // Fault: illegal instruction
+    sigdelset(&sigs, SIGABRT);   // Process abort
+    sigdelset(&sigs, SIGUSR2);   // HotSpot suspend/resume (SR_signum)
+    sigdelset(&sigs, SIGUSR1);   // HotSpot may use for other purposes
     apth_func_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
 
     // initialize the snapshot time for bootstrapping the loop
