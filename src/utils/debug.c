@@ -73,7 +73,8 @@ void apth_debug_fn(const char *file, int line, const char *function, const char 
 
         va_start(ap, message);
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, CUR_SCHED->id);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function,
+                          CUR_SCHED ? CUR_SCHED->id : -99);
         else
             str[0] = NUL;
         n = strlen(str);
@@ -122,7 +123,8 @@ static void apth_vdebug_fn(const char *file, int line, const char *function,
         _dbg_spin_lock();
 
         if (file != NULL)
-            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function, CUR_SCHED->id);
+            apth_snprintf(str, sizeof(str), "%s:%04d:%s: (%d) ", file, line, function,
+                          CUR_SCHED ? CUR_SCHED->id : -99);
         else
             str[0] = '\0';
         n = strlen(str);

@@ -13,9 +13,12 @@ int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 {
     apth_t cur = CUR_APTH;
 
-    // If scheduler context or DEDICATED thread, operate at kernel level.
-    // DEDICATED threads need real pthread_sigmask because they are 1:1
-    // kernel threads and the kernel signal mask must be authoritative.
+    // If scheduler context, post-shutdown, or DEDICATED thread, operate
+    // at kernel level.  CUR_APTH is NULL in scheduler context, during
+    // shutdown after the apth has exited, and when a signal fires on a
+    // worker that has no dispatched thread.  DEDICATED threads need real
+    // pthread_sigmask because they are 1:1 kernel threads and the kernel
+    // signal mask must be authoritative.
     if (cur == NULL || cur->is_dedicated)
     {
         int ret = apth_func_raw(pthread_sigmask)(how, set, oldset);

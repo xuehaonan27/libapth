@@ -50,10 +50,15 @@ int apth_key_delete(apth_key_t key)
 void *apth_getspecific(apth_key_t key)
 {
     struct apth_key_data *data;
+    apth_t cur = CUR_APTH;
+
+    // No current apth (scheduler context or post-shutdown) — no TLS data.
+    if (cur == NULL)
+        return NULL;
 
     // Special case access to the first 2nd-level block. This is the usual case.
     if (apth_likely(key < APTH_KEY_2NDLEVEL_SIZE))
-        data = &CUR_APTH->specific_1stblock[key];
+        data = &cur->specific_1stblock[key];
     else
     {
         // Verify the key is sane.
@@ -66,7 +71,7 @@ void *apth_getspecific(apth_key_t key)
         // If the sequence number doesn't match or the key cannot be defined
         // for this apth since the second level array is not allocated,
         // Return NULL.
-        struct apth_key_data *level2 = CUR_APTH->specific[idx1st];
+        struct apth_key_data *level2 = cur->specific[idx1st];
         if (level2 == NULL)
             return NULL; // Not allocated, therefore no data
 
@@ -93,6 +98,10 @@ int apth_setspecific(apth_key_t key, const void *value)
     unsigned int seq;
 
     self = CUR_APTH;
+
+    // No current apth — cannot store TLS data.
+    if (self == NULL)
+        return EINVAL;
 
     // Special case access to the first 2nd-level block. This is the usual case
     if (apth_likely(key < APTH_KEY_2NDLEVEL_SIZE))
