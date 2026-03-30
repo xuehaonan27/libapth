@@ -82,18 +82,25 @@ APTH_LIST_OF_HOOK_LIBC_FUNCTIONS
 APTH_INTERNAL int apth_func_system_init(void)
 {
     apth_debug("raw_funcs: system init");
+    int fail_count = 0;
 
+    // Resolve all raw function pointers via dlsym.
+    // Some functions (close_range, closefrom, preadv64v2, pwritev64v2,
+    // copy_file_range) may not exist on older glibc/kernel.  Missing
+    // optional functions are tolerated — they remain NULL and callers
+    // must check before use.  Core functions (read, write, open, close,
+    // pthread_create, etc.) are fatal if missing.
 #define X(name) \
     if (apth_func_init(name)() != 0) { \
-        apth_debug("raw_funcs: fail to init " stringify(name)); \
-        return -1; \
+        apth_debug("raw_funcs: optional symbol not found: " stringify(name)); \
+        fail_count++; \
     }
 
     APTH_LIST_OF_HOOK_LIBC_FUNCTIONS
 
 #undef X
 
-    apth_debug("raw_funcs: system init complete");
+    apth_debug("raw_funcs: system init complete (%d optional symbols missing)", fail_count);
     return 0;
 }
 
