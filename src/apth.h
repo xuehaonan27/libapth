@@ -357,6 +357,13 @@ int apth_yield_optional(void);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);
+
+// Register a signal handler in LIBAPTH's software signal dispatch table.
+// This mirrors a kernel-level sigaction install so that apth_kill()
+// delivers signals using the correct handler for M:N threads.
+// Called by the JVM after installing handlers via real sigaction().
+int apth_register_sigaction(int sig, const struct sigaction *act);
+
 void apth_testcancel(void);
 int apth_once(apth_once_t *once_control, void (*init_routine)(void));
 size_t apth_get_minstack(const apth_attr_t *attr);

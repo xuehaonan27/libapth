@@ -387,3 +387,19 @@ APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
 
     return ret;
 }
+
+// Public API: register a signal handler in the LIBAPTH software dispatch table.
+// This allows the JVM (or any embedder) to mirror kernel-level sigaction
+// installs into LIBAPTH's table, so apth_kill() delivers signals using
+// the correct handler for M:N threads.
+int apth_register_sigaction(int sig, const struct sigaction *act)
+{
+    if (sig <= 0 || sig >= APTH_NSIG || act == NULL)
+        return -1;
+
+    lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
+    APTH_GLOBAL_SIGACTIONS.actions[sig] = *act;
+    lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
+
+    return 0;
+}
