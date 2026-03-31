@@ -62,6 +62,8 @@ APTH_INTERNAL bool is_main_worker(apth_worker_t worker)
 
 static int apth_worker_init(apth_worker_t worker, int worker_id)
 {
+    apth_debug("enter");
+
     int result;
     worker->worker_id = worker_id;
 
@@ -105,6 +107,8 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 
     // Spawn the worker
     result = apth_func_raw(pthread_create)(&worker->tid, &worker->attr, scheduler_routine, arg);
+
+    apth_debug("leave");
     return result;
 }
 
@@ -134,6 +138,8 @@ static int apth_worker_drop(apth_worker_t worker)
 // will exit soon, it should not be a worker thread.
 APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
 {
+    apth_debug("enter");
+
     if (WORKER_POOL_INITIALIZED)
     {
         PANIC("Worker pool already initialized");
@@ -178,6 +184,8 @@ APTH_INTERNAL int apth_global_scheduler_pool_init(int init_workers)
     GLOBAL_POOL.worker_ptr_mem_start = worker_ptr_mem;
     apth_debug("Spawned %d workers", GLOBAL_POOL.worker_count);
     WORKER_POOL_INITIALIZED = true;
+
+    apth_debug("leave");
 
     return 0;
 

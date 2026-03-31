@@ -3,17 +3,19 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/sysinfo.h>
 
 long cpu_cores(void)
 {
     // TODO: using APTH wrapped syscall
-    long cpu_cores;
+    /* long cpu_cores;
     apth_shield
     {
         cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
         assert_msg(cpu_cores != -1, "Fail to get CPU cores, errno = %d", errno);
     }
-    return cpu_cores;
+    return cpu_cores;*/
+    return get_nprocs();
 }
 
 long page_size(void)
