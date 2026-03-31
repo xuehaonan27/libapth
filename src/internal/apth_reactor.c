@@ -336,7 +336,7 @@ static void *reactor_thread_func(void *arg)
         reactor_drain_requests();
 
         struct epoll_event events[128];
-        int nready = epoll_wait(r->epoll_fd, events, 128, 5 /* ms */);
+        int nready = apth_func_raw(epoll_wait)(r->epoll_fd, events, 128, 5 /* ms */);
 
         if (nready > 0)
             reactor_process_epoll_events(events, nready);

@@ -1067,7 +1067,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 if (!dopoll)
                 {
                     struct epoll_event wake_ev;
-                    int nready = epoll_wait(sched->epoll_fd, &wake_ev, 1, timeout_ms);
+                    int nready = apth_func_raw(epoll_wait)(sched->epoll_fd, &wake_ev, 1, timeout_ms);
                     if (nready > 0 && wake_ev.data.fd == sched->wake_eventfd)
                     {
                         uint64_t val;
@@ -1083,7 +1083,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             {
                 // ---- Legacy per-scheduler epoll path (fallback) ----
                 struct epoll_event ep_events[64];
-                int nready = epoll_wait(sched->epoll_fd, ep_events, 64, timeout_ms);
+                int nready = apth_func_raw(epoll_wait)(sched->epoll_fd, ep_events, 64, timeout_ms);
 
                 if (nready > 0)
                 {
