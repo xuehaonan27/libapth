@@ -967,7 +967,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
 
     phase2:
         // ==================== Phase 2: I/O event polling ====================
-
+        ; // Empty statement after label (C99 requires statement before decl)
         int timeout_ms;
         if (dopoll)
         {
