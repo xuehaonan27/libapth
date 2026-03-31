@@ -698,7 +698,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             }
         }
 
-        apth_debug("new loop");
+        // apth_debug("new loop");
         // Move all new threads to ready list (skip if empty)
         apth_t th;
         if (thqueue_size(THQUEUE(sched, new)) > 0)
@@ -737,7 +737,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Move one apth from ready queue to running queue
             th = transfer_one_th(THQUEUE(sched, ready), THQUEUE(sched, running), false, "transfer_one_th popping candidate");
 
-        apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
+        // apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
 
         if (th == APTH_NULL)
         {

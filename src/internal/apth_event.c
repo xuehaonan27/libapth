@@ -653,7 +653,7 @@ static inline void fd_map_remove_waiter(apth_sched_t sched, int fd, apth_t th, a
 
 APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t *now, bool dopoll)
 {
-    apth_debug("enter in %s mode", dopoll ? "polling" : "waiting");
+    // apth_debug("enter in %s mode", dopoll ? "polling" : "waiting");
 
     for (;;)
     {
@@ -1167,7 +1167,7 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         }
     }
 
-    apth_debug("leave");
+    // apth_debug("leave");
 }
 
 APTH_INTERNAL void apth_event_list_add(struct list *el, apth_event_t ev)
