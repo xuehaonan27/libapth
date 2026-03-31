@@ -98,9 +98,9 @@ static int apth_init_common(int workers)
         return -1;
     }
 
-#ifndef APTH_CORE_BUILD
+#if !defined(APTH_CORE_BUILD) && !defined(APTH_JVM_BUILD)
     // Register process level signal catchers.
-    // Skipped in core build: HotSpot manages its own signal handlers.
+    // Skipped in core/JVM builds: HotSpot manages its own signal handlers.
     if (apth_install_kernel_signal_catchers() != 0)
     {
         apth_debug("fail to register process level signal catchers");

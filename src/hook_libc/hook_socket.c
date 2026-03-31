@@ -379,3 +379,61 @@ APTH_DEFINE_HOOK(ssize_t, send,
     // The argument sockfd is the file descriptor of the sending socket.
     return apth_func(sendto)(sockfd, buf, len, flags, NULL, 0);
 }
+
+APTH_DEFINE_HOOK(ssize_t, recvmsg,
+                 (int sockfd, struct msghdr *msg, int flags),
+                 (sockfd, msg, flags))
+{
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
+            return apth_func_raw(recvmsg)(sockfd, msg, flags);
+    }
+    apth_hook_debug(recvmsg);
+    apth_fd_register_optional(sockfd);
+
+    ssize_t rv;
+    for (;;)
+    {
+        while ((rv = apth_func_raw(recvmsg)(sockfd, msg, flags)) < 0 && errno == EINTR)
+            ;
+
+        if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev);
+            continue;
+        }
+        break;
+    }
+    return rv;
+}
+
+APTH_DEFINE_HOOK(ssize_t, sendmsg,
+                 (int sockfd, const struct msghdr *msg, int flags),
+                 (sockfd, msg, flags))
+{
+    {
+        apth_t __ded_cur = CUR_APTH;
+        if (__ded_cur == NULL || __ded_cur->is_dedicated)
+            return apth_func_raw(sendmsg)(sockfd, msg, flags);
+    }
+    apth_hook_debug(sendmsg);
+    apth_fd_register_optional(sockfd);
+
+    ssize_t rv;
+    for (;;)
+    {
+        while ((rv = apth_func_raw(sendmsg)(sockfd, msg, flags)) < 0 && errno == EINTR)
+            ;
+
+        if (rv < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            struct apth_event_st ev = EVENT_FD(sockfd, APTH_GOAL_UNTIL_FD_WRITEABLE);
+            apth_wait_event(&ev);
+            continue;
+        }
+        break;
+    }
+    return rv;
+}

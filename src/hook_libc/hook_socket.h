@@ -15,7 +15,9 @@
     X(send)                      \
     X(recvfrom)                  \
     X(__recvfrom_chk)            \
-    X(sendto)
+    X(sendto)                    \
+    X(recvmsg)                   \
+    X(sendmsg)
 
 // ==================== 16.8 Opening and Closing Sockets ====================
 
@@ -42,5 +44,9 @@ APTH_DECLARE_HOOK(ssize_t, __recvfrom_chk, int __fd, void *__restrict __buf, siz
                   socklen_t *__restrict __addr_len)
 APTH_DECLARE_HOOK(ssize_t, sendto, int sockfd, const void *buf, size_t nbytes,
                   int flags, const struct sockaddr *dest_addr, socklen_t dest_len)
+
+// ==================== 16.10 Datagram Sockets ====================
+APTH_DECLARE_HOOK(ssize_t, recvmsg, int sockfd, struct msghdr *msg, int flags)
+APTH_DECLARE_HOOK(ssize_t, sendmsg, int sockfd, const struct msghdr *msg, int flags)
 
 #endif // __LIBAPTH_HOOK_LIBC_HOOK_SOCKET_H

@@ -142,6 +142,57 @@ $(CORE_STATIC_LIB): $(CORE_OBJ_FILES) | $(LIB_DIR)
 
 core: $(CORE_STATIC_LIB)
 
+# ==================== JVM Library (I/O-hooked, signal-unhooked) ====================
+# For HotSpot integration: includes I/O, socket, and time hooks so M:N threads
+# cooperatively yield on blocking I/O.  EXCLUDES signal hooks (sigaction, signal,
+# sigsuspend, sigaltstack) and process hooks (fork, exec) because HotSpot manages
+# its own signals.  Also excludes apth_install_kernel_signal_catchers().
+#
+# Build: make jvm → build/lib/libapth_jvm.so
+# Use:   LD_PRELOAD=libapth_jvm.so java ...
+#        (or link into libjvm.so and set rpath)
+JVM_CFLAGS := $(CFLAGS) -DAPTH_JVM_BUILD
+# Include everything EXCEPT:
+#   hook_signal.c  — HotSpot manages its own signal handlers
+#   hook_process.c — fork/exec not needed, could interfere
+#   hook_pthread.c — HotSpot creates pthreads directly via apth_create
+#   raw_funcs.c    — included BUT compiled without APTH_JVM_BUILD so it
+#                    resolves ALL function pointers (including pthread/signal).
+#                    Its symbols are weak so hook files can override them.
+JVM_SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f \
+	| grep -v 'hook_libc/hook_signal\.c' \
+	| grep -v 'hook_libc/hook_process\.c' \
+	| grep -v 'hook_libc/hook_pthread\.c' \
+	| grep -v 'hook_libc/raw_funcs\.c')
+# raw_funcs.c is compiled separately with special flags (see below)
+JVM_OBJ_DIR := $(BUILD_DIR)/obj_jvm
+JVM_OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(JVM_OBJ_DIR)/%.o,$(JVM_SRC_FILES))
+JVM_OBJ_FILES += $(patsubst $(SRC_DIR)/%.S,$(JVM_OBJ_DIR)/%.o,$(ASM_FILES))
+JVM_SHARED_LIB := $(LIB_DIR)/libapth_jvm.so
+
+$(JVM_OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(JVM_CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(JVM_OBJ_DIR)/%.o: $(SRC_DIR)/%.S
+	@mkdir -p $(dir $@)
+	$(CC) $(JVM_CFLAGS) -c $< -o $@
+
+# raw_funcs.c is compiled WITHOUT APTH_JVM_BUILD so it resolves ALL
+# function pointers.  Its definitions use __attribute__((weak)) so
+# hook files (compiled WITH APTH_JVM_BUILD) can override them.
+JVM_RAW_FUNCS_OBJ := $(JVM_OBJ_DIR)/hook_libc/raw_funcs.o
+$(JVM_RAW_FUNCS_OBJ): $(SRC_DIR)/hook_libc/raw_funcs.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DAPTH_RAW_FUNCS_WEAK $(INCLUDES) -c $< -o $@
+
+$(JVM_SHARED_LIB): $(JVM_OBJ_FILES) $(JVM_RAW_FUNCS_OBJ) | $(LIB_DIR)
+	@echo "Creating JVM shared library: $@"
+	$(CC) -shared -o $@ $^ $(LDFLAGS) -ldl
+	@echo "JVM shared library created successfully!"
+
+jvm: $(JVM_SHARED_LIB)
+
 # Default target
 all: static shared
 

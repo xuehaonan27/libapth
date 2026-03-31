@@ -59,9 +59,18 @@
  */
 #define stringify(x) #x
 
+// When APTH_RAW_FUNCS_WEAK is defined (JVM build), raw function pointer
+// variables and init functions are declared weak so that hook files
+// (which define strong symbols via APTH_DEFINE_HOOK) can override them.
+#ifdef APTH_RAW_FUNCS_WEAK
+#define RAW_ATTR __attribute__((weak))
+#else
+#define RAW_ATTR
+#endif
+
 #define X(name) \
-    apth_func_pfn_t(name) apth_func_raw(name) = NULL; \
-    APTH_INTERNAL int apth_func_init(name)(void) { \
+    RAW_ATTR apth_func_pfn_t(name) apth_func_raw(name) = NULL; \
+    RAW_ATTR APTH_INTERNAL int apth_func_init(name)(void) { \
         if (apth_func_raw(name) != NULL) return 0; /* already initialized */ \
         apth_func_pfn_t(name) func = (apth_func_pfn_t(name))dlsym(APTH_DLSYM_HANDLE, stringify(name)); \
         if (func == NULL) { \
@@ -79,7 +88,7 @@ APTH_LIST_OF_HOOK_LIBC_FUNCTIONS
 /*
  * System-wide initialization: resolve all raw function pointers.
  */
-APTH_INTERNAL int apth_func_system_init(void)
+RAW_ATTR APTH_INTERNAL int apth_func_system_init(void)
 {
     apth_debug("raw_funcs: system init");
     int fail_count = 0;
@@ -107,7 +116,7 @@ APTH_INTERNAL int apth_func_system_init(void)
 /*
  * System-wide teardown: clear all raw function pointers.
  */
-APTH_INTERNAL int apth_func_system_drop(void)
+RAW_ATTR APTH_INTERNAL int apth_func_system_drop(void)
 {
 #define X(name) apth_func_raw(name) = NULL;
     APTH_LIST_OF_HOOK_LIBC_FUNCTIONS

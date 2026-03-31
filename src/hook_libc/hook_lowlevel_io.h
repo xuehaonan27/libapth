@@ -71,7 +71,9 @@
     X(pselect)                        \
     X(poll)                           \
     X(pipe)                           \
-    X(fcntl)
+    X(fcntl)                          \
+    X(epoll_wait)                     \
+    X(epoll_pwait)
 
 #ifdef __O_TMPFILE
 #define __OPEN_NEEDS_MODE(oflag) \
@@ -185,5 +187,13 @@ APTH_DECLARE_HOOK(int, pipe, int pipefd[2])
 
 APTH_DECLARE_FETCH_LIBCFUNC(int, fcntl, int fd, int cmd, ... /* arg */)
 APTH_INTERNAL int apth_func(fcntl)(int fd, int cmd, ... /* arg */);
+
+// ==================== epoll hooks (JVM NIO support) ====================
+#include <sys/epoll.h>
+
+APTH_DECLARE_HOOK(int, epoll_wait, int epfd, struct epoll_event *events,
+                  int maxevents, int timeout)
+APTH_DECLARE_HOOK(int, epoll_pwait, int epfd, struct epoll_event *events,
+                  int maxevents, int timeout, const sigset_t *sigmask)
 
 #endif // __LIBAPTH_HOOK_LIBC_HOOK_LOWLEVEL_IO_H
