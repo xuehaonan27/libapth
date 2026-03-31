@@ -4,7 +4,8 @@
 #include "common.h"
 #include "apth.h"
 #include "utils/archplattoold.h"
-#include <bits/types/struct_sched_param.h>
+// #include <bits/types/struct_sched_param.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <sched.h>  // For cpu_set_t
