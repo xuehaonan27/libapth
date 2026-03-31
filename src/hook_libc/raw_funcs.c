@@ -26,21 +26,27 @@
 #include "common.h"
 #include "utils/debug.h"
 
-/* Override the dlsym handle for core build */
-#ifdef APTH_CORE_BUILD
-#define APTH_DLSYM_HANDLE RTLD_DEFAULT
-#else
-#define APTH_DLSYM_HANDLE RTLD_NEXT
-#endif
-
 /*
- * For each hooked function, we need:
- *   1. A function pointer typedef: name_pfn_t
- *   2. A global variable: apth_func_raw_name
- *   3. An init function: apth_func_init_name()
+ * dlsym handle selection:
  *
- * We reuse the existing declaration headers to get the typedefs,
- * then define the variables and init functions here.
+ * RTLD_NEXT: "find the next definition after this library."
+ *   Required for INTERPOSED functions — the hook wrapper (e.g. our read())
+ *   needs the REAL libc read() behind it.  If we used RTLD_DEFAULT, we'd
+ *   find our own hook and recurse infinitely.
+ *
+ * RTLD_DEFAULT: "find the first definition in global search order."
+ *   Required for NON-INTERPOSED functions in the JVM build.  pthread_*
+ *   and signal_* are not hooked, so RTLD_NEXT from libapth_jvm.so might
+ *   skip them on older glibc (2.27) where libpthread.so is separate.
+ *
+ * Core build: everything uses RTLD_DEFAULT (no hooks exist, no
+ *   interposition; the .a is statically linked into libjvm.so).
+ *
+ * Full build: everything uses RTLD_NEXT (all functions are hooked).
+ *
+ * JVM build: interposed functions use RTLD_NEXT (via hook files'
+ *   APTH_FETCH_LIBCFUNC which overrides our weak definitions);
+ *   non-interposed functions use RTLD_DEFAULT (from this file).
  */
 
 /* Include ALL hook headers for declarations and function lists */
@@ -52,27 +58,38 @@
 #include "hook_libc/hook_time.h"
 #include "hook_libc/hooked_funcs.h"
 
-/*
- * Define raw function pointer + initializer for each function.
- * This duplicates what APTH_FETCH_LIBCFUNC does, but uses
- * APTH_DLSYM_HANDLE instead of hardcoded RTLD_NEXT.
- */
 #define stringify(x) #x
 
 // When APTH_RAW_FUNCS_WEAK is defined (JVM build), raw function pointer
 // variables and init functions are declared weak so that hook files
-// (which define strong symbols via APTH_DEFINE_HOOK) can override them.
+// (which define strong symbols via APTH_DEFINE_HOOK with RTLD_NEXT)
+// can override them for interposed functions.
 #ifdef APTH_RAW_FUNCS_WEAK
 #define RAW_ATTR __attribute__((weak))
 #else
 #define RAW_ATTR
 #endif
 
+// Core build: no hooks at all, use RTLD_DEFAULT for everything.
+// Full build: hooks override weak defs, use RTLD_NEXT here too.
+// JVM build (APTH_RAW_FUNCS_WEAK): hooks override interposed functions
+//   with RTLD_NEXT; non-interposed functions keep our weak defs with
+//   RTLD_DEFAULT.  So we use RTLD_DEFAULT here, which is correct for
+//   the non-overridden (non-interposed) functions.  For interposed
+//   functions, the hook's strong RTLD_NEXT definition wins at link time.
+#ifdef APTH_CORE_BUILD
+#define RAW_DLSYM_HANDLE RTLD_DEFAULT
+#elif defined(APTH_RAW_FUNCS_WEAK)
+#define RAW_DLSYM_HANDLE RTLD_DEFAULT
+#else
+#define RAW_DLSYM_HANDLE RTLD_NEXT
+#endif
+
 #define X(name) \
     RAW_ATTR apth_func_pfn_t(name) apth_func_raw(name) = NULL; \
     RAW_ATTR APTH_INTERNAL int apth_func_init(name)(void) { \
         if (apth_func_raw(name) != NULL) return 0; /* already initialized */ \
-        apth_func_pfn_t(name) func = (apth_func_pfn_t(name))dlsym(APTH_DLSYM_HANDLE, stringify(name)); \
+        apth_func_pfn_t(name) func = (apth_func_pfn_t(name))dlsym(RAW_DLSYM_HANDLE, stringify(name)); \
         if (func == NULL) { \
             apth_debug("raw_funcs: failed to find " stringify(name)); \
             return -1; \
