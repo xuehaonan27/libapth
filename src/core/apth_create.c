@@ -137,9 +137,16 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     assert(sched != NULL);
 
     // If called from a dedicated thread context, CUR_SCHED is a dummy scheduler.
-    // Pick a real scheduler for spawning the new thread.
+    // Pick a real scheduler via round-robin to spread M:N threads across workers.
+    // Previously hardcoded to worker 0, causing all Java threads to concentrate
+    // on a single CPU.
     if (sched->id < 0)
-        sched = GLOBAL_POOL.worker_ptr_mem_start[0]->sched;
+    {
+        static _Atomic(unsigned int) __dedicated_rr = 0;
+        unsigned int idx = atomic_fetch_add_relaxed(&__dedicated_rr, 1);
+        unsigned int nworkers = (unsigned int)GLOBAL_POOL.init_worker_count;
+        sched = GLOBAL_POOL.worker_ptr_mem_start[idx % nworkers]->sched;
+    }
 
     // APTH_CLASS_DISTRIBUTED: round-robin across all schedulers to spread
     // threads evenly (e.g., GC workers in JVM). Overrides affinity/NUMA choice.

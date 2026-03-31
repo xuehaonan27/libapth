@@ -7,7 +7,7 @@ AR := ar
 CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
-	-DAPTH_HOLD_INITIALIZER_PTHREAD -DAPTH_DEBUG
+	-DAPTH_HOLD_INITIALIZER_PTHREAD
 	# Disabled for JVM integration testing:
 	# -DAPTH_PREEMPT_SIGNAL (conflicts with HotSpot's deliberate SIGSEGV probes)
 	# -DAPTH_NUMA -DAPTH_USE_IOURING (not needed for local-only phase 1)
