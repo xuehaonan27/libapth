@@ -3,19 +3,59 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <sched.h>
 #include <sys/sysinfo.h>
+
+// Cache for the allowed CPU set, populated once by cpu_cores().
+static int _allowed_cpus[CPU_SETSIZE];
+static int _allowed_cpu_count = 0;
+static bool _allowed_cpus_initialized = false;
+
+// Populate the allowed CPU cache from sched_getaffinity.
+// This respects cgroup cpuset constraints.
+static void _init_allowed_cpus(void)
+{
+    if (_allowed_cpus_initialized)
+        return;
+
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+
+    if (sched_getaffinity(0, sizeof(mask), &mask) != 0)
+    {
+        // Fallback: assume all CPUs 0..get_nprocs()-1
+        int n = get_nprocs();
+        for (int i = 0; i < n && i < CPU_SETSIZE; i++)
+            _allowed_cpus[_allowed_cpu_count++] = i;
+    }
+    else
+    {
+        for (int i = 0; i < CPU_SETSIZE; i++)
+        {
+            if (CPU_ISSET(i, &mask))
+                _allowed_cpus[_allowed_cpu_count++] = i;
+        }
+    }
+
+    if (_allowed_cpu_count == 0)
+        _allowed_cpus[_allowed_cpu_count++] = 0; // safety fallback
+
+    _allowed_cpus_initialized = true;
+}
 
 long cpu_cores(void)
 {
-    // TODO: using APTH wrapped syscall
-    /* long cpu_cores;
-    apth_shield
-    {
-        cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
-        assert_msg(cpu_cores != -1, "Fail to get CPU cores, errno = %d", errno);
-    }
-    return cpu_cores;*/
-    return get_nprocs();
+    _init_allowed_cpus();
+    return _allowed_cpu_count;
+}
+
+// Map a worker_id (0-based) to the actual CPU id from the allowed set.
+// e.g., if cgroup allows CPUs 40-59, worker 0 → CPU 40, worker 1 → CPU 41.
+int apth_worker_id_to_cpu(int worker_id)
+{
+    _init_allowed_cpus();
+    return _allowed_cpus[worker_id % _allowed_cpu_count];
 }
 
 long page_size(void)

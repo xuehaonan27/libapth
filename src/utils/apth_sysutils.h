@@ -4,8 +4,12 @@
 #include "debug.h"
 #include "apth_errno.h"
 
-// Get number of online CPU cores
+// Get number of available CPU cores (respects cgroup cpuset)
 long cpu_cores(void);
+
+// Map worker_id (0-based) to actual CPU id from the allowed set.
+// e.g., cgroup cpuset 40-59 → worker 0 maps to CPU 40.
+int apth_worker_id_to_cpu(int worker_id);
 
 // Get page size
 long page_size(void);

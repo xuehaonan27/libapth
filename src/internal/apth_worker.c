@@ -92,7 +92,8 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     assert(0 <= worker_id && worker_id < cpu_cores());
-    CPU_SET(worker_id, &cpuset);
+    int actual_cpu = apth_worker_id_to_cpu(worker_id);
+    CPU_SET(actual_cpu, &cpuset);
     if ((result = apth_func_raw(pthread_attr_setaffinity_np)(&worker->attr, sizeof(cpu_set_t), &cpuset)) != 0)
     {
         apth_debug("fail pthread_attr_setaffinity_np");

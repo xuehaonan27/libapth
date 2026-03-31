@@ -13,6 +13,7 @@
 #endif
 #include "utils/debug.h"
 #include "utils/apth_errno.h"
+#include "utils/apth_sysutils.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/lll.inline.h"
 #include "utils/list.inline.h"
@@ -251,6 +252,15 @@ static struct apth_sched_st __library_host_sched;
  */
 int apth_init_library(int workers)
 {
+    // workers <= 0: auto-detect from available CPUs (respects cgroup cpuset).
+    // Reserve 2 CPUs for DEDICATED threads (VM thread, GC, etc.).
+    if (workers <= 0)
+    {
+        workers = (int)cpu_cores() - 2;
+        if (workers < 1)
+            workers = 1;
+    }
+
     if (apth_init_common(workers) != 0)
         return -1;
 
