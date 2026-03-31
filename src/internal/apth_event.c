@@ -966,7 +966,6 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         }
 
     phase2:
-        ; // For older GCC
         // ==================== Phase 2: I/O event polling ====================
 
         int timeout_ms;

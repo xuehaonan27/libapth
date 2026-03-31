@@ -3,6 +3,7 @@
 #include "internal/types.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
+#include <malloc.h>
 
 // Maximum number of destructor iterations per POSIX.
 // Destructors may set other keys, so we iterate until either all keys

@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 #include <signal.h>
+#include <unistd.h>
 
 #include "hook_process.h"
 #include "hook_pthread.h"
