@@ -98,9 +98,12 @@ static int apth_init_common(int workers)
         return -1;
     }
 
-#if !defined(APTH_CORE_BUILD) && !defined(APTH_JVM_BUILD)
+#ifndef APTH_CORE_BUILD
     // Register process level signal catchers.
-    // Skipped in core/JVM builds: HotSpot manages its own signal handlers.
+    // These install a trampoline that routes kernel signals to the correct
+    // M:N thread via software dispatch.  For JVM use, HotSpot installs its
+    // own handlers later (in os::init_2), overwriting these catchers for
+    // signals HotSpot cares about (SIGSEGV, SIGUSR2, SIGPIPE, etc.).
     if (apth_install_kernel_signal_catchers() != 0)
     {
         apth_debug("fail to register process level signal catchers");

@@ -47,8 +47,12 @@ INCLUDEDIR ?= $(PREFIX)/include
 DESTDIR ?=
 
 # ==================== Source Files ====================
-# Find all .c files in src directory
-SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f)
+# Find all .c files in src directory.
+# Exclude raw_funcs.c: it provides dlsym resolvers for the core (no-hook)
+# build only.  In the full build, hook files define their own resolvers
+# via APTH_FETCH_LIBCFUNC / APTH_DEFINE_HOOK; including raw_funcs.c would
+# cause duplicate symbol definitions.
+SRC_FILES := $(shell find $(SRC_DIR) -name '*.c' -type f | grep -v 'hook_libc/raw_funcs\.c')
 # Find all .S (assembly) files in src directory
 ASM_FILES := $(shell find $(SRC_DIR) -name '*.S' -type f)
 
