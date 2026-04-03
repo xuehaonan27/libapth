@@ -333,6 +333,7 @@ int apth_allow_dispatch(apth_t t);
 // ==================== Functions ====================
 
 #include <stdbool.h>
+#include <stdint.h>               // For uintptr_t (apth_yield_ex)
 #include <sched.h>                // For cpu_set_t
 #include <bits/types/clockid_t.h> // For clockid_t
 
@@ -354,6 +355,10 @@ int apth_setcanceltype(int type, int *oldtype);
 int apth_setname_np(apth_t th, const char *name);
 int apth_yield(void);
 int apth_yield_optional(void);
+// Yield with a specific reason. The scheduler can use this for
+// intelligent dispatch decisions (e.g., prioritize RDMA-resumed threads).
+// reason: one of APTH_YIELD_REASON_* constants from apth_tcb.h.
+int apth_yield_ex(uintptr_t reason);
 int apth_kill(apth_t t, int sig);
 int apth_equal(apth_t t1, apth_t t2);
 int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset);

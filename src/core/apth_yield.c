@@ -32,6 +32,24 @@ int apth_yield(void)
     return 0;
 }
 
+int apth_yield_ex(uintptr_t reason)
+{
+    apth_sched_t sched = CUR_SCHED;
+    apth_t cur = sched->cur;
+
+    // Dedicated threads do kernel sched_yield
+    if (cur != NULL && cur->is_dedicated)
+    {
+        sched_yield();
+        return 0;
+    }
+
+    cur->yield_reason = reason;
+    cur->last_yield_tick = cpu_tick();
+    apth_ctx_switch(CTX(cur), SCHED_CTX(sched));
+    return 0;
+}
+
 int apth_yield_optional(void)
 {
     apth_sched_t sched = CUR_SCHED;
