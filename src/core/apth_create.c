@@ -60,6 +60,15 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     }
 
     {
+        // Lazy-start: if this is a non-DEDICATED thread, ensure the scheduler
+        // pool and reactor are started (deferred from apth_init for performance).
+        extern bool __apth_scheduler_pool_started;
+        extern int apth_ensure_scheduler_pool(void);
+        if (iattr->thread_class != APTH_CLASS_DEDICATED && !__apth_scheduler_pool_started) {
+            if (apth_ensure_scheduler_pool() != 0)
+                return apth_error(EAGAIN, EAGAIN);
+        }
+
         // We are spawning other threads. TLS should have been set. The scheduler
         // to spawn to new apth to, should be determined first from CPU affinity.
         // If no affinity is specified, then spawn in current scheduler.

@@ -20,6 +20,39 @@
 
 static bool LIBAPTH_INITIALIZED = false;
 
+// Lazy-start: reactor + worker pool deferred until first M:N thread creation
+int __apth_deferred_workers = 0;
+bool __apth_scheduler_pool_started = false;
+static pthread_mutex_t __apth_lazy_start_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// Called from apth_create when the first non-DEDICATED thread is created.
+// Starts the reactor and worker pool on demand.
+int apth_ensure_scheduler_pool(void)
+{
+    if (__apth_scheduler_pool_started) return 0;
+
+    pthread_mutex_lock(&__apth_lazy_start_lock);
+    if (__apth_scheduler_pool_started) {
+        pthread_mutex_unlock(&__apth_lazy_start_lock);
+        return 0;
+    }
+
+    // Start the global I/O reactor
+    if (apth_reactor_start() != 0) {
+        apth_debug("WARNING: failed to start reactor on lazy init");
+    }
+
+    // Start the scheduler worker pool
+    if (apth_global_scheduler_pool_init(__apth_deferred_workers) != 0) {
+        pthread_mutex_unlock(&__apth_lazy_start_lock);
+        return -1;
+    }
+
+    __apth_scheduler_pool_started = true;
+    pthread_mutex_unlock(&__apth_lazy_start_lock);
+    return 0;
+}
+
 struct __apth_main_args __LIBAPTH_MAIN_ARGS;
 
 int apth_initvals_init(apth_init_t *initvals, int workers,
@@ -117,25 +150,23 @@ static int apth_init_common(int workers)
     // Initialize dedicated thread registry
     apth_dedicated_registry_init();
 
-    // Start the global I/O reactor (dedicated pthread for epoll_wait).
-    // Must happen before scheduler pool init so schedulers can submit
-    // FD watch requests to the reactor from the start.
-    if (apth_reactor_start() != 0)
-    {
-        apth_debug("WARNING: failed to start reactor, falling back to per-scheduler epoll");
-        // Not fatal — per-scheduler epoll is the fallback
-    }
+    // Lazy-start: defer reactor + worker pool to first non-DEDICATED apth_create.
+    // For DEDICATED-only usage (JVM with all threads as 1:1 pthreads), these
+    // never start — eliminating background thread CPU overhead (reactor wakes
+    // every 5ms, workers every 10ms).
+    //
+    // The deferred count is stored for later initialization.
+    __apth_deferred_workers = workers;
+    __apth_scheduler_pool_started = false;
 
-    // Initialize preemption system
+    // Initialize preemption system (lightweight, no threads)
     apth_preempt_init();
 
     // worker_key_t_init();
     sched_key_t_init();
 
-    // TODO: check `initvals`
-
-    // Initialize the scheduler
-    if (apth_global_scheduler_pool_init(workers) != 0)
+    // Skip scheduler pool init — deferred to apth_ensure_scheduler_pool()
+    if (0)
     {
         apth_shield
         {
