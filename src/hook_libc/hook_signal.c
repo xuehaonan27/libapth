@@ -6,11 +6,9 @@
 
 APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, handler))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(signal)(sig, handler);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(signal)(sig, handler);
     apth_hook_debug(signal);
 
     // Reject invalid signal number
@@ -35,11 +33,9 @@ APTH_DEFINE_HOOK(sighandler_t, signal, (int sig, sighandler_t handler), (sig, ha
 
 APTH_DEFINE_HOOK(sighandler_t, __sysv_signal, (int sig, sighandler_t handler), (sig, handler))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(__sysv_signal)(sig, handler);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(__sysv_signal)(sig, handler);
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(SIG_ERR, EINVAL);
     sighandler_t prev;
@@ -190,6 +186,7 @@ APTH_DEFINE_HOOK(int, sigpending, (sigset_t * set), (set))
     }
     if (set == NULL)
         return apth_error(-1, EFAULT);
+
     apth_t cur = CUR_APTH;
     if (cur == NULL)
         return apth_func_raw(sigpending)(set);
@@ -220,11 +217,10 @@ static bool __apth_sigsuspend_check(void *arg)
 
 APTH_DEFINE_HOOK(int, pause, (void), ())
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pause)();
-    }
+
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pause)();
     apth_hook_debug(pause);
 
     // pause() suspends execution until any signal is caught
@@ -287,12 +283,10 @@ APTH_DEFINE_HOOK(int, sigsuspend, (const sigset_t *mask), (mask))
 
 APTH_DEFINE_HOOK(int, sigaltstack, (const stack_t *restrict ss, stack_t *restrict oss), (ss, oss))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(sigaltstack)(ss, oss);
-    }
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(sigaltstack)(ss, oss);
+
     if (oss != NULL)
     {
         if (cur->sigaltstack_set)

@@ -20,14 +20,10 @@
 APTH_DEFINE_HOOK(ssize_t, read,
                  (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(read)(fd, buf, nbytes);
-    }
-    apth_hook_debug(read);
-
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(read)(fd, buf, nbytes);
+    apth_hook_debug(read);
     apth_debug("apth_func_read: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -85,11 +81,9 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
                  (int fd, void *buf, size_t nbytes, size_t buflen),
                  (fd, buf, nbytes, buflen))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(read)(fd, buf, nbytes);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(read)(fd, buf, nbytes);
     apth_hook_debug(__read_chk);
     if (nbytes > buflen)
     {
@@ -102,14 +96,11 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
 APTH_DEFINE_HOOK(ssize_t, write,
                  (int fd, const void *buf, size_t nbytes), (fd, buf, nbytes))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(write)(fd, buf, nbytes);
-    }
-    apth_hook_debug(write);
 
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(write)(fd, buf, nbytes);
+    apth_hook_debug(write);
     apth_debug("apth_func_write: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -176,14 +167,10 @@ APTH_DEFINE_HOOK(ssize_t, pread,
                  (int fd, void *buf, size_t count, off_t offset),
                  (fd, buf, count, offset))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pread)(fd, buf, count, offset);
-    }
-    apth_hook_debug(pread);
-
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pread)(fd, buf, count, offset);
+    apth_hook_debug(pread);
     apth_debug("apth_func_pread: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -221,11 +208,9 @@ APTH_DEFINE_HOOK(ssize_t, __pread_chk,
                  (int fd, void *buf, size_t nbytes, off_t offset, size_t buflen),
                  (fd, buf, nbytes, offset, buflen))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pread)(fd, buf, nbytes, offset);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pread)(fd, buf, nbytes, offset);
     apth_hook_debug(__pread_chk);
     if (nbytes > buflen)
     {
@@ -239,14 +224,11 @@ APTH_DEFINE_HOOK(ssize_t, pread64,
                  (int fd, void *buf, size_t count, off64_t offset),
                  (fd, buf, count, offset))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pread64)(fd, buf, count, offset);
-    }
-    apth_hook_debug(pread64);
 
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pread64)(fd, buf, count, offset);
+    apth_hook_debug(pread64);
     apth_debug("apth_func_pread64: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -284,11 +266,9 @@ APTH_DEFINE_HOOK(ssize_t, __pread64_chk,
                  (int fd, void *buf, size_t nbytes, off64_t offset, size_t buflen),
                  (fd, buf, nbytes, offset, buflen))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pread64)(fd, buf, nbytes, offset);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pread64)(fd, buf, nbytes, offset);
     apth_hook_debug(__pread64_chk);
     if (nbytes > buflen)
     {
@@ -302,13 +282,11 @@ APTH_DEFINE_HOOK(ssize_t, pwrite,
                  (int fd, const void *buf, size_t count, off_t offset),
                  (fd, buf, count, offset))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pwrite)(fd, buf, count, offset);
-    }
-    apth_hook_debug(pwrite);
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pwrite)(fd, buf, count, offset);
+    apth_hook_debug(pwrite);
+
     apth_debug("apth_func_pwrite: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance
@@ -364,13 +342,11 @@ APTH_DEFINE_HOOK(ssize_t, pwrite64,
                  (int filedes, const void *buffer, size_t size, off64_t offset),
                  (filedes, buffer, size, offset))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pwrite64)(filedes, buffer, size, offset);
-    }
-    apth_hook_debug(pwrite64);
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pwrite64)(filedes, buffer, size, offset);
+    apth_hook_debug(pwrite64);
+
     apth_debug("apth_func_pwrite64: enter from thread \"%s\"", cur->name);
 
     // POSIX compliance

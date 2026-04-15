@@ -18,11 +18,9 @@
 // APTH variant of system(3)
 APTH_DEFINE_HOOK(int, system, (const char *cmd), (cmd))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(system)(cmd);
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(system)(cmd);
     struct sigaction sa_ign, sa_int, sa_quit;
     sigset_t ss_block, ss_old;
     struct stat sb;
@@ -90,11 +88,9 @@ APTH_DEFINE_HOOK(int, system, (const char *cmd), (cmd))
 
 APTH_DEFINE_HOOK(pid_t, fork, (void), ())
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(fork)();
-    }
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(fork)();
     apth_hook_debug(fork);
 
     // fork() in a userspace threading library is complex
@@ -171,8 +167,9 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
             return apth_func_raw(waitpid)(wpid, status, options);
     }
     pid_t pid;
-    apth_t cur = CUR_APTH;
 
+
+    apth_t cur = CUR_APTH;
     apth_debug("apth_waitpid: called from thread \"%s\"", cur->name);
     for (;;)
     {
@@ -195,11 +192,10 @@ APTH_DEFINE_HOOK(pid_t, waitpid,
 
 APTH_DEFINE_HOOK(pid_t, wait, (int *status_ptr), (status_ptr))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(wait)(status_ptr);
-    }
+
+    apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(wait)(status_ptr);
     apth_hook_debug(wait);
 
     // wait() is equivalent to waitpid(-1, status_ptr, 0)
@@ -218,8 +214,9 @@ APTH_DEFINE_HOOK(pid_t, wait4,
     }
     apth_hook_debug(wait4);
     pid_t result;
-    apth_t cur = CUR_APTH;
 
+
+    apth_t cur = CUR_APTH;
     apth_debug("apth_wait4: called from thread \"%s\"", cur->name);
     for (;;)
     {

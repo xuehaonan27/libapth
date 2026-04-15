@@ -75,12 +75,10 @@ APTH_DEFINE_HOOK(
     (int nfd, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *timeout),
     (nfd, rfds, wfds, efds, timeout))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(select)(nfd, rfds, wfds, efds, timeout);
-    }
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(select)(nfd, rfds, wfds, efds, timeout);
+
     apth_debug("apth_func_select(hooked): called from thread \"%s\"", cur->name);
 
     // POSIX.1-2001/SUSv3 compliance
@@ -273,12 +271,10 @@ APTH_DEFINE_HOOK(
     (int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, const struct timespec *ts, const sigset_t *mask),
     (nfds, rfds, wfds, efds, ts, mask))
 {
-    {
-        apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
-            return apth_func_raw(pselect)(nfds, rfds, wfds, efds, ts, mask);
-    }
     apth_t cur = CUR_APTH;
+    if (cur == NULL || cur->is_dedicated)
+        return apth_func_raw(pselect)(nfds, rfds, wfds, efds, ts, mask);
+
     apth_debug("apth_func_pselect(hooked): called from thread \"%s\"", cur->name);
 
     // POSIX.1-2001/SUSv3 compliance
