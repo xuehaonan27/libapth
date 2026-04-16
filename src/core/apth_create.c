@@ -147,9 +147,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // If called from a dedicated thread context, CUR_SCHED is a dummy scheduler.
     // Pick a real scheduler via round-robin to spread M:N threads across workers.
-    // Previously hardcoded to worker 0, causing all Java threads to concentrate
-    // on a single CPU.
-    if (sched->id < 0)
+    // With lazy-start, the pool may not be started yet — keep the dummy scheduler.
+    if (sched->id < 0 && GLOBAL_POOL.init_worker_count > 0)
     {
         static _Atomic(unsigned int) __dedicated_rr = 0;
         unsigned int idx = atomic_fetch_add_relaxed(&__dedicated_rr, 1);
@@ -159,7 +158,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
     // APTH_CLASS_DISTRIBUTED: round-robin across all schedulers to spread
     // threads evenly (e.g., GC workers in JVM). Overrides affinity/NUMA choice.
-    if (iattr->thread_class == APTH_CLASS_DISTRIBUTED)
+    if (iattr->thread_class == APTH_CLASS_DISTRIBUTED && GLOBAL_POOL.init_worker_count > 0)
     {
         static _Atomic(unsigned int) __rr_counter = 0;
         unsigned int idx = atomic_fetch_add_relaxed(&__rr_counter, 1);
