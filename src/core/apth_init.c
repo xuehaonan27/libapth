@@ -178,14 +178,16 @@ static int apth_init_common(int workers)
 
     // TODO: optional support for exceptional handling
 
-    // TODO: add synchronization here, making sure all workers are running now
-    // TODO: more reliable sync
-    while (atomic_load_acquire(&WORKER_SPAWNED) != 0)
+    // Wait for workers to spawn — only if scheduler pool was actually started.
+    // With lazy-start, workers aren't created yet (WORKER_SPAWNED stays at init value).
+    if (__apth_scheduler_pool_started)
     {
-        sched_yield();
+        while (atomic_load_acquire(&WORKER_SPAWNED) != 0)
+        {
+            sched_yield();
+        }
+        apth_debug("All spawned");
     }
-
-    apth_debug("All spawned");
     return 0;
 }
 
