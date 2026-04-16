@@ -221,8 +221,9 @@ APTH_INTERNAL int apth_global_scheduler_pool_drop(void)
 {
     if (!WORKER_POOL_INITIALIZED)
     {
-        PANIC("Worker pool not initialized!");
-        return -1;
+        // Lazy-start: pool was never started (all DEDICATED threads).
+        // Nothing to drop — return success.
+        return 0;
     }
 
     lll_internal_lock(&GLOBAL_POOL.pool_lock);
