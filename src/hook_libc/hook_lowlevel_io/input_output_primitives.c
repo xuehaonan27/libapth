@@ -4,6 +4,7 @@
 #include "internal/apth_event.h"
 #include "internal/apth_fd.h"
 #include "internal/apth_iouring.h"
+#include "internal/apth_stats.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -20,9 +21,13 @@
 APTH_DEFINE_HOOK(ssize_t, read,
                  (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 {
+    APTH_STAT_INC(__apth_stats_read.calls_total);
     apth_t cur = CUR_APTH;
-    if (cur == NULL || cur->is_dedicated)
+    if (cur == NULL || cur->is_dedicated) {
+        APTH_STAT_INC(__apth_stats_read.calls_dedicated);
         return apth_func_raw(read)(fd, buf, nbytes);
+    }
+    APTH_STAT_INC(__apth_stats_read.calls_mn);
     apth_hook_debug(read);
     apth_debug("apth_func_read: enter from thread \"%s\"", cur->name);
 
@@ -96,10 +101,13 @@ APTH_DEFINE_HOOK(ssize_t, __read_chk,
 APTH_DEFINE_HOOK(ssize_t, write,
                  (int fd, const void *buf, size_t nbytes), (fd, buf, nbytes))
 {
-
+    APTH_STAT_INC(__apth_stats_write.calls_total);
     apth_t cur = CUR_APTH;
-    if (cur == NULL || cur->is_dedicated)
+    if (cur == NULL || cur->is_dedicated) {
+        APTH_STAT_INC(__apth_stats_write.calls_dedicated);
         return apth_func_raw(write)(fd, buf, nbytes);
+    }
+    APTH_STAT_INC(__apth_stats_write.calls_mn);
     apth_hook_debug(write);
     apth_debug("apth_func_write: enter from thread \"%s\"", cur->name);
 

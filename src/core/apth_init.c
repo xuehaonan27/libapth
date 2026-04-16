@@ -8,6 +8,7 @@
 #include "internal/apth_reactor.h"
 #include "internal/apth_preempt.h"
 #include "internal/apth_dedicated.h"
+#include "internal/apth_stats.h"
 #ifdef APTH_USE_RDMA
 #include "internal/apth_rdma.h"
 #endif
@@ -332,6 +333,9 @@ int apth_init_library(int workers)
 // Drop the libapth package.
 void apth_drop(void)
 {
+    // Dump hook statistics before shutdown
+    apth_stats_dump();
+
     static volatile bool _drop_in_progress = false;
 
     set_DEBUG_USING_HOOKED(0);

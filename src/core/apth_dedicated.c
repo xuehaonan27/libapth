@@ -7,6 +7,7 @@
 #include "internal/apth_sched.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
+#include "internal/apth_stats.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/lll.inline.h"
 #include "utils/list.inline.h"
@@ -128,15 +129,14 @@ APTH_INTERNAL void apth_dedicated_do_exit(void *result)
 // thread must wait.
 APTH_INTERNAL void apth_dedicated_block(apth_t t)
 {
+    APTH_STAT_INC(__apth_stats_read.eventfd_reads);
     uint64_t val;
     apth_func_raw(read)(t->dedicated_wake_fd, &val, sizeof(val));
 }
 
-// Unblock a dedicated thread. Writes to the thread's dedicated_wake_fd
-// to wake it from apth_dedicated_block(). Safe to call from any context
-// (regular apth, scheduler, or another dedicated thread).
 APTH_INTERNAL void apth_dedicated_unblock(apth_t t)
 {
+    APTH_STAT_INC(__apth_stats_write.eventfd_writes);
     uint64_t val = 1;
     apth_func_raw(write)(t->dedicated_wake_fd, &val, sizeof(val));
 }

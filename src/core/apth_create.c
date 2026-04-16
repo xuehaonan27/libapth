@@ -13,6 +13,7 @@
 #include "internal/apth_dedicated.h"
 #include "internal/apth_sched.h"
 #include "internal/apth_thqueue.h"
+#include "internal/apth_stats.h"
 #include "attr/apth_attr.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
@@ -171,6 +172,7 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     // ==================== Dedicated thread creation path ====================
     if (iattr->thread_class == APTH_CLASS_DEDICATED)
     {
+        APTH_STAT_INC(__apth_stats_dedicated_creates);
         // Allocate TCB only (no mmap stack, no context setup — the pthread has its own stack)
         if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
             return apth_error(ENOMEM, ENOMEM);
