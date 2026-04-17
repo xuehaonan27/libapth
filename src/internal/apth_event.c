@@ -988,8 +988,10 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
         }
         else
         {
-            // No timer, no ready work: block briefly.
-            timeout_ms = 10;
+            // No timer, no ready work: block with adaptive timeout.
+            // 100ms instead of 10ms reduces idle epoll_wait from 100 Hz to 10 Hz.
+            // FD events and wake_fd still provide immediate responsiveness.
+            timeout_ms = 100;
         }
 
         if (timeout_ms >= 0)

@@ -247,12 +247,8 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
 
         // Dedicated thread fields
         t->is_dedicated = true;
-        t->dedicated_wake_fd = eventfd(0, EFD_CLOEXEC); // blocking mode (no O_NONBLOCK)
-        if (t->dedicated_wake_fd < 0)
-        {
-            free(t);
-            return apth_error(errno, errno);
-        }
+        t->dedicated_futex_val = 0;  // futex: 0=sleeping, 1=woken
+        t->dedicated_wake_fd = -1;   // eventfd no longer needed (using futex)
         // Do NOT register wake_fd with LIBAPTH FD table
 
         // Allocate dummy scheduler for TLS compatibility

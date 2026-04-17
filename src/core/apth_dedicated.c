@@ -14,6 +14,8 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 // External reference to global thread count (defined in apth_sched.c)
 extern _Atomic(unsigned int) apth_nthreads;
@@ -124,19 +126,30 @@ APTH_INTERNAL void apth_dedicated_do_exit(void *result)
     SET_CUR_APTH(NULL);
 }
 
-// Block a dedicated thread. Blocks the calling pthread on the thread's
-// dedicated_wake_fd (eventfd). Used by sync primitives when a dedicated
-// thread must wait.
+// Block a dedicated thread using futex (fast userspace mutex).
+// Futex has a fast path: if the value is already non-zero (woken), the
+// thread returns immediately without entering the kernel. Only blocks
+// (kernel syscall) when the value is zero (no wake pending).
+// This replaces eventfd which ALWAYS enters the kernel (read syscall).
 APTH_INTERNAL void apth_dedicated_block(apth_t t)
 {
     APTH_STAT_INC(__apth_stats_read.eventfd_reads);
-    uint64_t val;
-    apth_func_raw(read)(t->dedicated_wake_fd, &val, sizeof(val));
+    // Spin-check first: if already woken, skip syscall entirely
+    while (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) == 0) {
+        // Not yet woken — block in kernel until value changes from 0
+        syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
+                0 /* expected */, NULL /* no timeout */, NULL, 0);
+        // Spurious wakeup possible — loop to recheck
+    }
+    // Reset for next block
+    __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
 }
 
 APTH_INTERNAL void apth_dedicated_unblock(apth_t t)
 {
     APTH_STAT_INC(__apth_stats_write.eventfd_writes);
-    uint64_t val = 1;
-    apth_func_raw(write)(t->dedicated_wake_fd, &val, sizeof(val));
+    // Set value to 1 (woken) and wake one waiter
+    __atomic_store_n(&t->dedicated_futex_val, 1, __ATOMIC_RELEASE);
+    syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAKE_PRIVATE,
+            1 /* wake one */, NULL, NULL, 0);
 }

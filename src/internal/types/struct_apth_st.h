@@ -82,7 +82,8 @@ struct ALIGNED(64) apth_st
     bool is_dedicated;                    // true if this is a 1:1 dedicated pthread
     volatile bool dispatch_prevented;  /* JVM safepoint: prevent scheduler dispatch */
     pthread_t dedicated_tid;              // backing pthread (only if is_dedicated)
-    int dedicated_wake_fd;                // eventfd for blocking (only if is_dedicated)
+    int dedicated_wake_fd;                // eventfd for blocking (legacy, kept for compat)
+    volatile int dedicated_futex_val;     // futex value for blocking (0=sleeping, 1=woken)
     apth_sched_t dedicated_dummy_sched;   // dummy scheduler for TLS (only if is_dedicated)
     struct list_elem dedicated_elem;      // linkage for dedicated thread registry
 

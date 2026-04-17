@@ -336,7 +336,11 @@ static void *reactor_thread_func(void *arg)
         reactor_drain_requests();
 
         struct epoll_event events[128];
-        int nready = apth_func_raw(epoll_wait)(r->epoll_fd, events, 128, 5 /* ms */);
+        // Event-driven: block indefinitely until an FD event or wake_fd signal.
+        // The wake_fd is registered with this epoll (see reactor_start), so
+        // request submissions wake the reactor via eventfd write. No need for
+        // periodic 5ms polling — eliminates 200 Hz idle overhead.
+        int nready = apth_func_raw(epoll_wait)(r->epoll_fd, events, 128, -1);
 
         if (nready > 0)
             reactor_process_epoll_events(events, nready);
