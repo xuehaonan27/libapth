@@ -43,11 +43,12 @@ struct apth_rdma_waiter
 {
     apth_event_t ev;         /* Event to mark OCCURRED */
     apth_t th;               /* Owning thread */
-    apth_sched_t sched;      /* Scheduler to wake */
+    apth_sched_t sched;      /* Scheduler to wake (M:N threads) */
     struct ibv_cq *cq;       /* CQ this waiter is waiting on */
     uint64_t wr_id;          /* Work request ID to match */
     struct ibv_wc *wc_out;   /* Where to store the completion */
     bool active;             /* Slot in use */
+    volatile int *futex_ptr; /* Non-NULL for DEDICATED threads: futex wake */
 };
 
 /* A CQE polled by one thread's fast path that didn't match its wr_id.

@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 struct apth_rdma_poller GLOBAL_RDMA_POLLER;
 
@@ -31,6 +33,22 @@ static _Atomic(int) rdma_poller_state = RDMA_POLLER_STOPPED;
  * When no completions are found, brief pause instructions avoid
  * burning CPU while keeping latency low.
  * ================================================================ */
+
+/* Wake a waiter: futex for DEDICATED threads, scheduler wake for M:N. */
+static inline void waiter_wake(struct apth_rdma_waiter *w)
+{
+    if (w->futex_ptr)
+    {
+        /* DEDICATED thread: wake via futex. */
+        __atomic_store_n(w->futex_ptr, 1, __ATOMIC_RELEASE);
+        syscall(SYS_futex, w->futex_ptr, FUTEX_WAKE_PRIVATE,
+                1, NULL, NULL, 0);
+    }
+    else if (w->sched)
+    {
+        apth_sched_wake(w->sched);
+    }
+}
 
 static void poller_match_completions(struct ibv_cq *source_cq,
                                      struct ibv_wc *wcs, int n)
@@ -63,9 +81,8 @@ static void poller_match_completions(struct ibv_cq *source_cq,
             __atomic_store_n(&w->ev->ev_status, APTH_EV_STATUS_OCCURRED, __ATOMIC_RELEASE);
             w->active = false;
 
-            /* Wake the owning scheduler. */
-            if (w->sched)
-                apth_sched_wake(w->sched);
+            /* Wake the owning thread. */
+            waiter_wake(w);
 
             matched = true;
             break;
@@ -115,8 +132,7 @@ static void poller_match_completions(struct ibv_cq *source_cq,
                     __atomic_store_n(&w->ev->ev_status,
                                      APTH_EV_STATUS_FAILED, __ATOMIC_RELEASE);
                     w->active = false;
-                    if (w->sched)
-                        apth_sched_wake(w->sched);
+                    waiter_wake(w);
                 }
             }
         }
@@ -205,8 +221,7 @@ static void *rdma_poller_func(void *arg)
                         *w->wc_out = s->wc;
                     __atomic_store_n(&w->ev->ev_status, APTH_EV_STATUS_OCCURRED, __ATOMIC_RELEASE);
                     w->active = false;
-                    if (w->sched)
-                        apth_sched_wake(w->sched);
+                    waiter_wake(w);
                     found = true;
                     any_work = true;
                     break;
@@ -388,7 +403,8 @@ APTH_INTERNAL void apth_rdma_unregister_cq(struct ibv_cq *cq)
 /* Submit a waiter to the poller.  Thread-safe. */
 static int rdma_poller_submit(apth_event_t ev, apth_t th, apth_sched_t sched,
                                struct ibv_cq *cq, uint64_t wr_id,
-                               struct ibv_wc *wc_out)
+                               struct ibv_wc *wc_out,
+                               volatile int *futex_ptr)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
 
@@ -408,6 +424,7 @@ static int rdma_poller_submit(apth_event_t ev, apth_t th, apth_sched_t sched,
     w->wr_id = wr_id;
     w->wc_out = wc_out;
     w->active = true;
+    w->futex_ptr = futex_ptr;
     atomic_store_release(&p->waiter_count, idx + 1);
     lll_internal_unlock(&p->waiter_lock);
 
@@ -476,7 +493,7 @@ APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
         poller_match_completions(cq, &local_wc, 1);
     }
 
-    /* ---- Slow path: register with poller, yield, wait ---- */
+    /* ---- Slow path: register with poller, block until completion ---- */
     apth_t self = CUR_APTH;
     if (self == NULL)
         return -1; /* Can't yield from scheduler context */
@@ -492,18 +509,36 @@ APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
 
     apth_event_list_add(&self->event_list, &ev);
 
+    /* DEDICATED threads use futex blocking; M:N threads yield to scheduler. */
+    volatile int rdma_futex_val = 0;
+    volatile int *futex_ptr = self->is_dedicated ? &rdma_futex_val : NULL;
+
     if (rdma_poller_submit(&ev, self, SCHED_OF(self),
-                            cq, wr_id, wc) < 0)
+                            cq, wr_id, wc, futex_ptr) < 0)
     {
         list_remove(&ev.elem);
         return -1;
     }
 
-    /* Yield to scheduler.  The poller will mark ev.ev_status = OCCURRED
-     * and wake our scheduler when the CQ completion arrives. */
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        /* DEDICATED thread: block on futex until poller wakes us.
+         * The poller sets rdma_futex_val=1 and FUTEX_WAKE when done. */
+        while (__atomic_load_n(&rdma_futex_val, __ATOMIC_ACQUIRE) == 0)
+        {
+            syscall(SYS_futex, &rdma_futex_val, FUTEX_WAIT_PRIVATE,
+                    0 /* expected */, NULL /* no timeout */, NULL, 0);
+            /* Spurious wakeup possible — loop to recheck. */
+        }
+    }
+    else
+    {
+        /* M:N thread: yield to scheduler.  The poller will mark
+         * ev.ev_status = OCCURRED and wake our scheduler. */
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
+    }
 
     /* Resumed. */
     list_remove(&ev.elem);
@@ -561,9 +596,14 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
     if (remaining == 0)
         return 0; /* All completed on fast path */
 
-    /* Slow path: register remaining with poller and yield. */
+    /* Slow path: register remaining with poller and block. */
     struct apth_event_st evs[count];
     int submitted = 0;
+
+    /* DEDICATED threads use a single futex for the batch: the poller
+     * wakes us on each completion, but we only unblock when ALL are done. */
+    volatile int batch_futex_val = 0;
+    volatile int *futex_ptr = self->is_dedicated ? &batch_futex_val : NULL;
 
     for (int j = 0; j < count; j++)
     {
@@ -582,7 +622,7 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
 
         if (rdma_poller_submit(&evs[j], self, SCHED_OF(self),
                                 cq, wr_ids[j],
-                                wcs ? &wcs[j] : NULL) == 0)
+                                wcs ? &wcs[j] : NULL, futex_ptr) == 0)
             submitted++;
     }
 
@@ -597,11 +637,40 @@ APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
         return -1;
     }
 
-    /* Yield.  The scheduler's Phase 1 event scan will detect when all
-     * RDMA events are OCCURRED (since all are in our event_list). */
-    atomic_store_release(&self->state, APTH_STATE_WAITING);
-    self->yield_reason = APTH_YIELD_REASON_WAIT;
-    apth_yield();
+    if (self->is_dedicated)
+    {
+        /* DEDICATED: wait on futex, recheck all events on each wake.
+         * The poller wakes us (futex_val=1) on every completion match. */
+        for (;;)
+        {
+            bool all_done = true;
+            for (int j = 0; j < count; j++)
+            {
+                if (!found[j] &&
+                    __atomic_load_n(&evs[j].ev_status, __ATOMIC_ACQUIRE)
+                        == APTH_EV_STATUS_PENDING)
+                {
+                    all_done = false;
+                    break;
+                }
+            }
+            if (all_done)
+                break;
+
+            /* Reset and wait for next wake. */
+            __atomic_store_n(&batch_futex_val, 0, __ATOMIC_RELEASE);
+            syscall(SYS_futex, &batch_futex_val, FUTEX_WAIT_PRIVATE,
+                    0, NULL, NULL, 0);
+        }
+    }
+    else
+    {
+        /* M:N: yield to scheduler. The event scan detects when all
+         * RDMA events are OCCURRED (since all are in our event_list). */
+        atomic_store_release(&self->state, APTH_STATE_WAITING);
+        self->yield_reason = APTH_YIELD_REASON_WAIT;
+        apth_yield();
+    }
 
     /* Clean up. */
     for (int j = 0; j < count; j++)
