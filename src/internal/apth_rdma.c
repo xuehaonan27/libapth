@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
 
@@ -178,7 +179,7 @@ static void *rdma_poller_func(void *arg)
 
         /* Snapshot the CQ list under cq_lock so unregister_cq() can
          * safely mark entries inactive without racing the poller. */
-        struct { struct ibv_cq *cq; bool active; } cq_snap[APTH_RDMA_MAX_CQS];
+        struct apth_rdma_cq_entry cq_snap[APTH_RDMA_MAX_CQS];
         int cq_snap_count;
         lll_internal_lock(&p->cq_lock);
         cq_snap_count = p->cq_count;

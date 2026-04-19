@@ -28,10 +28,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Opaque types for ibverbs structures.
- * Users must include <infiniband/verbs.h> themselves. */
-struct ibv_cq;
-struct ibv_wc;
+/* ibverbs structures needed for struct apth_rdma_stashed_cqe (ibv_wc by value). */
+#include <infiniband/verbs.h>
 
 /* Maximum registered CQs, concurrent RDMA waiters, and stash size. */
 #define APTH_RDMA_MAX_CQS     64
@@ -66,7 +64,7 @@ struct apth_rdma_poller
     _Atomic(bool) running;
 
     /* Registered completion queues. */
-    struct {
+    struct apth_rdma_cq_entry {
         struct ibv_cq *cq;
         bool active;
     } cqs[APTH_RDMA_MAX_CQS];
