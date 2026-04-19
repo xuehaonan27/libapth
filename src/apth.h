@@ -558,10 +558,10 @@ static inline int apth_get_thread_numa_node(apth_t th) { (void)th; return 0; }
 #include <stdint.h>
 struct ibv_cq;
 struct ibv_wc;
-int apth_rdma_register_cq(struct ibv_cq *cq);
-void apth_rdma_unregister_cq(struct ibv_cq *cq);
-int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id, struct ibv_wc *wc);
-int apth_rdma_wait_batch(struct ibv_cq *cq, uint64_t *wr_ids, int count, struct ibv_wc *wcs);
+APTH_API int apth_rdma_register_cq(struct ibv_cq *cq);
+APTH_API void apth_rdma_unregister_cq(struct ibv_cq *cq);
+APTH_API int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id, struct ibv_wc *wc);
+APTH_API int apth_rdma_wait_batch(struct ibv_cq *cq, uint64_t *wr_ids, int count, struct ibv_wc *wcs);
 #endif
 
 // ==================== Application Entry Point ====================

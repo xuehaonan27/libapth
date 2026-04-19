@@ -332,7 +332,7 @@ APTH_INTERNAL void apth_rdma_poller_stop(void)
  * CQ registration
  * ================================================================ */
 
-APTH_INTERNAL int apth_rdma_register_cq(struct ibv_cq *cq)
+APTH_API int apth_rdma_register_cq(struct ibv_cq *cq)
 {
     /* Auto-start the poller thread on first CQ registration.
      * Uses CAS so only one thread executes start; others spin until
@@ -381,7 +381,7 @@ APTH_INTERNAL int apth_rdma_register_cq(struct ibv_cq *cq)
     return 0;
 }
 
-APTH_INTERNAL void apth_rdma_unregister_cq(struct ibv_cq *cq)
+APTH_API void apth_rdma_unregister_cq(struct ibv_cq *cq)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
 
@@ -444,7 +444,7 @@ static bool rdma_cq_is_faulted(struct apth_rdma_poller *p, struct ibv_cq *cq)
     return false;
 }
 
-APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
+APTH_API int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
                                   struct ibv_wc *wc)
 {
     struct apth_rdma_poller *p = &GLOBAL_RDMA_POLLER;
@@ -547,7 +547,7 @@ APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
     return (ev.ev_status == APTH_EV_STATUS_OCCURRED) ? 0 : -1;
 }
 
-APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
+APTH_API int apth_rdma_wait_batch(struct ibv_cq *cq,
                                         uint64_t *wr_ids, int count,
                                         struct ibv_wc *wcs)
 {

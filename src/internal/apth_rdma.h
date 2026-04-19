@@ -97,8 +97,8 @@ APTH_INTERNAL void apth_rdma_poller_stop(void);
 
 /* Register/unregister a CQ with the poller.
  * Must be called before any apth_rdma_wait() on that CQ. */
-APTH_INTERNAL int apth_rdma_register_cq(struct ibv_cq *cq);
-APTH_INTERNAL void apth_rdma_unregister_cq(struct ibv_cq *cq);
+APTH_API int apth_rdma_register_cq(struct ibv_cq *cq);
+APTH_API void apth_rdma_unregister_cq(struct ibv_cq *cq);
 
 /* Wait for an RDMA completion.
  *
@@ -118,13 +118,13 @@ APTH_INTERNAL void apth_rdma_unregister_cq(struct ibv_cq *cq);
  * A faulted CQ cannot be cleared — the application must destroy and
  * recreate the QP/CQ pair, as lost CQEs mean the completion stream
  * is no longer consistent. */
-APTH_INTERNAL int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
+APTH_API int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
                                   struct ibv_wc *wc);
 
 /* Wait for a batch of RDMA completions.
  * Yields once, resumes when all wr_ids have completed.
  * Returns 0 on success, -1 if any completion failed. */
-APTH_INTERNAL int apth_rdma_wait_batch(struct ibv_cq *cq,
+APTH_API int apth_rdma_wait_batch(struct ibv_cq *cq,
                                         uint64_t *wr_ids, int count,
                                         struct ibv_wc *wcs);
 
