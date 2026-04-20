@@ -232,3 +232,10 @@ int apth_allow_dispatch(apth_t t)
     atomic_store_release(&t->dispatch_prevented, false);
     return 0;
 }
+
+int apth_is_dedicated(apth_t t)
+{
+    if (!APTH_IS_VALID(t))
+        return 1;
+    return t->is_dedicated ? 1 : 0;
+}

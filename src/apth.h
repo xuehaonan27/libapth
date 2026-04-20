@@ -356,6 +356,7 @@ int apth_attach_self_as_dedicated(apth_t *out);
 int apth_detach_self(void);
 int apth_prevent_dispatch(apth_t t);
 int apth_allow_dispatch(apth_t t);
+int apth_is_dedicated(apth_t t);
 
 // ==================== Functions ====================
 
