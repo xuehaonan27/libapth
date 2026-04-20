@@ -115,8 +115,15 @@ static int apth_worker_init(apth_worker_t worker, int worker_id)
 
 static int apth_worker_drop(apth_worker_t worker)
 {
+    if (worker == NULL)
+        return 0;
     int target_worker_id = worker->worker_id;
     apth_debug("enter, dropping worker %d sched = %p", target_worker_id, worker->sched);
+    if (worker->sched == NULL)
+    {
+        free(worker);
+        return 0;
+    }
     // Tell the scheduler to clean and exit
     atomic_store_release(&worker->sched->opening, false);
 
