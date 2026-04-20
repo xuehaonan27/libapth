@@ -77,8 +77,10 @@ enum
 #define APTH_CLASS_REALTIME APTH_CLASS_REALTIME
     APTH_CLASS_DEDICATED,     // 1:1 dedicated pthread, bypasses scheduler
 #define APTH_CLASS_DEDICATED APTH_CLASS_DEDICATED
-    APTH_CLASS_DISTRIBUTED    // Round-robin across schedulers (e.g., GC workers)
+    APTH_CLASS_DISTRIBUTED,   // Round-robin across schedulers (e.g., GC workers)
 #define APTH_CLASS_DISTRIBUTED APTH_CLASS_DISTRIBUTED
+    APTH_CLASS_COUNT          // Must be last — number of classes
+#define APTH_CLASS_COUNT APTH_CLASS_COUNT
 };
 
 int apth_attr_setclass_np(apth_attr_t *attr, int thread_class);
@@ -315,6 +317,18 @@ int apth_request_pause_all(void);
 
 // Resume all schedulers after a pause.
 int apth_resume_all(void);
+
+// Per-class pause: prevent dispatch of threads with the given class.
+// Does NOT block — returns immediately. Threads already running will
+// finish their current quantum; newly-popped threads are pushed back.
+int apth_pause_class(int thread_class);
+
+// Resume dispatch for threads of the given class.
+int apth_resume_class(int thread_class);
+
+// Set preferred class for all schedulers. Threads of this class are
+// dispatched first when available. Pass -1 to clear preference.
+int apth_set_preferred_class(int thread_class);
 
 // State-change callback: fired when a thread transitions between states.
 typedef void (*apth_state_callback_t)(apth_t th, int old_state, int new_state, void *arg);

@@ -79,128 +79,121 @@ static void stack_pool_put(apth_sched_t sched, char *mem, size_t total_size)
                total_size, mem, sched->stack_pool_count);
 }
 
+// Align size up to 'align' boundary (align must be power of 2).
+static size_t align_up(size_t val, size_t align)
+{
+    return (val + align - 1) & ~(align - 1);
+}
+
 APTH_INTERNAL apth_t apth_tcb_alloc(size_t stacksize, void *stackaddr, size_t guardsize)
 {
-    apth_t t;
-
     if (stacksize <= 0)
         return APTH_NULL;
     if (stacksize < APTH_MIN_STACK)
         stacksize = APTH_MIN_STACK;
-    if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
-        return APTH_NULL;
 
-    assert_msg(APTH_ALIGNED_ASSURE(t), "t not aligned to 4 bytes: %p", t);
-
-    memset(t, '\0', sizeof(struct apth_st));
-
-    t->stacksize = stacksize;
-    t->guardsize = guardsize;
-    t->stack_mem_start = NULL;
-    t->magic = APTH_MAGIC; // Set magic number for validation
-    t->stackloan = (stackaddr != NULL ? true : false);
-    list_init(&t->event_list);
-
-    if (t->stackloan)
+    if (stackaddr != NULL)
     {
-        // User-provided stack - we don't set up guard pages for loaned stacks
-        // as we don't control the memory allocation
+        // User-provided (loaned) stack — TCB must be separate malloc.
+        apth_t t;
+        if ((t = (apth_t)malloc(sizeof(struct apth_st))) == NULL)
+            return APTH_NULL;
+        memset(t, '\0', sizeof(struct apth_st));
+        t->stacksize = stacksize;
+        t->guardsize = 0;
+        t->magic = APTH_MAGIC;
+        t->stackloan = true;
+        t->tcb_merged = false;
+        list_init(&t->event_list);
 #if APTH_STACKGROWTH < 0
         t->stack_mem_start = (char *)stackaddr - stacksize;
 #else
         t->stack_mem_start = (char *)stackaddr;
 #endif
-        t->guardsize = 0; // No guard page for loaned stacks
+        return t;
+    }
+
+    // Merged allocation: single mmap for guard + stack + TCB.
+    // Layout (downward-growing stack):
+    //   [guard page (PROT_NONE)] [stack space ...] [TCB (64-byte aligned)]
+    // The TCB sits at the high end; the stack grows down from just below it.
+    size_t tcb_size = align_up(sizeof(struct apth_st), 64);
+    size_t pagesize = page_size();
+
+    if (guardsize > 0)
+    {
+        size_t guard_pages = (guardsize + pagesize - 1) / pagesize;
+        guardsize = guard_pages * pagesize;
+    }
+
+    size_t total_size = guardsize + stacksize + tcb_size;
+    // Round up to page boundary for mmap
+    total_size = align_up(total_size, pagesize);
+
+    // Try the scheduler's stack pool first
+    apth_sched_t sched = CUR_SCHED;
+    size_t actual_size = 0;
+    char *mem = stack_pool_get(sched, total_size, &actual_size);
+    bool from_pool = (mem != NULL);
+
+    if (from_pool)
+    {
+        total_size = actual_size;
     }
     else
     {
-        // Allocate our own stack with guard page support
-        size_t total_size = stacksize;
+        mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (mem == MAP_FAILED)
+            return APTH_NULL;
 
         if (guardsize > 0)
         {
-            // Round guardsize up to page boundary
-            size_t pagesize = page_size();
-            size_t guard_pages = (guardsize + pagesize - 1) / pagesize;
-            guardsize = guard_pages * pagesize;
-            t->guardsize = guardsize;
-            total_size += guardsize;
-        }
-
-        // Try the scheduler's stack pool first
-        apth_sched_t sched = CUR_SCHED;
-        size_t actual_size = 0;
-        char *mem = stack_pool_get(sched, total_size, &actual_size);
-
-        if (mem != NULL)
-        {
-            // Pool hit — guard page protection is preserved across
-            // MADV_DONTNEED, so we only need to set up guard pages
-            // for fresh mmap'd stacks (below).
-            t->stack_mem_start = mem;
-            // Use actual_size so we return the right amount on free
-            // (the cached stack may be larger than requested)
-            t->stacksize = actual_size - t->guardsize;
-        }
-        else
-        {
-            // Pool miss — allocate from OS
-            mem = mmap(NULL, total_size, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (mem == MAP_FAILED)
+#if APTH_STACKGROWTH < 0
+            if (mprotect(mem, guardsize, PROT_NONE) != 0)
             {
-                apth_shield { free(t); }
+                apth_debug("mprotect failed for guard page: %s", strerror(errno));
+                munmap(mem, total_size);
                 return APTH_NULL;
             }
-
-            t->stack_mem_start = mem;
-
-            // Set up guard page if requested (only for fresh allocations)
-            if (guardsize > 0)
-            {
-#if APTH_STACKGROWTH < 0
-                // Stack grows downward: guard page at the lowest address
-                if (mprotect(t->stack_mem_start, guardsize, PROT_NONE) != 0)
-                {
-                    apth_debug("mprotect failed for guard page: %s", strerror(errno));
-                    munmap(mem, total_size);
-                    apth_shield { free(t); }
-                    return APTH_NULL;
-                }
 #else
-                // Stack grows upward: guard page at the highest address
-                if (mprotect(t->stack_mem_start + stacksize, guardsize, PROT_NONE) != 0)
-                {
-                    apth_debug("mprotect failed for guard page: %s", strerror(errno));
-                    munmap(mem, total_size);
-                    apth_shield { free(t); }
-                    return APTH_NULL;
-                }
-#endif
+            if (mprotect(mem + stacksize + tcb_size, guardsize, PROT_NONE) != 0)
+            {
+                apth_debug("mprotect failed for guard page: %s", strerror(errno));
+                munmap(mem, total_size);
+                return APTH_NULL;
             }
+#endif
         }
     }
+
+    // Place TCB at the high end of the mapping
+    apth_t t = (apth_t)(mem + total_size - tcb_size);
+    assert_msg(APTH_ALIGNED_ASSURE(t), "t not aligned to 4 bytes: %p", t);
+
+    memset(t, '\0', sizeof(struct apth_st));
+    t->stack_mem_start = mem;
+    t->stacksize = total_size - guardsize - tcb_size;
+    t->guardsize = guardsize;
+    t->magic = APTH_MAGIC;
+    t->stackloan = false;
+    t->tcb_merged = true;
+    list_init(&t->event_list);
+
     return t;
 }
 
-// Get the usable stack start address (after guard page if present)
+// Get the usable stack start address (after guard page if present).
+// For merged TCB: stack is between guard page and TCB.
 APTH_INTERNAL char *apth_tcb_get_usable_stack_start(apth_t t)
 {
-    if (t->guardsize > 0)
-    {
 #if APTH_STACKGROWTH < 0
-        // Stack grows downward: usable stack starts after the guard page
-        return t->stack_mem_start + t->guardsize;
+    // Stack grows downward: usable stack starts after the guard page
+    return t->stack_mem_start + t->guardsize;
 #else
-        // Stack grows upward: usable stack starts at the beginning
-        return t->stack_mem_start;
+    // Stack grows upward: usable stack starts at the beginning
+    return t->stack_mem_start;
 #endif
-    }
-    else
-    {
-        // No guard page
-        return t->stack_mem_start;
-    }
 }
 
 APTH_INTERNAL void apth_tcb_free(apth_t t)
@@ -208,21 +201,32 @@ APTH_INTERNAL void apth_tcb_free(apth_t t)
     assert(t != NULL);
     apth_sched_t sched = CUR_SCHED;
 
-    if (t->stack_mem_start != NULL && !t->stackloan)
-    {
-        // Return stack to pool instead of munmap.
-        // Use NULL for dummy schedulers (dedicated threads) to force munmap.
-        apth_sched_t pool_sched = (sched != NULL && sched->id >= 0) ? sched : NULL;
-        size_t total_size = t->stacksize + t->guardsize;
-        stack_pool_put(pool_sched, t->stack_mem_start, total_size);
-    }
-
     assert_msg(t->cleanups == NULL, "apth %p try to TCB free without executing cleanups", t);
 
     // Clear magic number to invalidate the TCB
     t->magic = 0;
 
-    free(t);
+    if (t->tcb_merged)
+    {
+        // TCB is embedded in the stack mmap — return entire region to pool or OS.
+        char *mem = t->stack_mem_start;
+        size_t tcb_size = align_up(sizeof(struct apth_st), 64);
+        size_t total_size = t->stacksize + t->guardsize + tcb_size;
+        // Pool or munmap the entire mmap region.
+        apth_sched_t pool_sched = (sched != NULL && sched->id >= 0) ? sched : NULL;
+        stack_pool_put(pool_sched, mem, total_size);
+    }
+    else
+    {
+        // Separate stack and TCB allocations.
+        if (t->stack_mem_start != NULL && !t->stackloan)
+        {
+            apth_sched_t pool_sched = (sched != NULL && sched->id >= 0) ? sched : NULL;
+            size_t total_size = t->stacksize + t->guardsize;
+            stack_pool_put(pool_sched, t->stack_mem_start, total_size);
+        }
+        free(t);
+    }
 
     // Decrement
     dec_thrcnt(sched);

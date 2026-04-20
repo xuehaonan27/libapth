@@ -2,6 +2,7 @@
 #define __LIBAPTH_INTERNAL_TYPES_STRUCT_APTH_SCHED_ST_H
 
 #include "apth.h"
+#include <stdint.h>
 #include "internal/forward_declare.h"
 #include "internal/apth_ctx.h"
 #include "internal/apth_time.h"
@@ -22,6 +23,7 @@ struct apth_sched_st
 #define SCHED_CTX(S) ((apth_cxt_t) & ((S)->sched_ctx_st))
     struct apth_thqueue_st new_queue;        // new threads
     struct apth_thqueue_st ready_queue;      // threads ready to run
+    struct apth_thqueue_st running_queue;    // sentinel: dispatched thread points here (no list ops)
     struct apth_thqueue_st waiting_queue;    // threads waiting for an event
     struct apth_thqueue_st terminated_queue; // terminated threads
     struct apth_thqueue_st waked_queue;      // threads waked by event(s)
@@ -29,10 +31,14 @@ struct apth_sched_st
     apth_worker_t worker;            // pthread worker carrying this scheduler
     unsigned int switches;           // context switch times
     unsigned int switches_since_poll; // dispatches since last I/O poll
+    uint64_t class_cpu_ns[APTH_CLASS_COUNT]; // per-class CPU time (nanoseconds)
+    uint64_t class_dispatches[APTH_CLASS_COUNT]; // per-class dispatch counts
+    int preferred_class;             // -1 = no preference; otherwise prefer this class
     _Atomic(unsigned int) thrcnt;    // APTH threads now running on this scheduler
     apth_time_t running;             // time the scheduler runs
     apth_t cur;                      // current APTH
     _Atomic(apth_t) advised_next_th; // advised thread to run next
+    _Atomic(apth_t) wake_stack;      // lock-free MPSC stack for wake submissions
     volatile _Atomic(bool) opening;  // scheduler is opening
     // Scheduler's own epoll_fd: monitors wake_eventfd + all FDs.
     // Set to -1 when io_uring is active (epoll not used).

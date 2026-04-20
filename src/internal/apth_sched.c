@@ -96,6 +96,7 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
 
     thqueue_init(THQUEUE(sched, new), APTH_STATE_NEW);
     thqueue_init(THQUEUE(sched, ready), APTH_STATE_READY);
+    thqueue_init(THQUEUE(sched, running), APTH_STATE_RUNNING);
     thqueue_init(THQUEUE(sched, waiting), APTH_STATE_WAITING);
     thqueue_init(THQUEUE(sched, terminated), APTH_STATE_TERMINATED);
     thqueue_init(THQUEUE(sched, waked), APTH_STATE_WAKED);
@@ -106,6 +107,10 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     sched->thrcnt = 0;
     apth_time_set(&sched->running, APTH_TIME_ZERO);
     sched->cur = APTH_NULL;
+    memset(sched->class_cpu_ns, 0, sizeof(sched->class_cpu_ns));
+    memset(sched->class_dispatches, 0, sizeof(sched->class_dispatches));
+    sched->preferred_class = -1;
+    atomic_init(&sched->wake_stack, APTH_NULL);
 
 #ifdef APTH_NUMA
     sched->numa_node = apth_numa_node_of_cpu(worker->worker_id);
@@ -292,20 +297,26 @@ APTH_INTERNAL void apth_sched_wake_thread(apth_sched_t sched, apth_t t)
     if (sched == NULL || t == NULL)
         return;
 
-    // Use transfer_th which handles lock ordering and queue state correctly.
-    // transfer_th(th, from, to) moves th from one queue to another.
     apth_thqueue_t waiting_q = THQUEUE(sched, waiting);
-    apth_thqueue_t waked_q   = THQUEUE(sched, waked);
 
     // Only move if the thread is actually in the waiting queue.
-    // apth_is_in does a speculative check (no lock needed for correctness
-    // because we re-verify inside transfer_th which locks both queues).
-    if (apth_is_in(waiting_q, t))
-    {
-        transfer_th(t, waiting_q, waked_q);
-    }
+    if (!apth_is_in(waiting_q, t))
+        return;
 
-    // Wake the scheduler so it processes the waked queue promptly
+    // Remove from waiting queue (1 lock op)
+    remove_apth_from(waiting_q, t);
+
+    // Lock-free push onto wake_stack (MPSC: multiple producers, single consumer).
+    // The scheduler drains this at the top of each iteration.
+    apth_t old_head;
+    do {
+        old_head = atomic_load_acquire(&sched->wake_stack);
+        atomic_store_release(&t->wake_next, old_head);
+    } while (!atomic_compare_exchange_weak_explicit(
+        &sched->wake_stack, &old_head, t,
+        memory_order_acq_rel, memory_order_acquire));
+
+    // Wake the scheduler so it processes the wake stack promptly
     apth_sched_wake(sched);
 }
 
@@ -326,6 +337,7 @@ APTH_INTERNAL void apth_scheduler_kill(void)
 
     drain_thqueue(THQUEUE(sched, new), __drain_free_th);
     drain_thqueue(THQUEUE(sched, ready), __drain_free_th);
+    drain_thqueue(THQUEUE(sched, running), __drain_free_th);
     drain_thqueue(THQUEUE(sched, waiting), __drain_free_th);
     drain_thqueue(THQUEUE(sched, terminated), __drain_free_th);
     drain_thqueue(THQUEUE(sched, waked), __drain_free_th);
@@ -435,6 +447,13 @@ static inline bool worker0_check_end_process(apth_worker_t worker)
         // we should end the process here.
         end_the_process = true;
     return end_the_process;
+}
+
+// Predicate for find_first_in_thqueue: matches threads of a given class.
+static bool __match_preferred_class(apth_t th, void *aux)
+{
+    int pref = (int)(intptr_t)aux;
+    return th->thread_class == pref;
 }
 
 // Try to steal one thread from a specific victim scheduler's ready queue.
@@ -698,29 +717,60 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         if (thqueue_size(THQUEUE(sched, waked)) > 0)
             thqueue_drain_to(THQUEUE(sched, waked), THQUEUE(sched, ready));
 
+        // Drain lock-free wake stack: exchange with NULL, then batch-push to ready.
+        {
+            apth_t wake_head = atomic_exchange_explicit(
+                &sched->wake_stack, APTH_NULL, memory_order_acq_rel);
+            while (wake_head != APTH_NULL)
+            {
+                apth_t next = atomic_load_acquire(&wake_head->wake_next);
+                push_apth_to(THQUEUE(sched, ready), wake_head);
+                wake_head = next;
+            }
+        }
+
         // If there's advised apth (which is not WAITING, but rather urgent lll waiting one!)
         // Schedule it right now
         // Use atomic_exchange to load and clear in one operation to prevent reusing stale advice
         th = atomic_exchange_acqrel(&sched->advised_next_th, APTH_NULL);
         if (th != APTH_NULL)
         {
-            // The advised thread might have been freed, stolen, or changed state
-            // Validate before using it
-            if (APTH_IS_VALID(th) && SCHED_OF(th) == sched && QUEUE_STATE_OF(th) == APTH_STATE_READY)
+            // The advised thread might have been freed, stolen, or changed state.
+            // Check current_queue != NULL before QUEUE_STATE_OF to avoid NULL deref.
+            if (APTH_IS_VALID(th) && SCHED_OF(th) == sched &&
+                th->current_queue != NULL && QUEUE_STATE_OF(th) == APTH_STATE_READY)
             {
                 remove_apth_from(th->current_queue, th);
+                th->current_queue = THQUEUE(sched, running);
                 atomic_store_release(&th->state, APTH_STATE_RUNNING);
             }
             else
-                // Thread was freed, stolen, or not ready - ignore the advice and pop from ready queue
                 th = APTH_NULL;
         }
 
         if (th == APTH_NULL)
         {
-            th = pop_apth_from(THQUEUE(sched, ready));
+            // Preferred-class dispatch: if a class is preferred, try to find
+            // a thread of that class first (O(1) scan via find_first).
+            int pref = sched->preferred_class;
+            if (pref >= 0 && thqueue_size(THQUEUE(sched, ready)) > 1)
+            {
+                apth_t preferred = find_first_in_thqueue(
+                    THQUEUE(sched, ready),
+                    __match_preferred_class, (void *)(intptr_t)pref);
+                if (preferred != APTH_NULL)
+                {
+                    remove_apth_from(THQUEUE(sched, ready), preferred);
+                    th = preferred;
+                }
+            }
+            if (th == APTH_NULL)
+                th = pop_apth_from(THQUEUE(sched, ready));
             if (th != APTH_NULL)
+            {
+                th->current_queue = THQUEUE(sched, running);
                 atomic_store_release(&th->state, APTH_STATE_RUNNING);
+            }
         }
 
         // apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
@@ -769,6 +819,19 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             push_apth_to(THQUEUE(sched, ready), th);
             th = APTH_NULL;
             continue;
+        }
+
+        // Per-class pause: don't dispatch threads whose class is paused
+        {
+            extern _Atomic(bool) __apth_class_paused[];
+            int cls = th->thread_class;
+            if (cls >= 0 && cls < APTH_CLASS_COUNT &&
+                atomic_load_acquire(&__apth_class_paused[cls]))
+            {
+                push_apth_to(THQUEUE(sched, ready), th);
+                th = APTH_NULL;
+                continue;
+            }
         }
 
         apth_check_process_signals(sched);
@@ -834,6 +897,18 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         apth_time_sub(&running, &th->lastran);
         apth_time_add(&th->running, &running);
         apth_debug("thread \"%s\" ran %.6f", th->name, apth_time_t2d(&running));
+
+        // Per-class CPU accounting
+        {
+            int cls = th->thread_class;
+            if (cls >= 0 && cls < APTH_CLASS_COUNT)
+            {
+                uint64_t ran_ns = (uint64_t)running.tv_sec * 1000000000ULL
+                                + (uint64_t)running.tv_usec * 1000ULL;
+                sched->class_cpu_ns[cls] += ran_ns;
+                sched->class_dispatches[cls]++;
+            }
+        }
 
         // Note: Stack overflow detection is now handled by guard pages.
         // If a thread overflows its stack, it will trigger a SIGSEGV when

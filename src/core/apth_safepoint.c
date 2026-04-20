@@ -18,6 +18,9 @@
 // When true, schedulers must not dispatch any thread.
 _Atomic(bool) __apth_global_pause = false;
 
+// Per-class pause: when true, threads of that class are not dispatched.
+_Atomic(bool) __apth_class_paused[APTH_CLASS_COUNT] = {false};
+
 APTH_API int apth_request_pause_all(void)
 {
     atomic_store_release(&__apth_global_pause, true);
@@ -65,6 +68,57 @@ APTH_API int apth_resume_all(void)
             apth_sched_wake(w->sched);
     }
 
+    return 0;
+}
+
+// ==================== Per-Class Pause ====================
+
+APTH_API int apth_pause_class(int thread_class)
+{
+    if (thread_class < 0 || thread_class >= APTH_CLASS_COUNT)
+        return EINVAL;
+    atomic_store_release(&__apth_class_paused[thread_class], true);
+
+    int nworkers = GLOBAL_POOL.init_worker_count;
+    for (int i = 0; i < nworkers; i++)
+    {
+        apth_worker_t w = GLOBAL_POOL.worker_ptr_mem_start[i];
+        if (w != NULL && w->sched != NULL)
+            apth_sched_wake(w->sched);
+    }
+    return 0;
+}
+
+APTH_API int apth_resume_class(int thread_class)
+{
+    if (thread_class < 0 || thread_class >= APTH_CLASS_COUNT)
+        return EINVAL;
+    atomic_store_release(&__apth_class_paused[thread_class], false);
+
+    int nworkers = GLOBAL_POOL.init_worker_count;
+    for (int i = 0; i < nworkers; i++)
+    {
+        apth_worker_t w = GLOBAL_POOL.worker_ptr_mem_start[i];
+        if (w != NULL && w->sched != NULL)
+            apth_sched_wake(w->sched);
+    }
+    return 0;
+}
+
+// ==================== Preferred Class ====================
+
+APTH_API int apth_set_preferred_class(int thread_class)
+{
+    if (thread_class < -1 || thread_class >= APTH_CLASS_COUNT)
+        return EINVAL;
+
+    int nworkers = GLOBAL_POOL.init_worker_count;
+    for (int i = 0; i < nworkers; i++)
+    {
+        apth_worker_t w = GLOBAL_POOL.worker_ptr_mem_start[i];
+        if (w != NULL && w->sched != NULL)
+            w->sched->preferred_class = thread_class;
+    }
     return 0;
 }
 

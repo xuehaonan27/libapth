@@ -49,6 +49,8 @@ struct ALIGNED(64) apth_st
     apth_yield_hook_t post_resume_hook;   // 8B  - called after SET_CUR_APTH(th), before ctx_switch
     void *yield_hook_arg;                 // 8B  - opaque arg passed to both hooks
 
+    _Atomic(apth_t) wake_next;               // 8B  - lock-free wake stack linkage
+
     // ==================== WARM: touched during I/O/sync ====================
     struct list event_list;               // events the thread is waiting for
     int sigpendcnt;                       // number of pending signals
@@ -75,6 +77,7 @@ struct ALIGNED(64) apth_st
     size_t stacksize;
     size_t guardsize;
     bool stackloan;
+    bool tcb_merged;                  // TCB is embedded at end of stack mmap (no separate malloc)
     void *(*start_func)(void *);
     void *start_arg;
 

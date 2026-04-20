@@ -37,7 +37,7 @@ extern pthread_key_t __CUR_SCHED_KEY;
 #endif
 
 #define SCHED_OF(T) ((T)->current_sched)
-#define QUEUE_STATE_OF(T) ((T)->current_queue->th_state)
+#define QUEUE_STATE_OF(T) ((T)->current_queue ? (T)->current_queue->th_state : APTH_STATE_NEW)
 
 // CUR_APTH returns the currently running apth_t, or NULL when the scheduler
 // itself is running (no user thread dispatched), or when CUR_SCHED is NULL
