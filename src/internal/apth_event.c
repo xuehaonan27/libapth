@@ -15,6 +15,8 @@
 #include "utils/atomic_wrapper.h"
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 #include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1062,23 +1064,30 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
             {
                 // ---- Reactor-based path ----
                 // The global reactor handles epoll_wait for all FDs.
-                // The scheduler just waits on its wake_eventfd (which the
-                // reactor writes to when FD events complete) using a minimal
-                // epoll_wait on the scheduler's own epoll_fd (wake_eventfd only).
+                // The scheduler sleeps on a futex (faster than epoll_wait on eventfd).
                 if (!dopoll)
                 {
-                    struct epoll_event wake_ev;
-                    int nready = apth_func_raw(epoll_wait)(sched->epoll_fd, &wake_ev, 1, timeout_ms);
-                    if (nready > 0 && wake_ev.data.fd == sched->wake_eventfd)
+                    while (__atomic_load_n(&sched->wake_futex_val, __ATOMIC_ACQUIRE) == 0)
                     {
-                        uint64_t val;
-                        ssize_t __ignored = apth_func_raw(read)(sched->wake_eventfd, &val, sizeof(val));
-                        (void)__ignored;
+                        struct timespec ts;
+                        struct timespec *tsp = NULL;
+                        if (timeout_ms >= 0)
+                        {
+                            ts.tv_sec = timeout_ms / 1000;
+                            ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
+                            tsp = &ts;
+                        }
+                        long ret = syscall(SYS_futex, &sched->wake_futex_val,
+                                           FUTEX_WAIT_PRIVATE, 0, tsp, NULL, 0);
+                        if (ret == -1 && errno == ETIMEDOUT)
+                        {
+                            if (has_timer)
+                                timed_out = true;
+                            break;
+                        }
                     }
-                    else if (nready == 0 && has_timer)
-                        timed_out = true;
+                    __atomic_store_n(&sched->wake_futex_val, 0, __ATOMIC_RELEASE);
                 }
-                /* else dopoll: skip epoll_wait entirely, return to dispatch */
             }
             else
             {

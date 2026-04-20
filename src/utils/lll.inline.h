@@ -40,20 +40,21 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
     if (atomic_compare_exchange_acquire(&lock->owner, &expected, self))
         return;
 
-    // Slow path: spin (and yield if we have a valid apth)
+    // Slow path: spin-pause first, then yield if still contended
     while (1)
     {
-        apth_t owner = atomic_load_acquire(&lock->owner);
-
-        if (owner == NULL)
+        for (int __spin = 0; __spin < 32; __spin++)
         {
-            expected = NULL;
-            if (atomic_compare_exchange_acquire(&lock->owner, &expected, self))
-                return;
-            continue;
+            apth_t owner = atomic_load_acquire(&lock->owner);
+            if (owner == NULL)
+            {
+                expected = NULL;
+                if (atomic_compare_exchange_acquire(&lock->owner, &expected, self))
+                    return;
+            }
+            __builtin_ia32_pause();
         }
 
-        // Yield to scheduler if possible, otherwise CPU pause
         if (no_apth)
             __builtin_ia32_pause();
         else

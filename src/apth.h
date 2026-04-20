@@ -324,6 +324,19 @@ int apth_set_state_callback(apth_state_callback_t cb, void *arg);
 typedef void (*apth_preempt_hook_t)(apth_t th, void *arg);
 int apth_set_preempt_hook(apth_preempt_hook_t hook, void *arg);
 
+// Yield hooks: called by the scheduler around every context switch.
+//   pre_yield:    called AFTER the thread yields back to the scheduler,
+//                 BEFORE SET_CUR_APTH(NULL). Thread::current() still works.
+//   post_resume:  called AFTER SET_CUR_APTH(th), BEFORE the thread resumes
+//                 execution via ctx_switch. Thread::current() works.
+// Used by HotSpot to transition JavaThreadState to _thread_blocked before
+// a thread is parked, and restore it + process safepoints after resume.
+typedef void (*apth_yield_hook_t)(apth_t th, void *arg);
+int apth_set_yield_hooks(apth_t th,
+                         apth_yield_hook_t pre_yield,
+                         apth_yield_hook_t post_resume,
+                         void *arg);
+
 /* ==================== Dedicated Thread Attachment ==================== */
 int apth_attach_self_as_dedicated(apth_t *out);
 int apth_detach_self(void);

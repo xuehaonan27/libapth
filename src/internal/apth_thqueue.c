@@ -1,6 +1,7 @@
 #include "apth_thqueue.h"
 #include "internal/apth_tcb.h"
 #include "utils/list.h"
+#include "utils/list.inline.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
 #include "utils/lll.inline.h"
@@ -277,6 +278,60 @@ APTH_INTERNAL void transfer_th_front(apth_t th, apth_thqueue_t from, apth_thqueu
     {
         lll_internal_unlock(&from->th_list_lock);
     }
+}
+
+APTH_INTERNAL int thqueue_drain_to(apth_thqueue_t from, apth_thqueue_t to)
+{
+    assert(from != NULL);
+    assert(to != NULL);
+
+    if (from < to)
+    {
+        lll_internal_lock(&from->th_list_lock);
+        lll_internal_lock(&to->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_lock(&to->th_list_lock);
+        lll_internal_lock(&from->th_list_lock);
+    }
+    else
+    {
+        lll_internal_lock(&from->th_list_lock);
+    }
+
+    int moved = 0;
+    if (!list_empty(&from->th_list))
+    {
+        FOR_ELEMENT_IN_LIST(from->th_list, e)
+        {
+            apth_t th = apth_t_list_entry(e);
+            th->current_queue = to;
+            atomic_store_release(&th->state, to->th_state);
+            moved++;
+        }
+
+        list_append(&to->th_list, &from->th_list);
+        to->size += from->size;
+        from->size = 0;
+    }
+
+    if (from < to)
+    {
+        lll_internal_unlock(&to->th_list_lock);
+        lll_internal_unlock(&from->th_list_lock);
+    }
+    else if (to < from)
+    {
+        lll_internal_unlock(&from->th_list_lock);
+        lll_internal_unlock(&to->th_list_lock);
+    }
+    else
+    {
+        lll_internal_unlock(&from->th_list_lock);
+    }
+
+    return moved;
 }
 
 APTH_INTERNAL apth_t find_first_in_thqueue(apth_thqueue_t queue, find_first_in_thqueue_th_func fn, void *aux)

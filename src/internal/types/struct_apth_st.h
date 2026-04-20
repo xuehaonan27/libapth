@@ -43,7 +43,11 @@ struct ALIGNED(64) apth_st
     uint32_t magic;                       // 4B  - validation magic number
     int dispatches;                       // 4B  - total dispatches
     int thread_class;                     // 4B  - APTH_CLASS_DEFAULT/IO_BOUND/CPU_BOUND/REALTIME
-    // ~62 bytes up to here — fits in one 64-byte cache line
+
+    // Yield hooks: called by scheduler around ctx_switch (for JVM safepoint integration)
+    apth_yield_hook_t pre_yield_hook;     // 8B  - called after yield, before SET_CUR_APTH(NULL)
+    apth_yield_hook_t post_resume_hook;   // 8B  - called after SET_CUR_APTH(th), before ctx_switch
+    void *yield_hook_arg;                 // 8B  - opaque arg passed to both hooks
 
     // ==================== WARM: touched during I/O/sync ====================
     struct list event_list;               // events the thread is waiting for

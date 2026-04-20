@@ -245,6 +245,11 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
         t->yield_timeslice = 10;
         t->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
 
+        // Yield hooks (not used for dedicated threads, but initialize for safety)
+        t->pre_yield_hook = NULL;
+        t->post_resume_hook = NULL;
+        t->yield_hook_arg = NULL;
+
         // Dedicated thread fields
         t->is_dedicated = true;
         t->dedicated_futex_val = 0;  // futex: 0=sleeping, 1=woken
@@ -367,6 +372,11 @@ APTH_API int apth_create(apth_t *newthr, const apth_attr_t *attr,
     t->last_yield_tick = cpu_tick();
     t->yield_timeslice = 10; // TODO: should passed from attr
     t->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
+
+    // Yield hooks (set later via apth_set_yield_hooks)
+    t->pre_yield_hook = NULL;
+    t->post_resume_hook = NULL;
+    t->yield_hook_arg = NULL;
 
     // Initialize the machine context of this new thread
     assert_msg(t->stacksize > 0, "APTH 0x%lx have stack size <= 0", t);

@@ -25,7 +25,6 @@ struct apth_sched_st
     struct apth_thqueue_st waiting_queue;    // threads waiting for an event
     struct apth_thqueue_st terminated_queue; // terminated threads
     struct apth_thqueue_st waked_queue;      // threads waked by event(s)
-    struct apth_thqueue_st running_queue;    // should assert size == 1
 #define THQUEUE(SCHED, NAME) ((apth_thqueue_t)(&(SCHED)->NAME##_queue))
     apth_worker_t worker;            // pthread worker carrying this scheduler
     unsigned int switches;           // context switch times
@@ -38,7 +37,8 @@ struct apth_sched_st
     // Scheduler's own epoll_fd: monitors wake_eventfd + all FDs.
     // Set to -1 when io_uring is active (epoll not used).
     int epoll_fd;
-    int wake_eventfd;                // eventfd used to wake the scheduler
+    int wake_eventfd;                // eventfd used to wake the scheduler (io_uring/legacy)
+    volatile int wake_futex_val;     // futex-based wake (reactor path, faster than eventfd)
 
 #ifdef APTH_NUMA
     int numa_node;                   // NUMA node this scheduler is bound to

@@ -4,7 +4,7 @@
 # ==================== Configuration ====================
 CC := gcc
 AR := ar
-CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
+CFLAGS := -Wall -Wextra -std=gnu11 -g -O3 -fPIC -fno-plt -flto \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
 	-DAPTH_HOLD_INITIALIZER_PTHREAD \
@@ -12,7 +12,7 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O2 -fPIC \
 	# Disabled for JVM integration testing:
 	# -DAPTH_PREEMPT_SIGNAL (conflicts with HotSpot's deliberate SIGSEGV probes)
 	# -DAPTH_NUMA -DAPTH_USE_IOURING (not needed for local-only phase 1)
-LDFLAGS := -pthread
+LDFLAGS := -pthread -flto
 
 # Optional sanitizer support.  Usage:
 #   make SANITIZE=address   # AddressSanitizer (memory errors)

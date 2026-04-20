@@ -106,3 +106,18 @@ void __apth_fire_preempt_hook(apth_t th)
     if (hook != NULL)
         hook(th, __preempt_hook_arg);
 }
+
+// ==================== Per-Thread Yield Hooks ====================
+
+APTH_API int apth_set_yield_hooks(apth_t th,
+                                  apth_yield_hook_t pre_yield,
+                                  apth_yield_hook_t post_resume,
+                                  void *arg)
+{
+    if (th == NULL || !APTH_IS_VALID(th))
+        return EINVAL;
+    th->yield_hook_arg = arg;
+    __atomic_store_n(&th->post_resume_hook, post_resume, __ATOMIC_RELEASE);
+    __atomic_store_n(&th->pre_yield_hook, pre_yield, __ATOMIC_RELEASE);
+    return 0;
+}

@@ -29,6 +29,8 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 // State callback (defined in apth_safepoint.c)
 extern void __apth_fire_state_callback(apth_t th, int old_state, int new_state);
@@ -97,7 +99,6 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     thqueue_init(THQUEUE(sched, waiting), APTH_STATE_WAITING);
     thqueue_init(THQUEUE(sched, terminated), APTH_STATE_TERMINATED);
     thqueue_init(THQUEUE(sched, waked), APTH_STATE_WAKED);
-    thqueue_init(THQUEUE(sched, running), APTH_STATE_RUNNING);
 
     sched->worker = worker;
     sched->switches = 0;
@@ -111,7 +112,9 @@ APTH_INTERNAL bool apth_scheduler_init(apth_sched_t sched, apth_worker_t worker)
     apth_debug("scheduler %d on NUMA node %d", sched->id, sched->numa_node);
 #endif
 
-    // Create wake eventfd (always needed, both backends use it)
+    sched->wake_futex_val = 0;
+
+    // Create wake eventfd (needed by io_uring and legacy epoll backends)
     sched->wake_eventfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (sched->wake_eventfd < 0)
         return apth_error(false, errno);
@@ -275,15 +278,12 @@ APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched)
     return atomic_load_acquire(&sched->opening);
 }
 
-// Wake a scheduler that may be blocked in epoll_wait by writing to its eventfd.
 APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
 {
-    if (sched->wake_eventfd >= 0)
+    if (__atomic_exchange_n(&sched->wake_futex_val, 1, __ATOMIC_ACQ_REL) == 0)
     {
-        uint64_t val = 1;
-        // Ignore errors: the scheduler may already be awake, or shutting down.
-        ssize_t __ignored = apth_func_raw(write)(sched->wake_eventfd, &val, sizeof(val));
-        (void)__ignored;
+        syscall(SYS_futex, &sched->wake_futex_val, FUTEX_WAKE_PRIVATE,
+                1, NULL, NULL, 0);
     }
 }
 
@@ -329,14 +329,6 @@ APTH_INTERNAL void apth_scheduler_kill(void)
     drain_thqueue(THQUEUE(sched, waiting), __drain_free_th);
     drain_thqueue(THQUEUE(sched, terminated), __drain_free_th);
     drain_thqueue(THQUEUE(sched, waked), __drain_free_th);
-    drain_thqueue(THQUEUE(sched, running), __drain_free_th);
-
-    // free(sched->new_queue);
-    // free(sched->ready_queue);
-    // free(sched->waiting_queue);
-    // free(sched->terminated_queue);
-    // free(sched->waked_queue);
-    // free(sched->running_queue);
 
     // Drain inline poller waiters and free fd_slots
     if (sched->fd_slots != NULL)
@@ -698,22 +690,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             }
         }
 
-        // apth_debug("new loop");
-        // Move all new threads to ready list (skip if empty)
+        // Move all new and waked threads to ready list in batch (single lock pair each)
         apth_t th;
         if (thqueue_size(THQUEUE(sched, new)) > 0)
-        {
-            while ((th = transfer_one_th(THQUEUE(sched, new), THQUEUE(sched, ready), false, "transfer_one_th moving new")) != APTH_NULL)
-                ;
-        }
+            thqueue_drain_to(THQUEUE(sched, new), THQUEUE(sched, ready));
 
-        // Move waked threads to ready list (skip if empty)
         if (thqueue_size(THQUEUE(sched, waked)) > 0)
-        {
-            apth_debug("moving waked apths");
-            while ((th = transfer_one_th(THQUEUE(sched, waked), THQUEUE(sched, ready), true, "transfer_one_th moving waked")) != APTH_NULL)
-                ;
-        }
+            thqueue_drain_to(THQUEUE(sched, waked), THQUEUE(sched, ready));
 
         // If there's advised apth (which is not WAITING, but rather urgent lll waiting one!)
         // Schedule it right now
@@ -725,8 +708,8 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // Validate before using it
             if (APTH_IS_VALID(th) && SCHED_OF(th) == sched && QUEUE_STATE_OF(th) == APTH_STATE_READY)
             {
+                remove_apth_from(th->current_queue, th);
                 atomic_store_release(&th->state, APTH_STATE_RUNNING);
-                transfer_th(th, th->current_queue, THQUEUE(sched, running));
             }
             else
                 // Thread was freed, stolen, or not ready - ignore the advice and pop from ready queue
@@ -734,8 +717,11 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         }
 
         if (th == APTH_NULL)
-            // Move one apth from ready queue to running queue
-            th = transfer_one_th(THQUEUE(sched, ready), THQUEUE(sched, running), false, "transfer_one_th popping candidate");
+        {
+            th = pop_apth_from(THQUEUE(sched, ready));
+            if (th != APTH_NULL)
+                atomic_store_release(&th->state, APTH_STATE_RUNNING);
+        }
 
         // apth_debug("popped apth=%p (\"%s\")", th, th == APTH_NULL ? "" : th->name);
 
@@ -764,7 +750,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             extern _Atomic(bool) __apth_global_pause;
             if (atomic_load_acquire(&__apth_global_pause))
             {
-                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+                push_apth_to(THQUEUE(sched, ready), th);
                 th = APTH_NULL;
                 // Spin until resumed — call event manager to stay responsive
                 while (atomic_load_acquire(&__apth_global_pause))
@@ -780,7 +766,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         // Check if dispatch is prevented (JVM safepoint/suspend)
         if (atomic_load_acquire(&th->dispatch_prevented))
         {
-            transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+            push_apth_to(THQUEUE(sched, ready), th);
             th = APTH_NULL;
             continue;
         }
@@ -808,13 +794,19 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
         if (th->sigpendcnt > 0)
             apth_deliver_pending_signals(th);
 
-        // Track per-apth CPU time via CLOCK_THREAD_CPUTIME_ID
+        // Post-resume hook: restore JVM thread state before thread runs.
+        // Called after SET_CUR_APTH(th) so Thread::current() works.
+        if (th->post_resume_hook)
+            th->post_resume_hook(th, th->yield_hook_arg);
+
+#ifdef APTH_PROFILE_DISPATCH
         struct timespec __cpu_start;
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &__cpu_start);
+#endif
 
         apth_ctx_switch(SCHED_CTX(sched), CTX(th));
 
-        // Accumulate per-apth CPU time (delta between dispatch and yield)
+#ifdef APTH_PROFILE_DISPATCH
         {
             struct timespec __cpu_end;
             clock_gettime(CLOCK_THREAD_CPUTIME_ID, &__cpu_end);
@@ -822,6 +814,13 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                            + (uint64_t)(__cpu_end.tv_nsec - __cpu_start.tv_nsec);
             th->accumulated_cpu_ns += delta;
         }
+#endif
+
+        // Pre-yield hook: save JVM thread state after thread yields.
+        // Called before SET_CUR_APTH(NULL) so Thread::current() still works.
+        // Skip for exiting threads — yield_hook_arg (JavaThread*) may be freed.
+        if (th->yield_reason != APTH_YIELD_REASON_EXIT && th->pre_yield_hook)
+            th->pre_yield_hook(th, th->yield_hook_arg);
 
         // Prepare for thread insertion and event management phase
         SET_CUR_APTH(NULL);
@@ -851,47 +850,19 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             // have been executed.
             if (IS_DETACHED(th))
             {
-                // For detached threads, just remove and free
-                remove_apth_from(THQUEUE(sched, running), th);
                 atomic_store_release(&th->state, APTH_STATE_TERMINATED);
                 apth_tcb_free(th);
             }
             else
             {
-                // For joinable threads, transfer to terminated queue
-                // and set state WHILE HOLDING the terminated queue lock.
-                // Lock in address order to prevent deadlock.
-                apth_thqueue_t running_q = THQUEUE(sched, running);
                 apth_thqueue_t term_q = THQUEUE(sched, terminated);
+                lll_internal_lock(&term_q->th_list_lock);
 
-                if (running_q < term_q)
-                {
-                    lll_internal_lock(&running_q->th_list_lock);
-                    lll_internal_lock(&term_q->th_list_lock);
-                }
-                else
-                {
-                    lll_internal_lock(&term_q->th_list_lock);
-                    lll_internal_lock(&running_q->th_list_lock);
-                }
-
-                // Remove from running queue
-                list_remove(&th->elem);
-                running_q->size--;
-                // set_belonging_queue_of(th, NULL);
-                th->current_queue = NULL;
-
-                // Insert into terminated queue
                 list_push_back(&term_q->th_list, &th->elem);
                 term_q->size++;
-                // set_belonging_queue_of(th, term_q);
                 th->current_queue = term_q;
-
-                // Change state WHILE HOLDING terminated queue lock
-                // This ensures atomicity of "state change + queue insertion"
                 atomic_store_release(&th->state, APTH_STATE_TERMINATED);
 
-                // Wake dedicated joiner if any
                 {
                     apth_t joiner = atomic_load_acquire(&th->joinid);
                     if (joiner != APTH_NULL && joiner != th &&
@@ -901,17 +872,7 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                     }
                 }
 
-                // Unlock in reverse order
-                if (running_q < term_q)
-                {
-                    lll_internal_unlock(&term_q->th_list_lock);
-                    lll_internal_unlock(&running_q->th_list_lock);
-                }
-                else
-                {
-                    lll_internal_unlock(&running_q->th_list_lock);
-                    lll_internal_unlock(&term_q->th_list_lock);
-                }
+                lll_internal_unlock(&term_q->th_list_lock);
             }
         }
         else
@@ -928,13 +889,12 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 break;
             case APTH_STATE_RUNNING:
                 apth_debug("moving thread \"%s\" to ready queue", th->name);
-                atomic_store_release(&th->state, APTH_STATE_READY);
-                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, ready));
+                push_apth_to(THQUEUE(sched, ready), th);
                 __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_READY);
                 break;
             case APTH_STATE_WAITING:
                 apth_debug("moving thread \"%s\" to waiting queue", th->name);
-                transfer_th(th, THQUEUE(sched, running), THQUEUE(sched, waiting));
+                push_apth_to(THQUEUE(sched, waiting), th);
                 __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_WAITING);
                 break;
             case APTH_STATE_TERMINATED:

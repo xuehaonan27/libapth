@@ -68,7 +68,18 @@ APTH_API int apth_for_each_thread(apth_thread_visitor_t visitor, void *arg)
         if (stop) break;
         total += visit_queue(THQUEUE(sched, waked), visitor, arg, &stop);
         if (stop) break;
-        total += visit_queue(THQUEUE(sched, running), visitor, arg, &stop);
+        {
+            apth_t cur = sched->cur;
+            if (cur != APTH_NULL && APTH_IS_VALID(cur))
+            {
+                total++;
+                if (visitor != NULL)
+                {
+                    int rc = visitor(cur, arg);
+                    if (rc != 0) { stop = true; }
+                }
+            }
+        }
         if (stop) break;
         total += visit_queue(THQUEUE(sched, terminated), visitor, arg, &stop);
         if (stop) break;

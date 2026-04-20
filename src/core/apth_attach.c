@@ -108,16 +108,17 @@ int apth_attach_self_as_dedicated(apth_t *out)
     t->yield_timeslice = 10;
     t->yield_reason = APTH_YIELD_REASON_VOLUNTEER;
 
+    // Yield hooks (not used for attached dedicated threads)
+    t->pre_yield_hook = NULL;
+    t->post_resume_hook = NULL;
+    t->yield_hook_arg = NULL;
+
     // Dedicated thread fields
     t->is_dedicated = true;
     t->dispatch_prevented = false;
     t->dedicated_tid = apth_func_raw(pthread_self)();
-    t->dedicated_wake_fd = eventfd(0, EFD_CLOEXEC);
-    if (t->dedicated_wake_fd < 0)
-    {
-        free(t);
-        return apth_error(errno, errno);
-    }
+    t->dedicated_wake_fd = -1;
+    t->dedicated_futex_val = 0;
 
     // Allocate dummy scheduler for TLS compatibility
     t->dedicated_dummy_sched = (apth_sched_t)calloc(1, sizeof(struct apth_sched_st));
