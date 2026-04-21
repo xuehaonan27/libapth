@@ -180,13 +180,13 @@ APTH_INTERNAL void apth_preempt_init(void)
     if (apth_func_raw(sigaction)(APTH_PREEMPT_SIGNO, &sa, NULL) < 0)
         apth_debug("WARNING: failed to install preemption signal handler");
 
-    // SIGUSR2 dumps diagnostic counters.
+    // SIGWINCH dumps diagnostic counters (SIGUSR2 is taken by JVM SR).
     struct sigaction sa2;
     memset(&sa2, 0, sizeof(sa2));
     sa2.sa_handler = __apth_diag_signal_handler;
     sa2.sa_flags = SA_RESTART;
     sigemptyset(&sa2.sa_mask);
-    apth_func_raw(sigaction)(SIGUSR2, &sa2, NULL);
+    apth_func_raw(sigaction)(SIGWINCH, &sa2, NULL);
 }
 
 APTH_INTERNAL void apth_preempt_drop(void)
