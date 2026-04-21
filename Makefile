@@ -11,7 +11,7 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O3 -fPIC -fno-plt \
 	-DAPTH_PREEMPT_SIGNAL \
 	$(EXTRA_CFLAGS)
 	# -DAPTH_NUMA -DAPTH_USE_IOURING (not needed for local-only phase 1)
-LDFLAGS := -pthread
+LDFLAGS := -pthread -lrt
 
 # Optional sanitizer support.  Usage:
 #   make SANITIZE=address   # AddressSanitizer (memory errors)
