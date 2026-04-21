@@ -101,6 +101,7 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
 
+retry:
     lll_apth_lock(&m->guard);
 
     // Fast path under guard: mutex is free
@@ -112,8 +113,8 @@ int apth_mutex_lock(apth_mutex_t *mutex)
         return 0;
     }
 
-    // Same-owner cases
-    if (m->owner == self)
+    // Same-owner cases (skip when self is NULL — no ownership to compare)
+    if (self != NULL && m->owner == self)
     {
         if (m->type == APTH_MUTEX_RECURSIVE)
         {
@@ -127,6 +128,14 @@ int apth_mutex_lock(apth_mutex_t *mutex)
             return EDEADLK;
         }
         // NORMAL: undefined behavior per POSIX; we block (will deadlock).
+    }
+
+    // Before library init or in bare-pthread context: spin-wait.
+    if (self == NULL)
+    {
+        lll_apth_unlock(&m->guard);
+        sched_yield();
+        goto retry;
     }
 
     // Slow path: must block.
@@ -183,6 +192,7 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
 
+retry_timed:
     lll_apth_lock(&m->guard);
 
     // Fast path: mutex is free
@@ -194,8 +204,8 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
         return 0;
     }
 
-    // Same-owner cases
-    if (m->owner == self)
+    // Same-owner cases (skip when self is NULL)
+    if (self != NULL && m->owner == self)
     {
         if (m->type == APTH_MUTEX_RECURSIVE)
         {
@@ -208,6 +218,19 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
             lll_apth_unlock(&m->guard);
             return EDEADLK;
         }
+    }
+
+    // Before library init: spin-wait with timeout check.
+    if (self == NULL)
+    {
+        lll_apth_unlock(&m->guard);
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+        goto retry_timed;
     }
 
     // Slow path: must block with timeout.
