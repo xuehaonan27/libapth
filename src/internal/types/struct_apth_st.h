@@ -53,6 +53,13 @@ struct ALIGNED(64) apth_st
     apth_yield_hook_t post_resume_hook;   // 8B  - called after SET_CUR_APTH(th), before ctx_switch
     void *yield_hook_arg;                 // 8B  - opaque arg passed to both hooks
 
+    // Yield-resume callback: called on the THREAD's own stack immediately
+    // after ctx_switch returns (thread resumed).  Unlike post_resume_hook
+    // which runs on the scheduler's stack, this runs on the thread's stack
+    // and can safely call blocking operations (e.g., JVM safepoint check).
+    apth_yield_hook_t yield_resume_callback;  // 8B
+    void *yield_resume_arg;                   // 8B
+
     _Atomic(apth_t) wake_next;               // 8B  - lock-free wake stack linkage
 
     // ==================== WARM: touched during I/O/sync ====================

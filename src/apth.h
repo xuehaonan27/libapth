@@ -351,6 +351,13 @@ int apth_set_yield_hooks(apth_t th,
                          apth_yield_hook_t post_resume,
                          void *arg);
 
+// Set a callback invoked on the THREAD's own stack immediately after
+// it resumes from a yield.  Unlike post_resume_hook (scheduler stack),
+// this can safely call blocking operations (e.g., JVM safepoint check).
+int apth_set_yield_resume_callback(apth_t th,
+                                   apth_yield_hook_t callback,
+                                   void *arg);
+
 /* ==================== Dedicated Thread Attachment ==================== */
 int apth_attach_self_as_dedicated(apth_t *out);
 int apth_detach_self(void);

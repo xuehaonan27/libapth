@@ -36,6 +36,13 @@ APTH_INTERNAL void apth_ctx_switch(apth_cxt_t old, apth_cxt_t new)
     apth_t cur = CUR_APTH;
     if (cur != NULL)
     {
+        /* If old == CTX(cur), we are a thread that just got re-dispatched
+         * (not the scheduler resuming after a thread yield).  Fire the
+         * yield-resume callback on the thread's own stack so it can
+         * safely perform blocking operations like JVM safepoint checks. */
+        if (old == CTX(cur) && cur->yield_resume_callback)
+            cur->yield_resume_callback(cur, cur->yield_resume_arg);
+
         unsigned int cc_h = atomic_load_acquire(&cur->cancelhandling);
         /* When cancellation is enabled in async mode we cancel immediately */
         if (atomic_load_acquire(&cur->cancelreq)   /* Have request */

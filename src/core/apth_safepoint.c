@@ -175,3 +175,14 @@ APTH_API int apth_set_yield_hooks(apth_t th,
     __atomic_store_n(&th->pre_yield_hook, pre_yield, __ATOMIC_RELEASE);
     return 0;
 }
+
+APTH_API int apth_set_yield_resume_callback(apth_t th,
+                                            apth_yield_hook_t callback,
+                                            void *arg)
+{
+    if (th == NULL || !APTH_IS_VALID(th))
+        return EINVAL;
+    th->yield_resume_arg = arg;
+    __atomic_store_n(&th->yield_resume_callback, callback, __ATOMIC_RELEASE);
+    return 0;
+}
