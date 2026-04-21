@@ -1,6 +1,7 @@
 #include "apth_signal.h"
 #include "internal/apth_tcb.h"
 #include "internal/apth_thqueue.h"
+#include "internal/apth_preempt.h"
 #include "hook_libc/hooked_funcs.h"
 #include "utils/debug.h"
 #include "utils/atomic_wrapper.h"
@@ -377,6 +378,10 @@ APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
             continue;
         if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL || sig == SIGTRAP || sig == SIGSYS)
             continue;
+#ifdef APTH_PREEMPT_SIGNAL
+        if (sig == APTH_PREEMPT_SIGNO)
+            continue;
+#endif
         if (apth_func_raw(sigaction)(sig, &sa, NULL) == -1)
         {
             apth_debug("signal %d cound not be set handler with `sigaction`", sig);

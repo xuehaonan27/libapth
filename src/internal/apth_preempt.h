@@ -49,7 +49,9 @@
 // Signal used for preemption (must be unblocked in worker threads)
 #ifdef APTH_PREEMPT_SIGNAL
 #include <signal.h>
-#define APTH_PREEMPT_SIGNO SIGPROF
+// SIGPROF conflicts with JVM profiling (JFR, async-profiler).
+// Use SIGRTMIN+1 to avoid collision with both JVM and SIGRTMIN (used by NPTL).
+#define APTH_PREEMPT_SIGNO (SIGRTMIN + 1)
 #endif
 
 // Initialize preemption system (called during library init)
