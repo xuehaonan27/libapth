@@ -21,11 +21,17 @@ int apth_sigmask(int how, const sigset_t *set, sigset_t *oldset)
     // signal mask must be authoritative.
     if (cur == NULL || cur->is_dedicated)
     {
-        int ret = apth_func_raw(pthread_sigmask)(how, set, oldset);
+        // apth_func_raw(pthread_sigmask) is NULL before apth_hook_init().
+        // Fall back to the direct libc call when the hook table is empty.
+        int (*raw_fn)(int, const sigset_t *, sigset_t *) =
+            apth_func_raw(pthread_sigmask);
+        if (raw_fn == NULL)
+            raw_fn = pthread_sigmask;
+        int ret = raw_fn(how, set, oldset);
         // Keep TCB sigmask in sync for DEDICATED threads
         if (ret == 0 && cur != NULL && cur->is_dedicated)
         {
-            apth_func_raw(pthread_sigmask)(SIG_SETMASK, NULL, &cur->sigmask);
+            raw_fn(SIG_SETMASK, NULL, &cur->sigmask);
         }
         return ret;
     }
