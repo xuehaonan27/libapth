@@ -4,7 +4,7 @@
 # ==================== Configuration ====================
 CC := gcc
 AR := ar
-CFLAGS := -Wall -Wextra -std=gnu11 -g -O3 -fPIC -fno-plt \
+CFLAGS := -Wall -Wextra -std=gnu11 -g -O3 -fPIC -fno-plt -march=native \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
 	-DAPTH_HOLD_INITIALIZER_PTHREAD \
