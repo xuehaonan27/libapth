@@ -79,11 +79,25 @@ static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
 
     ucontext_t *uc = (ucontext_t *)uctx;
     greg_t rip = uc->uc_mcontext.gregs[REG_RIP];
+    greg_t rsp = uc->uc_mcontext.gregs[REG_RSP];
 
     // Don't preempt inside the assembly context switch.
     if (rip >= (greg_t)apth_ctx_switch_asm &&
         rip <  (greg_t)__apth_ctx_switch_asm_end)
         return;
+
+    // Don't preempt if RSP is outside the thread's stack.
+    // Between SET_CUR_APTH(th) and ctx_switch (and after ctx_switch
+    // returns until SET_CUR_APTH(NULL)), CUR_APTH is set but execution
+    // is on the scheduler's stack.  Preempting here would corrupt the
+    // scheduler's context and cause a crash on next dispatch.
+    if (cur->stack_mem_start != NULL)
+    {
+        greg_t stack_lo = (greg_t)cur->stack_mem_start;
+        greg_t stack_hi = stack_lo + (greg_t)cur->stacksize;
+        if (rsp < stack_lo || rsp >= stack_hi)
+            return;
+    }
 
     // Save full GP register state from the interrupted context.
     memcpy(cur->preempt_gregs, uc->uc_mcontext.gregs,
