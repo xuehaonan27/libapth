@@ -83,6 +83,8 @@ struct apth_sched_st
         size_t size;    // total size (stacksize + guardsize)
     } stack_pool[APTH_STACK_POOL_MAX];
     int stack_pool_count;
+
+    void *alt_stack_mem; // sigaltstack memory for synchronous fault handlers
 };
 
 #endif // __LIBAPTH_INTERNAL_TYPES_STRUCT_APTH_SCHED_ST_H

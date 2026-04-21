@@ -23,6 +23,7 @@ thread_func(void *ignored_argument)
 
     sigset_t sigs;
     int waited_sig;
+    sigemptyset(&sigs);
     sigaddset(&sigs, SIGUSR1);
     sigwait(&sigs, &waited_sig);
 

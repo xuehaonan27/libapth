@@ -76,11 +76,11 @@ APTH_MAIN_BEGIN(argc, argv)
         exit(1);
     }
 
-    /* Check: thread should be TERMINATED after join completes */
+    /* After join, the TCB is freed — getstate should return -1 (ESRCH) */
     state = apth_getstate(th);
-    if (state != APTH_THREAD_STATE_TERMINATED)
+    if (state != -1)
     {
-        static char err[] = "test_getstate: FAIL (expected TERMINATED)\n";
+        static char err[] = "test_getstate: FAIL (expected -1 after join)\n";
         write(2, err, sizeof(err) - 1);
         exit(1);
     }

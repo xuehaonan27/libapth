@@ -576,7 +576,10 @@ int apth_get_thread_numa_node(apth_t th);
 #else
 // Stubs for non-NUMA builds: always report single node.
 static inline int apth_get_numa_node_count(void) { return 1; }
-static inline int apth_get_thread_numa_node(apth_t th) { (void)th; return 0; }
+static inline int apth_get_thread_numa_node(apth_t th) {
+    if (!th) return -1;
+    return apth_is_dedicated(th) ? -1 : 0;
+}
 #endif
 
 // ==================== RDMA Completion Waiting ====================

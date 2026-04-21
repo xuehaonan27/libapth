@@ -46,6 +46,12 @@
 #define APTH_PREEMPT_QUANTUM_MS 10
 #endif
 
+// Signal used for preemption (must be unblocked in worker threads)
+#ifdef APTH_PREEMPT_SIGNAL
+#include <signal.h>
+#define APTH_PREEMPT_SIGNO SIGPROF
+#endif
+
 // Initialize preemption system (called during library init)
 APTH_INTERNAL void apth_preempt_init(void);
 

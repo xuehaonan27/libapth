@@ -26,9 +26,13 @@ APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
     assert(APTH_IS_VALID(th));
 
     lll_internal_lock(&queue->th_list_lock);
-    list_push_back(&queue->th_list, &th->elem);
+    // IO_BOUND threads (mutators) get front-of-queue for priority dispatch
+    // after waking from RDMA/I/O.  All others go to the back (FIFO).
+    if (th->thread_class == APTH_CLASS_IO_BOUND)
+        list_push_front(&queue->th_list, &th->elem);
+    else
+        list_push_back(&queue->th_list, &th->elem);
     queue->size++;
-    // set_belonging_queue_of(th, queue);
     th->current_queue = queue;
     atomic_store_release(&th->state, queue->th_state);
     lll_internal_unlock(&queue->th_list_lock);

@@ -29,66 +29,120 @@ APTH_INTERNAL void apth_preempt_check(void) { /* nop */ }
 #include <signal.h>
 #include <time.h>
 #include <string.h>
-
-// Per-worker preemption flag. Set by signal handler, cleared by check.
-// Using _Thread_local so each worker pthread has its own flag.
-static APTH_THREAD_LOCAL volatile sig_atomic_t __preempt_pending = 0;
+#include <ucontext.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 
 // Per-worker timer ID
 static APTH_THREAD_LOCAL timer_t __preempt_timer;
 static APTH_THREAD_LOCAL int __preempt_timer_armed = 0;
 
-// Signal used for preemption timer. SIGPROF is a good choice because:
-// - It's per-thread (timer_create with SIGEV_THREAD_ID)
-// - It counts both user and system CPU time
-// - It's rarely used by applications
-#define APTH_PREEMPT_SIGNO SIGPROF
+// Assembly context-switch bounds: don't preempt mid-switch.
+extern void apth_ctx_switch_asm(void **old_sp, void *new_sp);
+extern char __apth_ctx_switch_asm_end[];
+
+// Assembly full-context restore (defined in apth_ctx_x86_64.S).
+extern void __apth_preempt_restore(greg_t *gregs,
+                                   struct _libc_fpstate *fpstate)
+    __attribute__((noreturn));
+
+// Forward declare the trampoline.
+static void __apth_preempt_trampoline(void) __attribute__((noreturn, noinline));
 
 /*
- * Signal handler for preemption.
+ * Signal handler for true preemptive scheduling.
  *
- * With the assembly context switch (no sigprocmask in the switch path),
- * this signal can fire at any point during user thread execution.  The
- * handler only sets a flag; the actual yield happens at the next
- * preemption check point (see apth_preempt_check).
+ * When the per-worker SIGPROF timer fires, this handler:
+ *   1. Checks that an M:N thread is running and is preemptible.
+ *   2. Saves the full interrupted register state (GP + FP) into the TCB.
+ *   3. Modifies the signal return context to jump to a trampoline that
+ *      cooperatively yields to the scheduler.
  *
- * Preemption check points:
- *   1. Every hooked I/O function (read, write, connect, accept, etc.)
- *   2. Every synchronization operation (mutex lock/unlock, cond wait, etc.)
- *   3. The scheduler loop before dispatching a new thread
- *   4. apth_yield() and apth_yield_optional()
+ * After the yield, the trampoline calls __apth_preempt_restore() to
+ * restore the full saved state, resuming the thread transparently.
  *
- * Limitation: a pure CPU-bound loop that calls no hooked functions
- * will not be preempted until it makes a function call that includes
- * a preemption check.  For such workloads, use APTH_PREEMPT_INSTRUMENT
- * mode which checks at every function entry.
+ * Async-signal-safe: only reads/writes TCB fields and ucontext values.
  */
 static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
 {
     (void)sig;
     (void)info;
-    (void)uctx;
-    __preempt_pending = 1;
+
+    apth_t cur = CUR_APTH;
+    if (cur == NULL)                    return;
+    if (cur->is_dedicated)              return;
+    if (cur->dispatch_prevented)        return;
+    if (cur->was_preempted)             return;
+    // IO_BOUND threads (mutators) yield naturally on RDMA/I/O waits.
+    // Only preempt CPU_BOUND / DISTRIBUTED (GC workers) and DEFAULT.
+    if (cur->thread_class == APTH_CLASS_IO_BOUND) return;
+
+    ucontext_t *uc = (ucontext_t *)uctx;
+    greg_t rip = uc->uc_mcontext.gregs[REG_RIP];
+
+    // Don't preempt inside the assembly context switch.
+    if (rip >= (greg_t)apth_ctx_switch_asm &&
+        rip <  (greg_t)__apth_ctx_switch_asm_end)
+        return;
+
+    // Save full GP register state from the interrupted context.
+    memcpy(cur->preempt_gregs, uc->uc_mcontext.gregs,
+           sizeof(cur->preempt_gregs));
+
+    // Save FP/SSE state.  The kernel stored it at *uc_mcontext.fpregs.
+    if (uc->uc_mcontext.fpregs != NULL)
+        memcpy(&cur->preempt_fpstate, uc->uc_mcontext.fpregs,
+               sizeof(cur->preempt_fpstate));
+
+    cur->was_preempted = true;
+
+    // Redirect execution to the trampoline, below the red zone.
+    // x86-64 ABI: 128-byte red zone below RSP.
+    greg_t orig_rsp = uc->uc_mcontext.gregs[REG_RSP];
+    greg_t new_rsp  = (orig_rsp - 256) & ~(greg_t)0xF;  // 16-byte aligned
+    new_rsp -= 8;  // SysV ABI: RSP % 16 == 8 at function entry
+
+    uc->uc_mcontext.gregs[REG_RSP] = new_rsp;
+    uc->uc_mcontext.gregs[REG_RIP] = (greg_t)__apth_preempt_trampoline;
+}
+
+/*
+ * Trampoline: runs after sigreturn with the modified context.
+ * Stack is below the original thread's red zone.
+ *
+ * 1. Cooperatively yields to the scheduler (pre_yield_hook fires to
+ *    save JVM state, post_resume_hook fires on re-dispatch to restore it).
+ * 2. After re-dispatch, restores the full saved register state via the
+ *    assembly routine, jumping back to the exact interrupted instruction.
+ */
+static void __apth_preempt_trampoline(void)
+{
+    apth_t self = CUR_APTH;
+
+    __apth_fire_preempt_hook(self);
+
+    self->yield_reason = APTH_YIELD_REASON_TIMESLICE;
+    apth_yield();
+
+    // Re-dispatched.  Restore full interrupted context.
+    self->was_preempted = false;
+    __apth_preempt_restore(self->preempt_gregs, &self->preempt_fpstate);
+    // unreachable
 }
 
 APTH_INTERNAL void apth_preempt_init(void)
 {
-    // Install the preemption signal handler. We use SA_RESTART to avoid
-    // disrupting blocking syscalls in the application.
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = apth_preempt_signal_handler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
     sigemptyset(&sa.sa_mask);
     if (apth_func_raw(sigaction)(APTH_PREEMPT_SIGNO, &sa, NULL) < 0)
-    {
         apth_debug("WARNING: failed to install preemption signal handler");
-    }
 }
 
 APTH_INTERNAL void apth_preempt_drop(void)
 {
-    // Restore default handler
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SIG_DFL;
@@ -97,11 +151,13 @@ APTH_INTERNAL void apth_preempt_drop(void)
 
 APTH_INTERNAL void apth_preempt_arm(void)
 {
-    // Create a per-thread POSIX timer that delivers APTH_PREEMPT_SIGNO
     struct sigevent sev;
     memset(&sev, 0, sizeof(sev));
-    sev.sigev_notify = SIGEV_SIGNAL;
-    sev.sigev_signo = APTH_PREEMPT_SIGNO;
+
+    // SIGEV_THREAD_ID: deliver signal to THIS worker thread only.
+    sev.sigev_notify = SIGEV_THREAD_ID;
+    sev.sigev_signo  = APTH_PREEMPT_SIGNO;
+    sev._sigev_un._tid = (int)syscall(SYS_gettid);
 
     if (timer_create(CLOCK_THREAD_CPUTIME_ID, &sev, &__preempt_timer) < 0)
     {
@@ -109,11 +165,10 @@ APTH_INTERNAL void apth_preempt_arm(void)
         return;
     }
 
-    // Arm the timer with the configured quantum
     struct itimerspec its;
-    its.it_value.tv_sec = APTH_PREEMPT_QUANTUM_MS / 1000;
-    its.it_value.tv_nsec = (APTH_PREEMPT_QUANTUM_MS % 1000) * 1000000L;
-    its.it_interval = its.it_value; // Repeating
+    its.it_value.tv_sec     = APTH_PREEMPT_QUANTUM_MS / 1000;
+    its.it_value.tv_nsec    = (APTH_PREEMPT_QUANTUM_MS % 1000) * 1000000L;
+    its.it_interval = its.it_value;
 
     if (timer_settime(__preempt_timer, 0, &its, NULL) < 0)
     {
@@ -123,7 +178,6 @@ APTH_INTERNAL void apth_preempt_arm(void)
     }
 
     __preempt_timer_armed = 1;
-    __preempt_pending = 0;
     apth_debug("preemption timer armed (quantum=%dms)", APTH_PREEMPT_QUANTUM_MS);
 }
 
@@ -133,25 +187,11 @@ APTH_INTERNAL void apth_preempt_disarm(void)
     {
         timer_delete(__preempt_timer);
         __preempt_timer_armed = 0;
-        __preempt_pending = 0;
     }
 }
 
-APTH_INTERNAL void apth_preempt_check(void)
-{
-    if (__preempt_pending)
-    {
-        __preempt_pending = 0;
-        apth_t cur = CUR_APTH;
-        if (cur != NULL)
-        {
-            __apth_fire_preempt_hook(cur);
-            // Only yield if this is an actual apth, not scheduler context
-            cur->yield_reason = APTH_YIELD_REASON_TIMESLICE;
-            apth_yield();
-        }
-    }
-}
+// Legacy check — only used by instrumentation mode now.
+APTH_INTERNAL void apth_preempt_check(void) { /* nop for signal mode */ }
 
 // ===================== Compiler instrumentation =====================
 #elif defined(APTH_PREEMPT_INSTRUMENT)

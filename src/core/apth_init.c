@@ -49,6 +49,11 @@ int apth_ensure_scheduler_pool(void)
         return -1;
     }
 
+    // Wait for all workers to finish initializing (each sets up its scheduler,
+    // then decrements WORKER_SPAWNED).
+    while (atomic_load_acquire(&WORKER_SPAWNED) != 0)
+        sched_yield();
+
     __apth_scheduler_pool_started = true;
     pthread_mutex_unlock(&__apth_lazy_start_lock);
     return 0;
@@ -87,6 +92,7 @@ void apth_config_defaults(apth_init_t *cfg)
     cfg->workers = 1;
     cfg->main_apth = NULL;
     cfg->main_args = NULL;
+    cfg->main_attr = NULL;
 }
 
 /*
@@ -198,10 +204,10 @@ void apth_init(apth_init_t *initvals)
     if (apth_init_common(initvals->workers) != 0)
         return;
 
-    // Spawn the main thread
+    // Standalone mode always needs the scheduler pool immediately
+    // (lazy-start is only useful for apth_init_library with DEDICATED-only usage).
+    apth_ensure_scheduler_pool();
 
-    // NOTE: `get_worker_by_id` requires lll, which means TLS should be initialized.
-    // Getting worker 0 should go through fast path, without acquiring the lll.
     apth_worker_t worker0 = get_worker_by_id(0);
     apth_sched_t sched = worker0->sched;
 

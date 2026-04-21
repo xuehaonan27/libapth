@@ -3,6 +3,10 @@
 
 #include "common.h" // For APTH_TCB_NAMELEN
 #include "apth.h"
+#ifdef APTH_PREEMPT_SIGNAL
+#include <ucontext.h>
+#include <signal.h>
+#endif
 #include "internal/forward_declare.h"
 #include "internal/types/struct_apth_event_st.h"
 #include "internal/apth_epoll_waiter.h"
@@ -95,6 +99,18 @@ struct ALIGNED(64) apth_st
     struct list_elem dedicated_elem;      // linkage for dedicated thread registry
 
     // ==================== COLD: rarely accessed / large ====================
+
+#ifdef APTH_PREEMPT_SIGNAL
+    /* Signal-based preemption state.
+     * When the SIGPROF timer fires, the handler saves the full interrupted
+     * register state here, then redirects execution to a trampoline that
+     * cooperatively yields to the scheduler.  On re-dispatch, a custom
+     * assembly routine restores the full state and jumps back. */
+    greg_t preempt_gregs[NGREG];                           /* GP registers from mcontext */
+    struct _libc_fpstate preempt_fpstate                    /* FP/SSE state for fxrstor */
+        __attribute__((aligned(16)));
+    volatile bool was_preempted;                             /* true while in preempt trampoline */
+#endif
 
     /* Per APTH Signal Handling */
     sigset_t sigpending;                  // 128B on Linux

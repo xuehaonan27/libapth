@@ -368,6 +368,13 @@ APTH_INTERNAL void apth_scheduler_kill(void)
         sched->waiter_pool = NULL;
     }
 
+    // Free alternate signal stack
+    if (sched->alt_stack_mem != NULL)
+    {
+        free(sched->alt_stack_mem);
+        sched->alt_stack_mem = NULL;
+    }
+
     // Drain stack pool
     for (int i = 0; i < sched->stack_pool_count; i++)
     {
@@ -672,7 +679,25 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     sigdelset(&sigs, SIGABRT);   // Process abort
     sigdelset(&sigs, SIGUSR2);   // HotSpot suspend/resume (SR_signum)
     sigdelset(&sigs, SIGUSR1);   // HotSpot may use for other purposes
+#ifdef APTH_PREEMPT_SIGNAL
+    sigdelset(&sigs, APTH_PREEMPT_SIGNO);
+#endif
     apth_func_raw(pthread_sigmask)(SIG_SETMASK, &sigs, NULL);
+
+    // Set up alternate signal stack so that synchronous fault handlers
+    // (SIGSEGV from guard page, etc.) can run even when an M:N thread
+    // has overflowed its stack.
+    {
+        void *alt_stack_mem = malloc(SIGSTKSZ);
+        if (alt_stack_mem != NULL)
+        {
+            stack_t ss = { .ss_sp = alt_stack_mem, .ss_size = SIGSTKSZ, .ss_flags = 0 };
+            apth_func_raw(sigaltstack)(&ss, NULL);
+            sched->alt_stack_mem = alt_stack_mem;
+        }
+        else
+            sched->alt_stack_mem = NULL;
+    }
 
     // initialize the snapshot time for bootstrapping the loop
     apth_time_set(&snapshot, APTH_TIME_NOW);
