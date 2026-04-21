@@ -107,6 +107,16 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
     struct apth_cond_st *c = APTH_COND_CAST(cond);
     apth_t self = CUR_APTH;
 
+    // No apth context: cannot enter the wait queue.  Release the mutex,
+    // yield to OS, re-acquire — POSIX allows spurious wakeups.
+    if (self == NULL)
+    {
+        apth_mutex_unlock(mutex);
+        sched_yield();
+        apth_mutex_lock(mutex);
+        return 0;
+    }
+
     // Prepare stack-allocated waiter and event
     struct apth_sync_waiter w;
     w.th = self;
@@ -162,6 +172,22 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
 
     struct apth_cond_st *c = APTH_COND_CAST(cond);
     apth_t self = CUR_APTH;
+
+    if (self == NULL)
+    {
+        apth_mutex_unlock(mutex);
+        struct timespec now;
+        clock_gettime(c->clock_id, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+        {
+            apth_mutex_lock(mutex);
+            return ETIMEDOUT;
+        }
+        sched_yield();
+        apth_mutex_lock(mutex);
+        return 0;
+    }
 
     // Prepare COND event (sync waiter)
     struct apth_sync_waiter w;

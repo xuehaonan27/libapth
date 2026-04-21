@@ -57,6 +57,7 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = CUR_APTH;
 
+retry_rd:
     lll_apth_lock(&rw->guard);
 
     // Fast path: no writers and no waiting writers
@@ -65,6 +66,13 @@ int apth_rwlock_rdlock(apth_rwlock_t *rwlock)
         rw->readers++;
         lll_apth_unlock(&rw->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&rw->guard);
+        sched_yield();
+        goto retry_rd;
     }
 
     // Slow path: must block
@@ -114,6 +122,7 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = CUR_APTH;
 
+retry_rd_timed:
     lll_apth_lock(&rw->guard);
 
     // Fast path: no writers and no waiting writers
@@ -122,6 +131,18 @@ int apth_rwlock_timedrdlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         rw->readers++;
         lll_apth_unlock(&rw->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&rw->guard);
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+        goto retry_rd_timed;
     }
 
     // Slow path: must block with timeout
@@ -225,6 +246,7 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = CUR_APTH;
 
+retry_wr:
     lll_apth_lock(&rw->guard);
 
     // Fast path: no readers and no writers
@@ -233,6 +255,13 @@ int apth_rwlock_wrlock(apth_rwlock_t *rwlock)
         rw->writers = 1;
         lll_apth_unlock(&rw->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&rw->guard);
+        sched_yield();
+        goto retry_wr;
     }
 
     // Slow path: must block
@@ -284,6 +313,7 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
     struct apth_rwlock_st *rw = APTH_RWLOCK_CAST(rwlock);
     apth_t self = CUR_APTH;
 
+retry_wr_timed:
     lll_apth_lock(&rw->guard);
 
     // Fast path: no readers and no writers
@@ -292,6 +322,18 @@ int apth_rwlock_timedwrlock(apth_rwlock_t *rwlock, const struct timespec *abstim
         rw->writers = 1;
         lll_apth_unlock(&rw->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&rw->guard);
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+        goto retry_wr_timed;
     }
 
     // Slow path: must block with timeout

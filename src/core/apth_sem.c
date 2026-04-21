@@ -50,6 +50,7 @@ int apth_sem_wait(apth_sem_t *sem)
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
     apth_t self = CUR_APTH;
 
+retry_sem:
     lll_apth_lock(&s->guard);
 
     // Fast path: semaphore has available count
@@ -58,6 +59,13 @@ int apth_sem_wait(apth_sem_t *sem)
         s->value--;
         lll_apth_unlock(&s->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&s->guard);
+        sched_yield();
+        goto retry_sem;
     }
 
     // Slow path: must block
@@ -107,6 +115,7 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
     struct apth_sem_st *s = APTH_SEM_CAST(sem);
     apth_t self = CUR_APTH;
 
+retry_sem_timed:
     lll_apth_lock(&s->guard);
 
     // Fast path: semaphore has available count
@@ -115,6 +124,18 @@ int apth_sem_timedwait(apth_sem_t *sem, const struct timespec *abstime)
         s->value--;
         lll_apth_unlock(&s->guard);
         return 0;
+    }
+
+    if (self == NULL)
+    {
+        lll_apth_unlock(&s->guard);
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+        goto retry_sem_timed;
     }
 
     // Slow path: must block with timeout

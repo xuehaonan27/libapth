@@ -82,6 +82,23 @@ int apth_barrier_wait(apth_barrier_t *barrier)
         return APTH_BARRIER_SERIAL_THREAD;
     }
 
+    if (self == NULL)
+    {
+        unsigned gen = b->generation;
+        lll_apth_unlock(&b->guard);
+        while (1)
+        {
+            sched_yield();
+            lll_apth_lock(&b->guard);
+            if (b->generation != gen)
+            {
+                lll_apth_unlock(&b->guard);
+                return 0;
+            }
+            lll_apth_unlock(&b->guard);
+        }
+    }
+
     // Not the last thread: must wait
     struct apth_sync_waiter w;
     w.th = self;

@@ -101,6 +101,14 @@ int apth_mutex_lock(apth_mutex_t *mutex)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
 
+    // Same pattern as lll.inline.h: use a non-NULL sentinel for ownership
+    // tracking when no apth context exists (pre-init, post-shutdown,
+    // scheduler context).  The sentinel is never dereferenced.
+    bool no_apth = (self == NULL);
+    if (no_apth)
+        self = (apth_t)(uintptr_t)0x1;
+
+retry:
     lll_apth_lock(&m->guard);
 
     // Fast path under guard: mutex is free
@@ -127,6 +135,15 @@ int apth_mutex_lock(apth_mutex_t *mutex)
             return EDEADLK;
         }
         // NORMAL: undefined behavior per POSIX; we block (will deadlock).
+    }
+
+    // No apth context: cannot enter the wait queue (no TCB, no event
+    // system).  Spin-retry, same as lll's no_apth slow path.
+    if (no_apth)
+    {
+        lll_apth_unlock(&m->guard);
+        sched_yield();
+        goto retry;
     }
 
     // Slow path: must block.
@@ -183,6 +200,11 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
 
+    bool no_apth = (self == NULL);
+    if (no_apth)
+        self = (apth_t)(uintptr_t)0x1;
+
+retry_timed:
     lll_apth_lock(&m->guard);
 
     // Fast path: mutex is free
@@ -208,6 +230,18 @@ int apth_mutex_timedlock(apth_mutex_t *mutex, const struct timespec *abstime)
             lll_apth_unlock(&m->guard);
             return EDEADLK;
         }
+    }
+
+    if (no_apth)
+    {
+        lll_apth_unlock(&m->guard);
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        if (now.tv_sec > abstime->tv_sec ||
+            (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+        goto retry_timed;
     }
 
     // Slow path: must block with timeout.
@@ -289,6 +323,8 @@ int apth_mutex_trylock(apth_mutex_t *mutex)
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
+    if (self == NULL)
+        self = (apth_t)(uintptr_t)0x1;
 
     // Use trylock for non-blocking guard acquisition
     if (lll_apth_trylock(&m->guard) != 0)
@@ -320,6 +356,8 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
 
     struct apth_mutex_st *m = APTH_MUTEX_CAST(mutex);
     apth_t self = CUR_APTH;
+    if (self == NULL)
+        self = (apth_t)(uintptr_t)0x1;
 
     lll_apth_lock(&m->guard);
 
