@@ -73,10 +73,6 @@ static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
     if (cur->is_dedicated)              return;
     if (cur->dispatch_prevented)        return;
     if (cur->was_preempted)             return;
-    // IO_BOUND threads (mutators) yield naturally on RDMA/I/O waits.
-    // Only preempt CPU_BOUND / DISTRIBUTED (GC workers) and DEFAULT.
-    if (cur->thread_class == APTH_CLASS_IO_BOUND) return;
-
     ucontext_t *uc = (ucontext_t *)uctx;
     greg_t rip = uc->uc_mcontext.gregs[REG_RIP];
     greg_t rsp = uc->uc_mcontext.gregs[REG_RSP];
