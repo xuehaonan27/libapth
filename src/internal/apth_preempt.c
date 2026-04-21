@@ -29,6 +29,7 @@ APTH_INTERNAL void apth_preempt_check(void) { /* nop */ }
 #include <signal.h>
 #include <time.h>
 #include <string.h>
+#include <stdio.h>
 #include <ucontext.h>
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -63,16 +64,27 @@ static void __apth_preempt_trampoline(void) __attribute__((noreturn, noinline));
  *
  * Async-signal-safe: only reads/writes TCB fields and ucontext values.
  */
+// Diagnostic counters for preemption signal handler (async-signal-safe atomics)
+volatile unsigned long __apth_preempt_cnt_total    = 0;
+volatile unsigned long __apth_preempt_cnt_null     = 0;
+volatile unsigned long __apth_preempt_cnt_ded      = 0;
+volatile unsigned long __apth_preempt_cnt_prevent  = 0;
+volatile unsigned long __apth_preempt_cnt_was      = 0;
+volatile unsigned long __apth_preempt_cnt_asm      = 0;
+volatile unsigned long __apth_preempt_cnt_rsp      = 0;
+volatile unsigned long __apth_preempt_cnt_ok       = 0;
+
 static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
 {
     (void)sig;
     (void)info;
+    __atomic_fetch_add(&__apth_preempt_cnt_total, 1, __ATOMIC_RELAXED);
 
     apth_t cur = CUR_APTH;
-    if (cur == NULL)                    return;
-    if (cur->is_dedicated)              return;
-    if (cur->dispatch_prevented)        return;
-    if (cur->was_preempted)             return;
+    if (cur == NULL)                    { __atomic_fetch_add(&__apth_preempt_cnt_null, 1, __ATOMIC_RELAXED); return; }
+    if (cur->is_dedicated)              { __atomic_fetch_add(&__apth_preempt_cnt_ded, 1, __ATOMIC_RELAXED); return; }
+    if (cur->dispatch_prevented)        { __atomic_fetch_add(&__apth_preempt_cnt_prevent, 1, __ATOMIC_RELAXED); return; }
+    if (cur->was_preempted)             { __atomic_fetch_add(&__apth_preempt_cnt_was, 1, __ATOMIC_RELAXED); return; }
     ucontext_t *uc = (ucontext_t *)uctx;
     greg_t rip = uc->uc_mcontext.gregs[REG_RIP];
     greg_t rsp = uc->uc_mcontext.gregs[REG_RSP];
@@ -80,20 +92,17 @@ static void apth_preempt_signal_handler(int sig, siginfo_t *info, void *uctx)
     // Don't preempt inside the assembly context switch.
     if (rip >= (greg_t)apth_ctx_switch_asm &&
         rip <  (greg_t)__apth_ctx_switch_asm_end)
-        return;
+    { __atomic_fetch_add(&__apth_preempt_cnt_asm, 1, __ATOMIC_RELAXED); return; }
 
     // Don't preempt if RSP is outside the thread's stack.
-    // Between SET_CUR_APTH(th) and ctx_switch (and after ctx_switch
-    // returns until SET_CUR_APTH(NULL)), CUR_APTH is set but execution
-    // is on the scheduler's stack.  Preempting here would corrupt the
-    // scheduler's context and cause a crash on next dispatch.
     if (cur->stack_mem_start != NULL)
     {
         greg_t stack_lo = (greg_t)cur->stack_mem_start;
         greg_t stack_hi = stack_lo + (greg_t)cur->stacksize;
         if (rsp < stack_lo || rsp >= stack_hi)
-            return;
+        { __atomic_fetch_add(&__apth_preempt_cnt_rsp, 1, __ATOMIC_RELAXED); return; }
     }
+    __atomic_fetch_add(&__apth_preempt_cnt_ok, 1, __ATOMIC_RELAXED);
 
     // Save full GP register state from the interrupted context.
     memcpy(cur->preempt_gregs, uc->uc_mcontext.gregs,
@@ -210,6 +219,19 @@ APTH_INTERNAL void apth_preempt_disarm(void)
 
 // Legacy check — only used by instrumentation mode now.
 APTH_INTERNAL void apth_preempt_check(void) { /* nop for signal mode */ }
+
+// GDB-callable diagnostic dump.
+__attribute__((used))
+void apth_preempt_dump_counters(void)
+{
+    fprintf(stderr,
+        "PREEMPT COUNTERS: total=%lu null=%lu ded=%lu prevent=%lu "
+        "was=%lu asm=%lu rsp=%lu ok=%lu\n",
+        __apth_preempt_cnt_total, __apth_preempt_cnt_null,
+        __apth_preempt_cnt_ded, __apth_preempt_cnt_prevent,
+        __apth_preempt_cnt_was, __apth_preempt_cnt_asm,
+        __apth_preempt_cnt_rsp, __apth_preempt_cnt_ok);
+}
 
 // ===================== Compiler instrumentation =====================
 #elif defined(APTH_PREEMPT_INSTRUMENT)
