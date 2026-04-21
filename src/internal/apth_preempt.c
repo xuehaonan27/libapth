@@ -158,6 +158,14 @@ APTH_INTERNAL void apth_preempt_init(void)
     sigemptyset(&sa.sa_mask);
     if (apth_func_raw(sigaction)(APTH_PREEMPT_SIGNO, &sa, NULL) < 0)
         apth_debug("WARNING: failed to install preemption signal handler");
+
+    // SIGUSR2 dumps diagnostic counters.
+    struct sigaction sa2;
+    memset(&sa2, 0, sizeof(sa2));
+    sa2.sa_handler = __apth_diag_signal_handler;
+    sa2.sa_flags = SA_RESTART;
+    sigemptyset(&sa2.sa_mask);
+    apth_func_raw(sigaction)(SIGUSR2, &sa2, NULL);
 }
 
 APTH_INTERNAL void apth_preempt_drop(void)
@@ -220,17 +228,25 @@ APTH_INTERNAL void apth_preempt_disarm(void)
 // Legacy check — only used by instrumentation mode now.
 APTH_INTERNAL void apth_preempt_check(void) { /* nop for signal mode */ }
 
-// GDB-callable diagnostic dump.
+// Diagnostic dump — callable from GDB or via SIGUSR2 signal.
 __attribute__((used))
 void apth_preempt_dump_counters(void)
 {
-    fprintf(stderr,
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf),
         "PREEMPT COUNTERS: total=%lu null=%lu ded=%lu prevent=%lu "
         "was=%lu asm=%lu rsp=%lu ok=%lu\n",
         __apth_preempt_cnt_total, __apth_preempt_cnt_null,
         __apth_preempt_cnt_ded, __apth_preempt_cnt_prevent,
         __apth_preempt_cnt_was, __apth_preempt_cnt_asm,
         __apth_preempt_cnt_rsp, __apth_preempt_cnt_ok);
+    write(STDERR_FILENO, buf, n);
+}
+
+static void __apth_diag_signal_handler(int sig)
+{
+    (void)sig;
+    apth_preempt_dump_counters();
 }
 
 // ===================== Compiler instrumentation =====================
