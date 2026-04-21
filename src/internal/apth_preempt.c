@@ -149,6 +149,27 @@ static void __apth_preempt_trampoline(void)
     // unreachable
 }
 
+// Diagnostic dump — callable from GDB or via SIGUSR2 signal.
+__attribute__((used))
+void apth_preempt_dump_counters(void)
+{
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf),
+        "PREEMPT COUNTERS: total=%lu null=%lu ded=%lu prevent=%lu "
+        "was=%lu asm=%lu rsp=%lu ok=%lu\n",
+        __apth_preempt_cnt_total, __apth_preempt_cnt_null,
+        __apth_preempt_cnt_ded, __apth_preempt_cnt_prevent,
+        __apth_preempt_cnt_was, __apth_preempt_cnt_asm,
+        __apth_preempt_cnt_rsp, __apth_preempt_cnt_ok);
+    write(STDERR_FILENO, buf, n);
+}
+
+static void __apth_diag_signal_handler(int sig)
+{
+    (void)sig;
+    apth_preempt_dump_counters();
+}
+
 APTH_INTERNAL void apth_preempt_init(void)
 {
     struct sigaction sa;
@@ -227,27 +248,6 @@ APTH_INTERNAL void apth_preempt_disarm(void)
 
 // Legacy check — only used by instrumentation mode now.
 APTH_INTERNAL void apth_preempt_check(void) { /* nop for signal mode */ }
-
-// Diagnostic dump — callable from GDB or via SIGUSR2 signal.
-__attribute__((used))
-void apth_preempt_dump_counters(void)
-{
-    char buf[256];
-    int n = snprintf(buf, sizeof(buf),
-        "PREEMPT COUNTERS: total=%lu null=%lu ded=%lu prevent=%lu "
-        "was=%lu asm=%lu rsp=%lu ok=%lu\n",
-        __apth_preempt_cnt_total, __apth_preempt_cnt_null,
-        __apth_preempt_cnt_ded, __apth_preempt_cnt_prevent,
-        __apth_preempt_cnt_was, __apth_preempt_cnt_asm,
-        __apth_preempt_cnt_rsp, __apth_preempt_cnt_ok);
-    write(STDERR_FILENO, buf, n);
-}
-
-static void __apth_diag_signal_handler(int sig)
-{
-    (void)sig;
-    apth_preempt_dump_counters();
-}
 
 // ===================== Compiler instrumentation =====================
 #elif defined(APTH_PREEMPT_INSTRUMENT)
