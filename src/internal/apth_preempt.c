@@ -161,6 +161,14 @@ APTH_INTERNAL void apth_preempt_drop(void)
 
 APTH_INTERNAL void apth_preempt_arm(void)
 {
+    // Ensure the preemption signal is unblocked on this worker pthread.
+    // The worker may have inherited a blocked mask from the parent thread
+    // (e.g., the JVM blocks most signals on its threads).
+    sigset_t unblock;
+    sigemptyset(&unblock);
+    sigaddset(&unblock, APTH_PREEMPT_SIGNO);
+    pthread_sigmask(SIG_UNBLOCK, &unblock, NULL);
+
     struct sigevent sev;
     memset(&sev, 0, sizeof(sev));
 
