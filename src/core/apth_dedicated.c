@@ -137,19 +137,11 @@ APTH_INTERNAL void apth_dedicated_block(apth_t t)
 {
     APTH_STAT_INC(__apth_stats_read.eventfd_reads);
     // Spin-check first: if already woken, skip syscall entirely
-    int __block_iters = 0;
-    struct timespec __block_ts = {.tv_sec = 5, .tv_nsec = 0};
+    struct timespec __block_ts = {.tv_sec = 3, .tv_nsec = 0};
     while (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) == 0) {
         // Not yet woken — block in kernel until value changes from 0
         syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
-                0 /* expected */, &__block_ts /* 5s timeout */, NULL, 0);
-        // Spurious wakeup or timeout — recheck
-        if (++__block_iters >= 2 &&
-            __atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) == 0) {
-            fprintf(stderr, "[LIBAPTH] dedicated_block: stuck >10s, t=%p name=%s futex=%d\n",
-                    (void *)t, t->name ? t->name : "?",
-                    __atomic_load_n(&t->dedicated_futex_val, __ATOMIC_RELAXED));
-        }
+                0 /* expected */, &__block_ts /* 3s timeout */, NULL, 0);
     }
     // Reset for next block
     __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);

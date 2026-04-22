@@ -141,9 +141,17 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
 
     if (self->is_dedicated)
     {
-        // Dedicated threads block on their wake eventfd instead of yielding
+        // Dedicated threads block on their wake futex instead of yielding
+        int __cw_iters = 0;
         while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
+        {
             apth_dedicated_block(self);
+            if (++__cw_iters >= 4 && __cw_iters % 4 == 0)
+                fprintf(stderr, "[LIBAPTH] cond_wait stuck ~%ds: t=%p name=%s cond=%p ev_status=%d\n",
+                        __cw_iters * 3, (void *)self,
+                        self->name ? self->name : "?",
+                        (void *)c, (int)w.ev.ev_status);
+        }
     }
     else
     {
