@@ -26,6 +26,20 @@
     APTH_DECLARE_FETCH_LIBCFUNC(rettype, name, __VA_ARGS__) \
     APTH_INTERNAL rettype apth_func(name)(__VA_ARGS__);
 
+// Fallback dlsym: when libapth.so is a regular dependency (not LD_PRELOAD),
+// libpthread.so may be loaded before libapth.so, making RTLD_NEXT unable to
+// find pthread/libc symbols. Fall back to explicit library handles.
+static inline void *__apth_dlsym_fallback(const char *sym)
+{
+    void *f = NULL;
+    void *h = dlopen("libpthread.so.0", RTLD_LAZY | RTLD_NOLOAD);
+    if (h) { f = dlsym(h, sym); dlclose(h); }
+    if (f) return f;
+    h = dlopen("libc.so.6", RTLD_LAZY | RTLD_NOLOAD);
+    if (h) { f = dlsym(h, sym); dlclose(h); }
+    return f;
+}
+
 // Define function type and initializer fetching the original function in LIBC that's going to be hooked.
 // Should be used in a `.c` file.
 #define APTH_FETCH_LIBCFUNC(name)                                                              \
@@ -34,6 +48,8 @@
     {                                                                                          \
         assert_msg(apth_func_raw(name) == NULL, "sanity");                                     \
         apth_func_pfn_t(name) func = (apth_func_pfn_t(name))dlsym(RTLD_NEXT, stringify(name)); \
+        if (func == NULL)                                                                      \
+            func = (apth_func_pfn_t(name))__apth_dlsym_fallback(stringify(name));               \
         if (func == NULL)                                                                      \
             return -1;                                                                         \
         apth_debug("found syscall " stringify(name) " = %p", func);                            \
