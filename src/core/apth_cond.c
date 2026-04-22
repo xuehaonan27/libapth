@@ -9,6 +9,7 @@
 #include "utils/lll.inline.h"
 #include <time.h>
 #include <sched.h>
+#include <unistd.h>
 
 // ==================== Condition Variable Attributes ====================
 
@@ -147,10 +148,15 @@ int apth_cond_wait(apth_cond_t *cond, apth_mutex_t *mutex)
         {
             apth_dedicated_block(self);
             if (++__cw_iters >= 4 && __cw_iters % 4 == 0)
-                fprintf(stderr, "[LIBAPTH] cond_wait stuck ~%ds: t=%p name=%s cond=%p ev_status=%d\n",
-                        __cw_iters * 3, (void *)self,
-                        self->name ? self->name : "?",
-                        (void *)c, (int)w.ev.ev_status);
+            {
+                char __buf[256];
+                int __n = snprintf(__buf, sizeof(__buf),
+                    "[LIBAPTH] cond_wait stuck ~%ds: t=%p name=%s cond=%p ev_status=%d\n",
+                    __cw_iters * 3, (void *)self,
+                    self->name ? self->name : "?",
+                    (void *)c, (int)w.ev.ev_status);
+                if (__n > 0) write(STDERR_FILENO, __buf, __n);
+            }
         }
     }
     else

@@ -10,6 +10,7 @@
 #include "utils/lll.inline.h"
 #include <time.h>
 #include <sched.h>
+#include <unistd.h>
 
 // ==================== Mutex Attributes ====================
 
@@ -182,11 +183,14 @@ retry:
                 const char *__oname = (__owner && __owner != (apth_t)(uintptr_t)0x1)
                                           ? (__owner->name ? __owner->name : "?")
                                           : "(null/sentinel)";
-                fprintf(stderr, "[LIBAPTH] mutex_lock stuck ~%ds: t=%p name=%s mutex=%p owner=%p owner_name=%s ev_status=%d\n",
-                        __ml_iters * 3, (void *)self,
-                        self->name ? self->name : "?",
-                        (void *)m, (void *)__owner, __oname,
-                        (int)w.ev.ev_status);
+                char __buf[384];
+                int __n = snprintf(__buf, sizeof(__buf),
+                    "[LIBAPTH] mutex_lock stuck ~%ds: t=%p name=%s mutex=%p owner=%p owner_name=%s ev_status=%d\n",
+                    __ml_iters * 3, (void *)self,
+                    self->name ? self->name : "?",
+                    (void *)m, (void *)__owner, __oname,
+                    (int)w.ev.ev_status);
+                if (__n > 0) write(STDERR_FILENO, __buf, __n);
             }
         }
     }
