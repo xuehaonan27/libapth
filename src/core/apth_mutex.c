@@ -10,7 +10,6 @@
 #include "utils/lll.inline.h"
 #include <time.h>
 #include <sched.h>
-#include <unistd.h>
 
 // ==================== Mutex Attributes ====================
 
@@ -173,26 +172,8 @@ retry:
     if (self->is_dedicated)
     {
         // Dedicated threads block on their wake futex instead of yielding
-        int __ml_iters = 0;
         while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
-        {
             apth_dedicated_block(self);
-            if (++__ml_iters >= 4 && __ml_iters % 4 == 0)
-            {
-                apth_t __owner = m->owner;
-                const char *__oname = (__owner && __owner != (apth_t)(uintptr_t)0x1)
-                                          ? (__owner->name ? __owner->name : "?")
-                                          : "(null/sentinel)";
-                char __buf[384];
-                int __n = snprintf(__buf, sizeof(__buf),
-                    "[LIBAPTH] mutex_lock stuck ~%ds: t=%p name=%s mutex=%p owner=%p owner_name=%s ev_status=%d\n",
-                    __ml_iters * 3, (void *)self,
-                    self->name ? self->name : "?",
-                    (void *)m, (void *)__owner, __oname,
-                    (int)w.ev.ev_status);
-                if (__n > 0) write(STDERR_FILENO, __buf, __n);
-            }
-        }
     }
     else
     {

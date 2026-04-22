@@ -128,24 +128,24 @@ APTH_INTERNAL void apth_dedicated_do_exit(void *result)
     SET_CUR_APTH(NULL);
 }
 
-// Block a dedicated thread using futex (fast userspace mutex).
-// Futex has a fast path: if the value is already non-zero (woken), the
-// thread returns immediately without entering the kernel. Only blocks
-// (kernel syscall) when the value is zero (no wake pending).
-// This replaces eventfd which ALWAYS enters the kernel (read syscall).
+// Block a dedicated thread using futex.  Returns after receiving a
+// FUTEX_WAKE *or* after a bounded timeout (~3 s).  Callers must
+// re-check their real predicate in a loop — this function may return
+// spuriously.  The timeout prevents permanent hangs when a FUTEX_WAKE
+// is lost due to signal delivery or kernel scheduling artifacts.
 APTH_INTERNAL void apth_dedicated_block(apth_t t)
 {
     APTH_STAT_INC(__apth_stats_read.eventfd_reads);
-    // Fast path: already woken
+    // Fast path: wake already pending — consume and return
     if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0) {
         __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
         return;
     }
-    // Block up to 3s, then return regardless (let caller re-check condition)
-    struct timespec __block_ts = {.tv_sec = 3, .tv_nsec = 0};
+    // Block until FUTEX_WAKE or timeout (whichever comes first)
+    struct timespec ts = {.tv_sec = 3, .tv_nsec = 0};
     syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
-            0 /* expected */, &__block_ts /* timeout */, NULL, 0);
-    // Consume wake if it arrived
+            0 /* expected */, &ts, NULL, 0);
+    // Consume wake if it arrived during or after the wait
     if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0)
         __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
 }

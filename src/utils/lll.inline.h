@@ -4,7 +4,6 @@
 #include "common.h"
 #include "apth.h"
 #include <stdio.h>
-#include <unistd.h>
 #include "lll.h"
 #include "hook_libc/hooked_funcs.h"
 #include "internal/forward_declare.h"
@@ -43,7 +42,6 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
         return;
 
     // Slow path: spin-pause first, then yield if still contended
-    int __total_spins = 0;
     while (1)
     {
         for (int __spin = 0; __spin < 32; __spin++)
@@ -56,17 +54,6 @@ INLINE_ALWAYS void __lll_apth_lock(lll_apth_t *lock)
                     return;
             }
             __builtin_ia32_pause();
-        }
-
-        __total_spins += 32;
-        if (__total_spins > 10000000)
-        {
-            __total_spins = 0;
-            char __buf[256];
-            int __n = snprintf(__buf, sizeof(__buf),
-                "[LIBAPTH] lll_apth_lock spin: lock=%p owner=%p self=%p no_apth=%d\n",
-                (void *)lock, (void *)atomic_load_acquire(&lock->owner), (void *)self, no_apth);
-            if (__n > 0) write(STDERR_FILENO, __buf, __n);
         }
 
         if (no_apth)
