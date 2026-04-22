@@ -136,25 +136,18 @@ APTH_INTERNAL void apth_dedicated_do_exit(void *result)
 APTH_INTERNAL void apth_dedicated_block(apth_t t)
 {
     APTH_STAT_INC(__apth_stats_read.eventfd_reads);
-    // Spin-check first: if already woken, skip syscall entirely
-    int __block_iters = 0;
-    struct timespec __block_ts = {.tv_sec = 3, .tv_nsec = 0};
-    while (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) == 0) {
-        // Not yet woken — block in kernel until value changes from 0
-        syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
-                0 /* expected */, &__block_ts /* 3s timeout */, NULL, 0);
-        if (++__block_iters >= 5) {
-            __block_iters = 0;
-            char __buf[256];
-            int __n = snprintf(__buf, sizeof(__buf),
-                "[LIBAPTH] dedicated_block stuck >15s: t=%p name=%s futex=%d\n",
-                (void *)t, t->name ? t->name : "?",
-                __atomic_load_n(&t->dedicated_futex_val, __ATOMIC_RELAXED));
-            if (__n > 0) write(STDERR_FILENO, __buf, __n);
-        }
+    // Fast path: already woken
+    if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0) {
+        __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
+        return;
     }
-    // Reset for next block
-    __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
+    // Block up to 3s, then return regardless (let caller re-check condition)
+    struct timespec __block_ts = {.tv_sec = 3, .tv_nsec = 0};
+    syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
+            0 /* expected */, &__block_ts /* timeout */, NULL, 0);
+    // Consume wake if it arrived
+    if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0)
+        __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
 }
 
 APTH_INTERNAL void apth_dedicated_unblock(apth_t t)
