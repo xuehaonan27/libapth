@@ -524,12 +524,53 @@ APTH_API int apth_rdma_wait(struct ibv_cq *cq, uint64_t wr_id,
     if (self->is_dedicated)
     {
         /* DEDICATED thread: block on futex until poller wakes us.
-         * The poller sets rdma_futex_val=1 and FUTEX_WAKE when done. */
+         * The poller sets rdma_futex_val=1 and FUTEX_WAKE when done.
+         *
+         * Hard timeout: if the poller silently fails to wake us (race in
+         * waiter registration vs CQE processing, lock contention, etc.),
+         * an unbounded FUTEX_WAIT hangs the calling thread forever. We've
+         * seen this manifest as a JVM hang where no FETCHING-wait timeout
+         * fires (the stuck thread is the FETCHER itself, not a waiter).
+         * After 30 seconds with no wake, give up and return -1.
+         *
+         * Before returning, we MUST deactivate our waiter slot in the
+         * global poller — otherwise a delayed completion would later
+         * write through w->futex_ptr to our stack memory after we've
+         * returned (use-after-return). The waiter slot identifies us by
+         * (cq, wr_id) which is unique to this RDMA operation. */
+        struct timespec ts = {30, 0};
+        int rc = 0;
         while (__atomic_load_n(&rdma_futex_val, __ATOMIC_ACQUIRE) == 0)
         {
-            syscall(SYS_futex, &rdma_futex_val, FUTEX_WAIT_PRIVATE,
-                    0 /* expected */, NULL /* no timeout */, NULL, 0);
-            /* Spurious wakeup possible — loop to recheck. */
+            int r = syscall(SYS_futex, &rdma_futex_val, FUTEX_WAIT_PRIVATE,
+                            0, &ts, NULL, 0);
+            if (r == -1 && errno == ETIMEDOUT) {
+                /* Atomically deactivate our waiter entry. */
+                lll_internal_lock(&p->waiter_lock);
+                int wcount = atomic_load_acquire(&p->waiter_count);
+                bool found = false;
+                for (int i = 0; i < wcount; i++) {
+                    struct apth_rdma_waiter *w = &p->waiters[i];
+                    if (w->active && w->cq == cq && w->wr_id == wr_id &&
+                        w->futex_ptr == &rdma_futex_val) {
+                        w->active = false;
+                        w->futex_ptr = NULL;  /* poller will skip wake */
+                        found = true;
+                        break;
+                    }
+                }
+                lll_internal_unlock(&p->waiter_lock);
+                apth_debug("apth_rdma_wait: futex timeout (30s) cq=%p wr_id=%lu — %s",
+                           cq, (unsigned long)wr_id,
+                           found ? "deactivated waiter" : "waiter already gone");
+                rc = -1;
+                break;
+            }
+            /* Spurious wakeup or normal wake — recheck loop. */
+        }
+        if (rc != 0) {
+            list_remove(&ev.elem);
+            return rc;
         }
     }
     else
