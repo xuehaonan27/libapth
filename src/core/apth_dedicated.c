@@ -11,6 +11,7 @@
 #include "utils/atomic_wrapper.h"
 #include "utils/lll.inline.h"
 #include "utils/list.inline.h"
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,6 +149,62 @@ APTH_INTERNAL void apth_dedicated_block(apth_t t)
     // Consume wake if it arrived during or after the wait
     if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0)
         __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
+}
+
+static int timespec_realtime_sub(struct timespec *dst,
+                                 const struct timespec *end,
+                                 const struct timespec *start)
+{
+    time_t sec = end->tv_sec - start->tv_sec;
+    long nsec = end->tv_nsec - start->tv_nsec;
+
+    if (nsec < 0)
+    {
+        sec--;
+        nsec += 1000000000L;
+    }
+
+    if (sec < 0 || (sec == 0 && nsec <= 0))
+    {
+        dst->tv_sec = 0;
+        dst->tv_nsec = 0;
+        return ETIMEDOUT;
+    }
+
+    dst->tv_sec = sec;
+    dst->tv_nsec = nsec;
+    return 0;
+}
+
+APTH_INTERNAL int apth_dedicated_block_until(apth_t t, const struct timespec *abstime)
+{
+    APTH_STAT_INC(__apth_stats_read.eventfd_reads);
+
+    if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0)
+    {
+        __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
+        return 0;
+    }
+
+    struct timespec now;
+    struct timespec rel;
+    clock_gettime(CLOCK_REALTIME, &now);
+    if (timespec_realtime_sub(&rel, abstime, &now) == ETIMEDOUT)
+        return ETIMEDOUT;
+
+    int r = syscall(SYS_futex, &t->dedicated_futex_val, FUTEX_WAIT_PRIVATE,
+                    0 /* expected */, &rel, NULL, 0);
+
+    if (__atomic_load_n(&t->dedicated_futex_val, __ATOMIC_ACQUIRE) != 0)
+    {
+        __atomic_store_n(&t->dedicated_futex_val, 0, __ATOMIC_RELEASE);
+        return 0;
+    }
+
+    if (r == -1 && errno == ETIMEDOUT)
+        return ETIMEDOUT;
+
+    return 0;
 }
 
 APTH_INTERNAL void apth_dedicated_unblock(apth_t t)

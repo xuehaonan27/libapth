@@ -177,15 +177,12 @@ retry_rd_timed:
 
     if (self->is_dedicated)
     {
-        // Dedicated threads: poll with timeout via eventfd + clock check
-        struct timespec now;
+        // Dedicated threads block on their wake futex until signaled or the
+        // absolute CLOCK_REALTIME deadline expires.
         while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
         {
-            clock_gettime(CLOCK_REALTIME, &now);
-            if (now.tv_sec > abstime->tv_sec ||
-                (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
-                break; // Timed out
-            sched_yield(); // Brief yield to OS, then re-check
+            if (apth_dedicated_block_until(self, abstime) == ETIMEDOUT)
+                break;
         }
     }
     else
@@ -370,15 +367,12 @@ retry_wr_timed:
 
     if (self->is_dedicated)
     {
-        // Dedicated threads: poll with timeout via eventfd + clock check
-        struct timespec now;
+        // Dedicated threads block on their wake futex until signaled or the
+        // absolute CLOCK_REALTIME deadline expires.
         while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
         {
-            clock_gettime(CLOCK_REALTIME, &now);
-            if (now.tv_sec > abstime->tv_sec ||
-                (now.tv_sec == abstime->tv_sec && now.tv_nsec >= abstime->tv_nsec))
-                break; // Timed out
-            sched_yield(); // Brief yield to OS, then re-check
+            if (apth_dedicated_block_until(self, abstime) == ETIMEDOUT)
+                break;
         }
     }
     else

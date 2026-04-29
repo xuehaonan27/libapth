@@ -251,20 +251,15 @@ int apth_cond_timedwait(apth_cond_t *cond, apth_mutex_t *mutex,
 
     if (self->is_dedicated)
     {
-        // Dedicated threads: poll with timeout via eventfd + clock check.
-        // Compute the real-time deadline for the clock check.
-        // (timer_ev already has the converted real-time deadline)
-        struct timespec now;
+        // Dedicated threads block on their wake futex until signaled or the
+        // converted CLOCK_REALTIME deadline expires.
+        struct timespec deadline;
+        deadline.tv_sec = timer_ev.ev_args.TIME.tv.tv_sec;
+        deadline.tv_nsec = timer_ev.ev_args.TIME.tv.tv_usec * 1000;
         while (atomic_load_acquire(&w.ev.ev_status) != APTH_EV_STATUS_OCCURRED)
         {
-            clock_gettime(CLOCK_REALTIME, &now);
-            long deadline_sec = timer_ev.ev_args.TIME.tv.tv_sec;
-            long deadline_usec = timer_ev.ev_args.TIME.tv.tv_usec;
-            if (now.tv_sec > deadline_sec ||
-                (now.tv_sec == deadline_sec &&
-                 now.tv_nsec / 1000 >= deadline_usec))
-                break; // Timed out
-            sched_yield(); // Brief yield to OS, then re-check
+            if (apth_dedicated_block_until(self, &deadline) == ETIMEDOUT)
+                break;
         }
     }
     else
