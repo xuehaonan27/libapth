@@ -376,6 +376,8 @@ APTH_INTERNAL int apth_install_kernel_signal_catchers(void)
     {
         if (sig == SIGKILL || sig == SIGSTOP || sig == 32 || sig == 33)
             continue;
+        if (sig == SIGQUIT)
+            continue;
         if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL || sig == SIGTRAP || sig == SIGSYS)
             continue;
 #ifdef APTH_PREEMPT_SIGNAL

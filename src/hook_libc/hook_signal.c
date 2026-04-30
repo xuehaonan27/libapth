@@ -72,6 +72,14 @@ static inline bool __apth_is_synchronous_fault(int sig)
            sig == SIGILL  || sig == SIGTRAP || sig == SIGSYS;
 }
 
+static inline bool __apth_passthrough_kernel_signal(int sig)
+{
+    // HotSpot uses SIGQUIT for external diagnostics: jcmd/jstack attach and
+    // kill -QUIT thread dumps must reach the VM's kernel-level handler even
+    // when LIBAPTH schedulers are asleep.
+    return sig == SIGQUIT;
+}
+
 APTH_DEFINE_HOOK(int, sigaction,
                  (int sig, const struct sigaction *restrict act,
                   struct sigaction *restrict oldact),
@@ -87,6 +95,18 @@ APTH_DEFINE_HOOK(int, sigaction,
     // Reject invalid signal number
     if (sig <= 0 || sig >= APTH_NSIG || sig == SIGKILL || sig == SIGSTOP)
         return apth_error(-1, EINVAL);
+
+    if (__apth_passthrough_kernel_signal(sig))
+    {
+        int ret = apth_func_raw(sigaction)(sig, act, oldact);
+        if (ret == 0 && act != NULL)
+        {
+            lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
+            APTH_GLOBAL_SIGACTIONS.actions[sig] = *act;
+            lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
+        }
+        return ret;
+    }
 
     lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
 
