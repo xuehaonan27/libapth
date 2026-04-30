@@ -668,15 +668,19 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
     // Block asynchronous signals in the scheduler thread.
     // Synchronous fault signals (SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT)
     // must remain unblocked so that guard page violations and other hardware
-    // faults are delivered normally.  With the assembly context switch (which
-    // does not touch signal masks), the scheduler's signal mask is inherited
-    // by running threads, so these must be unblocked here.
+    // faults are delivered normally.  SIGQUIT must remain unblocked for
+    // HotSpot diagnostics: jcmd/jstack start the attach listener through the
+    // VM's SIGQUIT path, and kill -QUIT requests a thread dump.  With the
+    // assembly context switch (which does not touch signal masks), the
+    // scheduler's signal mask is inherited by running threads, so these must
+    // be unblocked here.
     sigfillset(&sigs);
     sigdelset(&sigs, SIGSEGV);   // Fault: null pointer, guard page, safepoint poll
     sigdelset(&sigs, SIGBUS);    // Fault: alignment, bad address
     sigdelset(&sigs, SIGFPE);    // Fault: division by zero
     sigdelset(&sigs, SIGILL);    // Fault: illegal instruction
     sigdelset(&sigs, SIGABRT);   // Process abort
+    sigdelset(&sigs, SIGQUIT);   // HotSpot attach/thread dump diagnostics
     sigdelset(&sigs, SIGUSR2);   // HotSpot suspend/resume (SR_signum)
     sigdelset(&sigs, SIGUSR1);   // HotSpot may use for other purposes
 #ifdef APTH_PREEMPT_SIGNAL
