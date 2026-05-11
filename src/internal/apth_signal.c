@@ -228,6 +228,7 @@ APTH_INTERNAL void apth_deliver_pending_signals(apth_t th)
 // certain signals
 // static sigset_t APTH_PROCESS_SIGPENDING;
 static _Atomic(int) APTH_PROCESS_SIGPENDING[APTH_NSIG];
+static _Atomic(int) APTH_PROCESS_SIGPENDING_ANY;
 // static lll_t APTH_PROCESS_SIGPENDING_LOCK;
 
 // Go throught ALL apths in ALL schedulers, and find its first apths that
@@ -256,7 +257,10 @@ static void apth_route_process_signal(int sig)
 
     // NOTE: we must use atomic operation or sig_atomic_t to set pending bit safely.
     if (sig >= 1 && sig < APTH_NSIG)
+    {
         atomic_store_release(&APTH_PROCESS_SIGPENDING[sig], 1);
+        atomic_store_release(&APTH_PROCESS_SIGPENDING_ANY, 1);
+    }
 
     // NOTE: another plan is to write into a eventfd or pipe, waking up a scheduler
     // that's currently blocked in `select`. `write` itself is signal-safe.
@@ -274,8 +278,19 @@ static bool __apth_could_receive_this_signal(apth_t th, void *varg)
     return (!sigismember(&th->sigmask, arg->sig));
 }
 
+static bool __apth_default_ignored_signal(int sig)
+{
+    return sig == SIGCHLD || sig == SIGURG || sig == SIGWINCH || sig == SIGCONT;
+}
+
 APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 {
+    if (!atomic_load_acquire(&APTH_PROCESS_SIGPENDING_ANY))
+        return;
+
+    atomic_store_release(&APTH_PROCESS_SIGPENDING_ANY, 0);
+    bool kept_pending = false;
+
     for (int sig = 1; sig < APTH_NSIG; sig++)
     {
         // NOTE: after CAS fetched and removed the signal and before placing
@@ -311,9 +326,18 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
 
         if (target == APTH_NULL)
         {
+            lll_internal_lock(&APTH_GLOBAL_SIGACTIONS.lock);
+            struct sigaction sa = APTH_GLOBAL_SIGACTIONS.actions[sig];
+            lll_internal_unlock(&APTH_GLOBAL_SIGACTIONS.lock);
+
+            if (sa.sa_handler == SIG_IGN ||
+                (sa.sa_handler == SIG_DFL && __apth_default_ignored_signal(sig)))
+                continue;
+
             // This scheduler do not have an apth fit for this signal
             // then put the signal back for other schedulers.
             atomic_store_release(&APTH_PROCESS_SIGPENDING[sig], 1);
+            kept_pending = true;
             continue;
         }
 
@@ -327,6 +351,9 @@ APTH_INTERNAL void apth_check_process_signals(apth_sched_t sched)
         }
         lll_internal_unlock(&target->siglock);
     }
+
+    if (kept_pending)
+        atomic_store_release(&APTH_PROCESS_SIGPENDING_ANY, 1);
 }
 
 // For signals that are generated internally in same process, by `apth_kill`,

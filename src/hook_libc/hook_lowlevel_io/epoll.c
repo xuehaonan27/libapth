@@ -3,14 +3,13 @@
  *
  * JDK NIO uses epoll_wait directly (via libnio's EPoll.c).  Without
  * hooking epoll_wait, an M:N thread calling epoll_wait blocks the
- * scheduler worker.  This hook converts epoll_wait into a cooperative
- * wait: if epoll_wait would block (returns 0 with timeout), the thread
- * yields to the scheduler and retries.
+ * scheduler worker.  This hook converts epoll_wait into a cooperative wait.
  *
- * Strategy: call the real epoll_wait with timeout=0 (non-blocking poll).
- * If events are ready, return them immediately.  If not, yield to the
- * scheduler and retry.  For infinite waits, the reactor will eventually
- * deliver events.
+ * Strategy: call the real epoll_wait with timeout=0 first.  If no events are
+ * ready, wait on the epoll fd itself through LIBAPTH's reactor.  Epoll fds are
+ * pollable, so the reactor wakes this apth when the nested epoll instance has
+ * events.  This avoids the previous epoll_wait(0)+yield loop that burned CPU
+ * and starved JVM/Spark control paths.
  */
 
 #ifndef _GNU_SOURCE
@@ -23,7 +22,27 @@
 #include "hook_libc/hook_lowlevel_io.h"
 #include "apth.h"
 #include "apth_io.h"
+#include "internal/apth_event.h"
 #include "internal/types.h"
+#include "utils/list.inline.h"
+
+static long remaining_ms_until(const struct timespec *deadline)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    long sec = deadline->tv_sec - now.tv_sec;
+    long nsec = deadline->tv_nsec - now.tv_nsec;
+    if (nsec < 0) {
+        sec--;
+        nsec += 1000000000L;
+    }
+    if (sec < 0)
+        return 0;
+
+    long ms = sec * 1000L + (nsec + 999999L) / 1000000L;
+    return ms > 0 ? ms : 0;
+}
 
 APTH_API int apth_io_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 {
@@ -52,7 +71,8 @@ APTH_API int apth_io_epoll_wait(int epfd, struct epoll_event *events, int maxeve
 
     /* M:N cooperative epoll_wait:
      * 1. Try non-blocking poll first.
-     * 2. If no events, yield and retry until timeout expires or events arrive.
+     * 2. If no events, suspend this apth on the epoll fd readiness.
+     * 3. When woken, retry raw epoll_wait(0) to consume exact events.
      */
     struct timespec deadline;
     if (timeout > 0)
@@ -75,18 +95,37 @@ APTH_API int apth_io_epoll_wait(int epfd, struct epoll_event *events, int maxeve
         if (n < 0 && errno != EINTR)
             return n; /* real error */
 
-        /* Check timeout */
+        if (n < 0 && errno == EINTR)
+            continue;
+
         if (timeout > 0)
         {
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            if (now.tv_sec > deadline.tv_sec ||
-                (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec))
-                return 0; /* timed out */
-        }
+            long rem_ms = remaining_ms_until(&deadline);
+            if (rem_ms <= 0)
+                return 0;
 
-        /* Yield to let other M:N threads run, then retry. */
-        apth_yield();
+            struct apth_event_st ev_fd = EVENT_FD(epfd, APTH_GOAL_UNTIL_FD_READABLE);
+            struct apth_event_st ev_timeout =
+                EVENT_TIME(apth_timeout(rem_ms / 1000, (rem_ms % 1000) * 1000));
+            struct list event_list;
+            list_init(&event_list);
+            apth_event_list_add(&event_list, &ev_fd);
+            apth_event_list_add(&event_list, &ev_timeout);
+            apth_wait_event_list(&event_list);
+
+            if (ev_fd.ev_status == APTH_EV_STATUS_FAILED)
+                return apth_error(-1, EBADF);
+            if (ev_timeout.ev_status == APTH_EV_STATUS_OCCURRED &&
+                ev_fd.ev_status != APTH_EV_STATUS_OCCURRED)
+                return 0;
+        }
+        else
+        {
+            struct apth_event_st ev_fd = EVENT_FD(epfd, APTH_GOAL_UNTIL_FD_READABLE);
+            apth_wait_event(&ev_fd);
+            if (ev_fd.ev_status == APTH_EV_STATUS_FAILED)
+                return apth_error(-1, EBADF);
+        }
     }
 }
 
