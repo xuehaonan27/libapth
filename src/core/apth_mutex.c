@@ -406,8 +406,10 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
 
         lll_apth_unlock(&m->guard);
 
-        // Prod the waiter's scheduler so it notices the OCCURRED event
-        apth_sched_wake(waiter_sched);
+        // Move the waiter to a runnable queue if it is already parked; if the
+        // wake raced with the waiter yielding, the scheduler will still be
+        // prodded and the RUNNING->WAITING transition handles the occurred event.
+        apth_sched_wake_thread(waiter_sched, w->th);
     }
 
     return 0;

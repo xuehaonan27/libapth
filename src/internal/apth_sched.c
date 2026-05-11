@@ -299,9 +299,13 @@ APTH_INTERNAL void apth_sched_wake_thread(apth_sched_t sched, apth_t t)
 
     apth_thqueue_t waiting_q = THQUEUE(sched, waiting);
 
-    // Only move if the thread is actually in the waiting queue.
-    if (!apth_is_in(waiting_q, t))
+    // If the target has not yielded into the waiting queue yet, still wake the
+    // scheduler.  The RUNNING->WAITING transition below will notice an already
+    // occurred event and keep the thread runnable.
+    if (!apth_is_in(waiting_q, t)) {
+        apth_sched_wake(sched);
         return;
+    }
 
     // Remove from waiting queue (1 lock op)
     remove_apth_from(waiting_q, t);
@@ -328,6 +332,20 @@ static void __drain_free_th(apth_t t)
     }
     apth_thread_cleanup(t);
     apth_tcb_free(t);
+}
+
+static bool apth_has_occurred_event(apth_t th)
+{
+    if (list_empty(&th->event_list))
+        return false;
+
+    FOR_ELEMENT_IN_LIST(th->event_list, ev_e)
+    {
+        apth_event_t ev = apth_event_t_list_entry(ev_e);
+        if (ev->ev_status != APTH_EV_STATUS_PENDING)
+            return true;
+    }
+    return false;
 }
 
 // Kill the schduler ingredients
@@ -997,9 +1015,18 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
                 __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_READY);
                 break;
             case APTH_STATE_WAITING:
-                apth_debug("moving thread \"%s\" to waiting queue", th->name);
-                push_apth_to(THQUEUE(sched, waiting), th);
-                __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_WAITING);
+                if (apth_has_occurred_event(th))
+                {
+                    apth_debug("thread \"%s\" wait event already occurred; keeping ready", th->name);
+                    push_apth_to(THQUEUE(sched, ready), th);
+                    __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_READY);
+                }
+                else
+                {
+                    apth_debug("moving thread \"%s\" to waiting queue", th->name);
+                    push_apth_to(THQUEUE(sched, waiting), th);
+                    __apth_fire_state_callback(th, APTH_STATE_RUNNING, APTH_STATE_WAITING);
+                }
                 break;
             case APTH_STATE_TERMINATED:
                 // This case should not happen anymore since we handle EXIT via yield reason

@@ -319,7 +319,7 @@ int apth_cond_signal(apth_cond_t *cond)
         {
             apth_sched_t ws = SCHED_OF(w->th);
             lll_apth_unlock(&c->guard);
-            apth_sched_wake(ws);
+            apth_sched_wake_thread(ws, w->th);
         }
         return 0;
     }
@@ -349,7 +349,7 @@ int apth_cond_broadcast(apth_cond_t *cond)
         if (w->th->is_dedicated)
             apth_dedicated_unblock(w->th);
         else
-            apth_sched_wake(SCHED_OF(w->th));
+            apth_sched_wake_thread(SCHED_OF(w->th), w->th);
     }
 
     lll_apth_unlock(&c->guard);

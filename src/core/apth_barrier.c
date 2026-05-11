@@ -75,7 +75,7 @@ int apth_barrier_wait(apth_barrier_t *barrier)
             if (w->th->is_dedicated)
                 apth_dedicated_unblock(w->th);
             else
-                apth_sched_wake(SCHED_OF(w->th));
+                apth_sched_wake_thread(SCHED_OF(w->th), w->th);
         }
 
         lll_apth_unlock(&b->guard);
