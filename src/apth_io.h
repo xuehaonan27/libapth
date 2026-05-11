@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/epoll.h>
 #include <poll.h>
 
 #ifdef __cplusplus
@@ -54,6 +55,7 @@ int apth_io_dup2(int oldfd, int newfd);
 
 /* ---------- multiplexing ---------- */
 int apth_io_poll(struct pollfd *fds, nfds_t nfds, int timeout);
+int apth_io_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
 
 #ifdef __cplusplus
 }

@@ -22,18 +22,29 @@
 
 #include "hook_libc/hook_lowlevel_io.h"
 #include "apth.h"
+#include "apth_io.h"
 #include "internal/types.h"
 
-APTH_DEFINE_HOOK(int, epoll_wait,
-                 (int epfd, struct epoll_event *events, int maxevents, int timeout),
-                 (epfd, events, maxevents, timeout))
+APTH_API int apth_io_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 {
     {
         apth_t __ded_cur = CUR_APTH;
-        if (__ded_cur == NULL || __ded_cur->is_dedicated)
+        if (__ded_cur == NULL || __ded_cur->is_dedicated) {
+            if (apth_func_raw(epoll_wait) == NULL &&
+                apth_func_init(epoll_wait)() != 0) {
+                errno = ENOSYS;
+                return -1;
+            }
             return apth_func_raw(epoll_wait)(epfd, events, maxevents, timeout);
+        }
     }
     apth_hook_debug(epoll_wait);
+
+    if (apth_func_raw(epoll_wait) == NULL &&
+        apth_func_init(epoll_wait)() != 0) {
+        errno = ENOSYS;
+        return -1;
+    }
 
     /* Non-blocking poll (timeout == 0): passthrough. */
     if (timeout == 0)
@@ -77,6 +88,13 @@ APTH_DEFINE_HOOK(int, epoll_wait,
         /* Yield to let other M:N threads run, then retry. */
         apth_yield();
     }
+}
+
+APTH_DEFINE_HOOK(int, epoll_wait,
+                 (int epfd, struct epoll_event *events, int maxevents, int timeout),
+                 (epfd, events, maxevents, timeout))
+{
+    return apth_io_epoll_wait(epfd, events, maxevents, timeout);
 }
 
 APTH_DEFINE_HOOK(int, epoll_pwait,
