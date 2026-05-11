@@ -26,12 +26,10 @@ APTH_INTERNAL void push_apth_to(apth_thqueue_t queue, apth_t th)
     assert(APTH_IS_VALID(th));
 
     lll_internal_lock(&queue->th_list_lock);
-    // IO_BOUND threads (mutators) get front-of-queue for priority dispatch
-    // after waking from RDMA/I/O.  All others go to the back (FIFO).
-    if (th->thread_class == APTH_CLASS_IO_BOUND)
-        list_push_front(&queue->th_list, &th->elem);
-    else
-        list_push_back(&queue->th_list, &th->elem);
+    // Generic enqueue must be FIFO.  IO_BOUND priority is only correct on
+    // actual I/O wakeups, where callers use transfer_th_front(); applying it to
+    // every requeue can starve safepoint-blocked mutators at the front forever.
+    list_push_back(&queue->th_list, &th->elem);
     queue->size++;
     th->current_queue = queue;
     atomic_store_release(&th->state, queue->th_state);
