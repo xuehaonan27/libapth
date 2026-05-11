@@ -285,11 +285,9 @@ APTH_INTERNAL bool apth_sched_is_opening(apth_sched_t sched)
 
 APTH_INTERNAL void apth_sched_wake(apth_sched_t sched)
 {
-    if (__atomic_exchange_n(&sched->wake_futex_val, 1, __ATOMIC_ACQ_REL) == 0)
-    {
-        syscall(SYS_futex, &sched->wake_futex_val, FUTEX_WAKE_PRIVATE,
-                1, NULL, NULL, 0);
-    }
+    __atomic_fetch_add(&sched->wake_futex_val, 1, __ATOMIC_ACQ_REL);
+    syscall(SYS_futex, &sched->wake_futex_val, FUTEX_WAKE_PRIVATE,
+            1, NULL, NULL, 0);
 }
 
 APTH_INTERNAL void apth_sched_wake_thread(apth_sched_t sched, apth_t t)

@@ -1067,7 +1067,8 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                 // The scheduler sleeps on a futex (faster than epoll_wait on eventfd).
                 if (!dopoll)
                 {
-                    while (__atomic_load_n(&sched->wake_futex_val, __ATOMIC_ACQUIRE) == 0)
+                    int observed = __atomic_load_n(&sched->wake_futex_val, __ATOMIC_ACQUIRE);
+                    for (;;)
                     {
                         struct timespec ts;
                         struct timespec *tsp = NULL;
@@ -1078,7 +1079,10 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             tsp = &ts;
                         }
                         long ret = syscall(SYS_futex, &sched->wake_futex_val,
-                                           FUTEX_WAIT_PRIVATE, 0, tsp, NULL, 0);
+                                           FUTEX_WAIT_PRIVATE, observed, tsp, NULL, 0);
+                        int current = __atomic_load_n(&sched->wake_futex_val, __ATOMIC_ACQUIRE);
+                        if (current != observed)
+                            break;
                         if (ret == -1 && errno == ETIMEDOUT)
                         {
                             if (has_timer)
@@ -1086,7 +1090,6 @@ APTH_INTERNAL void apth_sched_eventmanager_epoll(apth_sched_t sched, apth_time_t
                             break;
                         }
                     }
-                    __atomic_store_n(&sched->wake_futex_val, 0, __ATOMIC_RELEASE);
                 }
             }
             else
