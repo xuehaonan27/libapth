@@ -577,6 +577,9 @@ static apth_t try_steal_from(apth_sched_t thief_sched, apth_sched_t victim_sched
 // Without APTH_NUMA, performs a single scan over all schedulers.
 static apth_t try_steal_work(apth_sched_t thief_sched)
 {
+    (void)thief_sched;
+    return APTH_NULL;
+
     int n_workers = GLOBAL_POOL.init_worker_count;
     if (n_workers <= 1)
         return APTH_NULL;
