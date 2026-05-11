@@ -16,7 +16,13 @@ ifeq ($(APTH_PREEMPT),signal)
 else ifeq ($(APTH_PREEMPT),instrument)
   CFLAGS += -DAPTH_PREEMPT_INSTRUMENT
 endif
+
+ifeq ($(APTH_RDMA),1)
+  CFLAGS += -DAPTH_USE_RDMA
+  LDFLAGS_EXTRA += -libverbs
+endif
 LDFLAGS := -pthread -lrt
+LDFLAGS += $(LDFLAGS_EXTRA)
 
 # Optional sanitizer support.  Usage:
 #   make SANITIZE=address   # AddressSanitizer (memory errors)
