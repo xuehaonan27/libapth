@@ -402,12 +402,12 @@ int apth_mutex_unlock(apth_mutex_t *mutex)
     {
         // Save scheduler pointer before releasing guard (waiter struct is
         // on the waiter's stack, still valid while it's in WAITING state)
-        apth_t target = w->th;
-        apth_sched_t waiter_sched = SCHED_OF(target);
+        apth_sched_t waiter_sched = SCHED_OF(w->th);
 
         lll_apth_unlock(&m->guard);
 
-        apth_sched_wake_thread(waiter_sched, target);
+        // Prod the waiter's scheduler so it notices the OCCURRED event.
+        apth_sched_wake(waiter_sched);
     }
 
     return 0;

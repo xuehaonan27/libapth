@@ -253,10 +253,9 @@ int apth_sem_post(apth_sem_t *sem)
         }
         else
         {
-            apth_t target = w->th;
-            apth_sched_t ws = SCHED_OF(target);
+            apth_sched_t ws = SCHED_OF(w->th);
             lll_apth_unlock(&s->guard);
-            apth_sched_wake_thread(ws, target);
+            apth_sched_wake(ws);
         }
         return 0;
     }
