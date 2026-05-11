@@ -459,7 +459,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             {
                 apth_sched_t ws = SCHED_OF(w->th);
                 lll_apth_unlock(&rw->guard);
-                apth_sched_wake_thread(ws, w->th);
+                apth_sched_wake(ws);
             }
             return 0;
         }
@@ -476,7 +476,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             if (w->th->is_dedicated)
                 apth_dedicated_unblock(w->th);
             else
-                apth_sched_wake_thread(SCHED_OF(w->th), w->th);
+                apth_sched_wake(SCHED_OF(w->th));
         }
 
         lll_apth_unlock(&rw->guard);
@@ -506,7 +506,7 @@ int apth_rwlock_unlock(apth_rwlock_t *rwlock)
             {
                 apth_sched_t ws = SCHED_OF(w->th);
                 lll_apth_unlock(&rw->guard);
-                apth_sched_wake_thread(ws, w->th);
+                apth_sched_wake(ws);
             }
             return 0;
         }

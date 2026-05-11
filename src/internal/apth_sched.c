@@ -776,6 +776,17 @@ APTH_INTERNAL void *scheduler_routine(void *arg)
             }
         }
 
+        // A sync primitive may mark a waiting thread's event as OCCURRED while
+        // this scheduler still has only safepoint-blocked or otherwise
+        // undispatchable threads in the ready queue.  Poll waiting events here
+        // so those waiters (notably JVM GC workers during STW) can become ready
+        // even when the ready queue never drains to empty.
+        if (thqueue_size(THQUEUE(sched, waiting)) > 0)
+        {
+            apth_time_set(&snapshot, APTH_TIME_NOW);
+            apth_sched_eventmanager_epoll(sched, &snapshot, true);
+        }
+
         // If there's advised apth (which is not WAITING, but rather urgent lll waiting one!)
         // Schedule it right now
         // Use atomic_exchange to load and clear in one operation to prevent reusing stale advice
