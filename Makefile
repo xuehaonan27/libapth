@@ -8,9 +8,14 @@ CFLAGS := -Wall -Wextra -std=gnu11 -g -O3 -fPIC -fno-plt -march=native \
 	-D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L \
 	-DAPTH_CUR_USING_KEYWORD \
 	-DAPTH_HOLD_INITIALIZER_PTHREAD \
-	-DAPTH_PREEMPT_SIGNAL \
 	$(EXTRA_CFLAGS)
 	# -DAPTH_NUMA -DAPTH_USE_IOURING (not needed for local-only phase 1)
+
+ifeq ($(APTH_PREEMPT),signal)
+  CFLAGS += -DAPTH_PREEMPT_SIGNAL
+else ifeq ($(APTH_PREEMPT),instrument)
+  CFLAGS += -DAPTH_PREEMPT_INSTRUMENT
+endif
 LDFLAGS := -pthread -lrt
 
 # Optional sanitizer support.  Usage:
