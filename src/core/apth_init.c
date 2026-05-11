@@ -293,10 +293,12 @@ static struct apth_sched_st __library_host_sched;
 int apth_init_library(int workers)
 {
     // workers <= 0: auto-detect from available CPUs (respects cgroup cpuset).
-    // Reserve 2 CPUs for DEDICATED threads (VM thread, GC, etc.).
+    // Use all CPUs available to this process; HotSpot-created mutator and GC
+    // threads run as M:N apths, so reserving workers for dedicated JVM
+    // threads would leave scheduling capacity idle.
     if (workers <= 0)
     {
-        workers = (int)cpu_cores() - 2;
+        workers = (int)cpu_cores();
         if (workers < 1)
             workers = 1;
     }
